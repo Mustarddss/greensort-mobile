@@ -1,17 +1,14 @@
 import { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, Image } from 'react-native';
 import { useRouter } from 'expo-router';
-import axios from 'axios';
-import AsyncStorage from '@react-native-async-storage/async-storage'; // 👈 IMPORTANTE: Para ma-save ang user
+import AsyncStorage from '@react-native-async-storage/async-storage'; 
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 export default function Login() {
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-
-  // ⚠️ UPDATE YOUR NGROK LINK HERE
-  const API_URL = 'https://jumpier-michale-identical.ngrok-free.dev'; 
 
   const handleLogin = async () => {
     if (!email || !password) {
@@ -20,43 +17,53 @@ export default function Login() {
     }
 
     setLoading(true);
-    try {
-      const response = await axios.post(`${API_URL}/login`, {
-        email,
-        password
-      });
 
-      if (response.data.success) {
-        // ✅ SAVE USER DATA SA PHONE STORAGE
-        // Ito ang kailangan ng Profile.js at Rewards.js para gumana
-        await AsyncStorage.setItem('user', JSON.stringify(response.data.user));
-        
-        // Redirect sa Dashboard
+    // 👇 OFFLINE SIMULATION
+    setTimeout(async () => {
+      try {
+        const mockUser = {
+            id: 'user_offline',
+            fullName: 'Test User',
+            email: email,
+            points: 100,
+            badges: ['Newbie']
+        };
+
+        await AsyncStorage.setItem('user', JSON.stringify(mockUser));
+        setLoading(false);
+
         Alert.alert('Success', 'Welcome back!', [
             { text: 'OK', onPress: () => router.replace('/(tabs)/dashboard') }
         ]);
+
+      } catch (error) {
+        setLoading(false);
+        Alert.alert('Error', 'Something went wrong');
       }
-    } catch (error) {
-      console.log(error);
-      Alert.alert('Login Failed', error.response?.data?.message || 'Invalid credentials');
-    } finally {
-      setLoading(false);
-    }
+    }, 1500);
   };
 
   return (
     <View style={styles.container}>
-      <View style={styles.circle} />
-
       <View style={styles.content}>
+        
+        {/* 🌿 LOGO SECTION */}
+        <View style={styles.logoContainer}>
+            {/* Palitan mo ito ng <Image source={require('../../assets/logo.png')} /> kung may image file ka */}
+            <MaterialCommunityIcons name="recycle-variant" size={80} color="#00C853" />
+            <Text style={styles.logoText}>GREENSORT</Text>
+        </View>
+
         <Text style={styles.title}>Welcome Back!</Text>
         <Text style={styles.subtitle}>Sign in to continue to GreenSort</Text>
 
+        {/* INPUTS */}
         <View style={styles.inputContainer}>
           <Text style={styles.label}>Email Address</Text>
           <TextInput 
             style={styles.input} 
-            placeholder="Enter your email" 
+            placeholder="email@domain.com" 
+            placeholderTextColor="#AAA"
             value={email}
             onChangeText={setEmail}
             keyboardType="email-address"
@@ -68,7 +75,8 @@ export default function Login() {
           <Text style={styles.label}>Password</Text>
           <TextInput 
             style={styles.input} 
-            placeholder="Enter your password" 
+            placeholder="Enter Password" 
+            placeholderTextColor="#AAA"
             value={password}
             onChangeText={setPassword}
             secureTextEntry
@@ -80,7 +88,7 @@ export default function Login() {
         </TouchableOpacity>
 
         <View style={styles.footer}>
-          <Text style={{ color: '#666' }}>Don't have an account? </Text>
+          <Text style={{ color: '#888' }}>Don't have an account? </Text>
           <TouchableOpacity onPress={() => router.push('/signup')}>
             <Text style={styles.link}>Sign Up</Text>
           </TouchableOpacity>
@@ -91,16 +99,22 @@ export default function Login() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff' },
-  circle: { width: 400, height: 400, borderRadius: 200, backgroundColor: '#e8f5e9', position: 'absolute', top: -150, left: -50 },
-  content: { flex: 1, justifyContent: 'center', paddingHorizontal: 30, marginTop: 50 },
-  title: { fontSize: 32, fontWeight: 'bold', color: '#00C853', marginBottom: 5 },
-  subtitle: { fontSize: 16, color: '#888', marginBottom: 40 },
-  inputContainer: { marginBottom: 20 },
-  label: { fontSize: 14, color: '#333', fontWeight: '600', marginBottom: 5 },
-  input: { backgroundColor: '#f5f5f5', padding: 15, borderRadius: 10, borderWidth: 1, borderColor: '#eee', fontSize: 16 },
-  button: { backgroundColor: '#00C853', padding: 18, borderRadius: 15, alignItems: 'center', elevation: 5 },
-  buttonText: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
+  container: { flex: 1, backgroundColor: '#ffffff', justifyContent: 'center' },
+  content: { paddingHorizontal: 30 },
+  
+  logoContainer: { alignItems: 'center', marginBottom: 30 },
+  logoText: { fontSize: 24, fontWeight: 'bold', color: '#00C853', marginTop: 10, letterSpacing: 2 },
+
+  title: { fontSize: 28, fontWeight: 'bold', color: '#00C853', marginBottom: 5, textAlign: 'left' },
+  subtitle: { fontSize: 14, color: '#888', marginBottom: 30, textAlign: 'left' },
+
+  inputContainer: { marginBottom: 15 },
+  label: { fontSize: 12, color: '#333', fontWeight: '600', marginBottom: 5, marginLeft: 5 },
+  input: { backgroundColor: '#F5F5F5', paddingVertical: 15, paddingHorizontal: 20, borderRadius: 10, fontSize: 14, color: '#333' },
+
+  button: { backgroundColor: '#00C853', padding: 18, borderRadius: 10, alignItems: 'center', marginTop: 10, shadowColor: '#00C853', shadowOpacity: 0.3, shadowRadius: 5, elevation: 5 },
+  buttonText: { color: '#fff', fontSize: 16, fontWeight: 'bold', letterSpacing: 1 },
+
   footer: { flexDirection: 'row', justifyContent: 'center', marginTop: 30 },
   link: { color: '#00C853', fontWeight: 'bold' },
 });

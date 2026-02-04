@@ -1,346 +1,239 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity, Modal, Alert, Image } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import axios from 'axios';
-import * as ImagePicker from 'expo-image-picker';
-import { MaterialCommunityIcons, FontAwesome5, Ionicons } from '@expo/vector-icons';
+import React, { useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, ActivityIndicator, Alert } from 'react-native';
+import { MaterialCommunityIcons, Ionicons, FontAwesome5 } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+
+// 👇 MOCK DATABASE (Ito ang temporary data habang offline)
+const MOCK_LOCATIONS = [
+  {
+    id: 1,
+    name: 'Barangay Sampaloc I',
+    type: 'Municipal Facility',
+    address: 'Dasmariñas City, Cavite',
+    schedule: 'Mon-Sat, 8:00am - 5:00pm',
+    accepted: ['Plastics', 'Paper', 'Metal'],
+    baseRate: 10, 
+    rewardUnit: 'kg Rice',
+    subText: 'Subject to availability of stocks.'
+  },
+  {
+    id: 2,
+    name: 'GreenSort Central Hub',
+    type: 'Official Drop-off',
+    address: 'Silang, Cavite',
+    schedule: 'Daily, 7:00am - 7:00pm',
+    accepted: ['All Types'],
+    baseRate: 15,
+    rewardUnit: 'Cash',
+    subText: 'Rates change daily based on market value.'
+  }
+];
 
 export default function Rewards() {
   const router = useRouter();
-  const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
   
-  // 🟢 UI STATES
-  const [instructionModalVisible, setInstructionModalVisible] = useState(false); // Modal 1
-  const [previewModalVisible, setPreviewModalVisible] = useState(false);         // Modal 2
-  const [capturedImage, setCapturedImage] = useState(null);
+  // 🟢 INPUT STATES
+  const [wasteType, setWasteType] = useState('');
+  const [quantity, setQuantity] = useState('');
+  const [isClean, setIsClean] = useState(false);
+  
+  // 🟢 SEARCH STATES
+  const [loading, setLoading] = useState(false);
+  const [results, setResults] = useState([]); 
+  const [hasSearched, setHasSearched] = useState(false);
 
-  // ⚠️ YOUR IP
-  const API_URL = 'https://jumpier-michale-identical.ngrok-free.dev'; 
-
-  useEffect(() => {
-    fetchRewards();
-  }, []);
-
-  const fetchRewards = async () => {
-    try {
-        const storedUser = await AsyncStorage.getItem('user');
-        if (storedUser) {
-            const userId = JSON.parse(storedUser).id;
-            const response = await axios.get(`${API_URL}/user/${userId}`);
-            if (response.data.success) {
-                setUser(response.data.user);
-            }
-        }
-    } catch (error) {
-        console.log("Fetch Error:", error);
-    } finally {
-        setLoading(false);
+  // 🔍 HANDLE SEARCH
+  const handleSearch = () => {
+    if (!wasteType || !quantity) {
+        Alert.alert("Missing Info", "Please enter the waste type and quantity (kg).");
+        return;
     }
-  };
 
-  // 🔘 STEP 1: HANDLE PROCEED CLICK (Show Options)
-  const handleProceedClick = () => {
-    setInstructionModalVisible(false); // Close the warning modal first
+    setLoading(true);
+    setHasSearched(true);
 
-    // Wait a bit to prevent UI freezing
+    // Simulate Loading
     setTimeout(() => {
-        Alert.alert(
-            "Select Upload Method",
-            "Choose how you want to provide your proof of surrender.",
-            [
-                { 
-                    text: "Camera", 
-                    onPress: openCamera 
-                },
-                { 
-                    text: "Gallery", 
-                    onPress: openGallery 
-                },
-                { 
-                    text: "Cancel", 
-                    style: "cancel" 
+        const inputQty = parseFloat(quantity);
+        
+        const computedResults = MOCK_LOCATIONS.map(loc => {
+            let incentiveText = "";
+
+            if (loc.rewardUnit === 'kg Rice') {
+                const riceKilos = Math.floor(inputQty / loc.baseRate); 
+                if (riceKilos >= 1) {
+                    incentiveText = `Exchange your ${inputQty}kg waste for ${riceKilos}kg Bigas`;
+                } else {
+                    incentiveText = `Need at least ${loc.baseRate}kg for Rice (Current: ${inputQty}kg)`;
                 }
-            ]
-        );
-    }, 500);
-  };
+            } else if (loc.rewardUnit === 'Cash') {
+                const cash = inputQty * loc.baseRate;
+                incentiveText = `Receive approx. ₱${cash.toFixed(2)} Cash`;
+            }
 
-  // 📸 OPTION A: OPEN CAMERA
-  const openCamera = async () => {
-    try {
-        const { status } = await ImagePicker.requestCameraPermissionsAsync();
-        if (status !== 'granted') {
-            Alert.alert("Permission Denied", "Camera access is needed.");
-            return;
-        }
-
-        let result = await ImagePicker.launchCameraAsync({
-            quality: 0.5,
-            allowsEditing: false, 
+            return { ...loc, computedIncentive: incentiveText };
         });
 
-        if (!result.canceled) {
-            setCapturedImage(result.assets[0].uri);
-            setPreviewModalVisible(true); // Show Preview
-        }
-    } catch (error) {
-        Alert.alert("Error", "Could not open camera.");
-    }
+        setResults(computedResults);
+        setLoading(false);
+    }, 1000);
   };
-
-  // 🖼️ OPTION B: OPEN GALLERY
-  const openGallery = async () => {
-    try {
-        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-        if (status !== 'granted') {
-            Alert.alert("Permission Denied", "Gallery access is needed.");
-            return;
-        }
-
-        let result = await ImagePicker.launchImageLibraryAsync({
-            quality: 0.5,
-            allowsEditing: false, 
-        });
-
-        if (!result.canceled) {
-            setCapturedImage(result.assets[0].uri);
-            setPreviewModalVisible(true); // Show Preview
-        }
-    } catch (error) {
-        Alert.alert("Error", "Could not open gallery.");
-    }
-  };
-
-  // ✅ STEP 3: CONFIRM & SUBMIT
-  const handleConfirmSubmission = () => {
-    setPreviewModalVisible(false); // Close preview
-    
-    // 👇 BACKEND LOGIC HERE (Simulated)
-    console.log("Submitting Image:", capturedImage);
-
-    setTimeout(() => {
-        Alert.alert(
-            "Submission Successful", 
-            "Your Proof of Surrender Photo was already sent to Waste Management Officer. Please wait for 3-5 working days for approval."
-        );
-        setCapturedImage(null); // Clear image
-    }, 300);
-  };
-
-  // 🔄 STEP 4: RETAKE (Ask user again)
-  const handleRetake = () => {
-    setPreviewModalVisible(false);
-    setCapturedImage(null);
-    handleProceedClick(); // Show options again
-  };
-
-  if (loading) return <ActivityIndicator size="large" color="#00C853" style={{flex:1}} />;
-
-  const currentPoints = user?.points || 0;
-  const goalPoints = 1000;
-  const progressPercent = Math.min((currentPoints / goalPoints) * 100, 100);
 
   return (
-    <View style={{flex: 1, backgroundColor: '#F5F5F5'}}>
+    <View style={{flex: 1, backgroundColor: '#F4F6F8'}}>
         <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
         
-        {/* 🟠 HEADER */}
-        <View style={styles.header}>
-            <View style={styles.headerRow}>
-                <TouchableOpacity onPress={() => router.back()}>
-                    <Ionicons name="arrow-back" size={24} color="white" />
-                </TouchableOpacity>
-                <Text style={styles.headerTitle}>Rewards & Badges</Text>
-                <View style={{width: 24}} />
-            </View>
-            <Text style={styles.headerSubtitle}>Track your eco achievements</Text>
-        </View>
-
-        <View style={styles.body}>
-            {/* 🏆 POINTS CARD */}
-            <View style={styles.pointsCard}>
-                <View style={styles.pointsRow}>
-                    <View>
-                        <Text style={styles.pointsLabel}>Your Total Points</Text>
-                        <Text style={styles.pointsValue}>{currentPoints}</Text>
-                        <Text style={styles.pointsSub}>Progress to Waste Warrior</Text>
-                    </View>
-                    <FontAwesome5 name="trophy" size={40} color="rgba(255,255,255,0.8)" />
+            {/* 🟠 HEADER */}
+            <View style={styles.header}>
+                <View style={styles.headerRow}>
+                    <TouchableOpacity onPress={() => router.back()}>
+                        <Ionicons name="arrow-back" size={24} color="white" />
+                    </TouchableOpacity>
+                    <Text style={styles.headerTitle}>Rewards Recommendation</Text>
+                    <View style={{width: 24}} />
                 </View>
-                <View style={styles.progressBarBg}>
-                    <View style={[styles.progressBarFill, {width: `${progressPercent}%`}]} />
-                </View>
-                <View style={{flexDirection: 'row', justifyContent: 'space-between', marginTop: 5}}>
-                    <Text style={styles.progressText}>Current: {currentPoints}</Text>
-                    <Text style={styles.progressText}>Goal: {goalPoints}</Text>
-                </View>
+                <Text style={styles.headerSubtitle}>Check your reward</Text>
             </View>
 
-            {/* 📸 UPLOAD CARD */}
-            <View style={styles.uploadCard}>
-                <View style={styles.uploadHeader}>
-                    <MaterialCommunityIcons name="camera-account" size={20} color="#555" />
-                    <Text style={styles.uploadTitle}> Upload Proof of Surrender</Text>
-                </View>
-                <View style={styles.dashedBox}>
-                    <MaterialCommunityIcons name="cloud-upload" size={40} color="#00C853" />
-                    <Text style={styles.uploadInstruction}>Upload a photo of your waste with your UserID written on it.</Text>
-                    <Text style={styles.uploadSubInstruction}>Make sure your GreenSort UserID is clearly visible.</Text>
-                    
-                    <TouchableOpacity style={styles.takePhotoBtn} onPress={() => setInstructionModalVisible(true)}>
-                        <MaterialCommunityIcons name="camera" size={18} color="white" style={{marginRight: 8}} />
-                        <Text style={styles.takePhotoText}>Take Photo / Choose File</Text>
+            <View style={styles.body}>
+                
+                {/* 📝 FORM CARD */}
+                <View style={styles.formCard}>
+                    <Text style={styles.cardTitle}>Drop-off Locations Centers</Text>
+
+                    <Text style={styles.label}>Waste Type</Text>
+                    <TextInput 
+                        style={styles.input} 
+                        placeholder="e.g., Plastic bottles, Aluminum cans"
+                        value={wasteType}
+                        onChangeText={setWasteType}
+                    />
+
+                    <Text style={styles.label}>Quantity (kg)</Text>
+                    <TextInput 
+                        style={styles.input} 
+                        placeholder="0" 
+                        keyboardType="numeric"
+                        value={quantity}
+                        onChangeText={setQuantity}
+                    />
+
+                    <TouchableOpacity 
+                        style={[styles.checkboxContainer, isClean && styles.checkboxActive]}
+                        onPress={() => setIsClean(!isClean)}
+                        activeOpacity={0.8}
+                    >
+                        <View style={[styles.checkbox, isClean && {backgroundColor: '#FF6D00', borderColor: '#FF6D00'}]}>
+                            {isClean && <Ionicons name="checkmark" size={14} color="white" />}
+                        </View>
+                        <View style={{flex: 1}}>
+                            <Text style={styles.checkboxTitle}>My Waste is Clean and Dry</Text>
+                            <Text style={styles.checkboxSub}>Clean recyclables have higher value and are easier to process</Text>
+                        </View>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity style={styles.searchBtn} onPress={handleSearch}>
+                        {loading ? (
+                            <ActivityIndicator color="#333" />
+                        ) : (
+                            <>
+                                <Ionicons name="search" size={18} color="#333" style={{marginRight: 8}} />
+                                <Text style={styles.searchBtnText}>Search Drop-off Centers</Text>
+                            </>
+                        )}
                     </TouchableOpacity>
                 </View>
-            </View>
 
-            {/* 🎖 BADGES */}
-            <Text style={styles.sectionTitle}>Your Badges</Text>
-            <View style={styles.badgesGrid}>
-                <BadgeItem name="Eco Beginner" points="100 pts" icon="leaf" active={user?.badges?.includes("Eco Beginner")} />
-                <BadgeItem name="First Scan" points="50 pts" icon="camera" active={user?.badges?.includes("First Scan")} />
-                <BadgeItem name="Recycling Hero" points="500 pts" icon="medal" active={user?.badges?.includes("Recycling Hero")} />
+                {/* 📍 RESULTS SECTION (Dito yung nabago) */}
+                <Text style={styles.sectionHeader}>Available Locations</Text>
+
+                {hasSearched && results.length === 0 && !loading && (
+                    <Text style={styles.noResults}>No drop-off centers found for this criteria.</Text>
+                )}
+
+                {/* 👇 ITO ANG CLICKABLE LIST */}
+                {results.map((loc) => (
+                    <TouchableOpacity 
+                        key={loc.id} 
+                        style={styles.resultCard}
+                        onPress={() => router.push({
+                            pathname: '/location-details',
+                            params: { data: JSON.stringify(loc) }
+                        })}
+                    >
+                        {/* Title & Type */}
+                        <Text style={styles.locName}>{loc.name}</Text>
+                        <View style={styles.tagContainer}>
+                            <Text style={styles.tagText}>{loc.type}</Text>
+                        </View>
+
+                        {/* Info */}
+                        <View style={styles.detailRow}>
+                            <Ionicons name="location-outline" size={16} color="#666" style={{marginRight: 6}} />
+                            <Text style={styles.detailText}>{loc.address}</Text>
+                        </View>
+                        <View style={styles.detailRow}>
+                            <Ionicons name="time-outline" size={16} color="#666" style={{marginRight: 6}} />
+                            <Text style={styles.detailText}>{loc.schedule}</Text>
+                        </View>
+
+                        {/* Accepted Items */}
+                        <View style={styles.materialsRow}>
+                            {loc.accepted.map((item, index) => (
+                                <View key={index} style={styles.materialTag}>
+                                    <Text style={styles.materialText}>{item}</Text>
+                                </View>
+                            ))}
+                        </View>
+
+                        {/* 🎁 DYNAMIC INCENTIVE BOX */}
+                        <View style={styles.incentiveBox}>
+                            <Text style={styles.incentiveLabel}>Estimated Incentive:</Text>
+                            <Text style={styles.incentiveValue}>
+                                {loc.computedIncentive}
+                            </Text>
+                            <Text style={styles.incentiveSub}>{loc.subText}</Text>
+                        </View>
+                    </TouchableOpacity>
+                ))}
+
             </View>
-            
-            {/* 📜 ACHIEVEMENTS */}
-            <Text style={[styles.sectionTitle, {marginTop: 20}]}>Achievements</Text>
-            <AchievementItem title="First Scan" desc="Scanned your first waste item" points="+10 points" completed={user?.badges?.includes("First Scan")} />
-            <AchievementItem title="Week Streak" desc="Recycled for 7 consecutive days" points="+50 points" completed={false} />
-        </View>
-        <View style={{height: 50}} />
+            <View style={{height: 100}} /> 
         </ScrollView>
-
-        {/* 🛑 MODAL 1: INSTRUCTIONS */}
-        <Modal animationType="fade" transparent={true} visible={instructionModalVisible} onRequestClose={() => setInstructionModalVisible(false)}>
-            <View style={styles.modalOverlay}>
-                <View style={styles.modalContent}>
-                    <View style={styles.modalHeader}>
-                        <FontAwesome5 name="bolt" size={18} color="#00C853" style={{marginRight: 8}} />
-                        <Text style={styles.modalTitle}>Before You Surrender</Text>
-                        <MaterialCommunityIcons name="recycle" size={20} color="green" style={{marginLeft: 8}}/>
-                    </View>
-                    <Text style={styles.modalText}>
-                        Don't forget that <Text style={{fontWeight: 'bold'}}>unsegregated waste</Text> will not be accepted by the <Text style={{fontWeight: 'bold'}}>GreenSort Admin</Text>.
-                    </Text>
-                    <View style={styles.noteBox}>
-                        <MaterialCommunityIcons name="notebook-outline" size={20} color="#E65100" style={{marginRight: 5}} />
-                        <Text style={styles.noteText}>
-                            <Text style={{fontWeight: 'bold'}}>Note:</Text> Any type of garbage bag is accepted. Just make sure your <Text style={{fontWeight: 'bold', color: '#E65100'}}>GreenSort UserID</Text> is written on it.
-                        </Text>
-                    </View>
-                    <TouchableOpacity style={styles.proceedBtn} onPress={handleProceedClick}>
-                        <Text style={styles.proceedText}>Proceed</Text>
-                    </TouchableOpacity>
-                </View>
-            </View>
-        </Modal>
-
-        {/* ✅ MODAL 2: PREVIEW & CONFIRMATION */}
-        <Modal animationType="slide" transparent={true} visible={previewModalVisible} onRequestClose={() => setPreviewModalVisible(false)}>
-            <View style={styles.modalOverlay}>
-                <View style={styles.previewContent}>
-                    <Text style={styles.previewTitle}>Confirm Submission</Text>
-                    <Text style={styles.previewSub}>Please verify that your UserID is clearly visible.</Text>
-                    
-                    {capturedImage && (
-                        <Image source={{ uri: capturedImage }} style={styles.previewImage} />
-                    )}
-
-                    <View style={styles.previewActions}>
-                        <TouchableOpacity style={styles.retakeBtn} onPress={handleRetake}>
-                            <Text style={styles.retakeText}>Retake</Text>
-                        </TouchableOpacity>
-                        
-                        <TouchableOpacity style={styles.confirmBtn} onPress={handleConfirmSubmission}>
-                            <Text style={styles.confirmText}>Submit Proof</Text>
-                        </TouchableOpacity>
-                    </View>
-                </View>
-            </View>
-        </Modal>
-
     </View>
   );
 }
 
-// 🔹 HELPER COMPONENTS
-const BadgeItem = ({ name, points, icon, active }) => (
-    <View style={[styles.badgeCard, !active && {opacity: 0.5, backgroundColor: '#EEE'}]}>
-        <View style={[styles.badgeIconBg, active ? {backgroundColor: '#E8F5E9'} : {backgroundColor: '#DDD'}]}>
-            <MaterialCommunityIcons name={icon} size={28} color={active ? "#00C853" : "#888"} />
-        </View>
-        <Text style={styles.badgeName}>{name}</Text>
-        <Text style={styles.badgePoints}>{points}</Text>
-    </View>
-);
-
-const AchievementItem = ({ title, desc, points, completed }) => (
-    <View style={styles.achievementCard}>
-        <View style={{flex: 1}}>
-            <View style={{flexDirection: 'row', alignItems: 'center'}}>
-                <Text style={styles.achTitle}>{title}</Text>
-                {completed && <View style={styles.completedTag}><Text style={styles.tagText}>Completed</Text></View>}
-            </View>
-            <Text style={styles.achDesc}>{desc}</Text>
-            <Text style={styles.achPoints}>{points}</Text>
-        </View>
-        <MaterialCommunityIcons name="bookmark-check" size={24} color={completed ? "#00C853" : "#DDD"} />
-    </View>
-);
-
 const styles = StyleSheet.create({
   container: { flexGrow: 1 },
-  header: { backgroundColor: '#FF6D00', paddingTop: 60, paddingBottom: 25, paddingHorizontal: 20, borderBottomLeftRadius: 30, borderBottomRightRadius: 30 },
+  header: { backgroundColor: '#FF6D00', paddingTop: 60, paddingBottom: 30, paddingHorizontal: 20, borderBottomLeftRadius: 30, borderBottomRightRadius: 30 },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  headerTitle: { fontSize: 22, fontWeight: 'bold', color: 'white' },
+  headerTitle: { fontSize: 20, fontWeight: 'bold', color: 'white' },
   headerSubtitle: { color: 'rgba(255,255,255,0.9)', textAlign: 'center', marginTop: 5 },
-  body: { padding: 20 },
-  pointsCard: { backgroundColor: '#00C853', borderRadius: 20, padding: 25, marginTop: -40, elevation: 5, shadowColor: '#000', shadowOffset: {width: 0, height: 2}, shadowOpacity: 0.2, shadowRadius: 4 },
-  pointsRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
-  pointsLabel: { color: 'rgba(255,255,255,0.9)', fontSize: 14 },
-  pointsValue: { color: 'white', fontSize: 42, fontWeight: 'bold' },
-  pointsSub: { color: 'rgba(255,255,255,0.8)', fontSize: 12 },
-  progressBarBg: { height: 8, backgroundColor: 'rgba(0,0,0,0.2)', borderRadius: 4, marginTop: 15 },
-  progressBarFill: { height: '100%', backgroundColor: 'white', borderRadius: 4 },
-  progressText: { color: 'white', fontSize: 12, fontWeight: '600' },
-  uploadCard: { backgroundColor: 'white', borderRadius: 15, padding: 15, marginTop: 20, elevation: 2 },
-  uploadHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
-  uploadTitle: { fontWeight: 'bold', color: '#444' },
-  dashedBox: { borderWidth: 1.5, borderColor: '#81C784', borderStyle: 'dashed', borderRadius: 12, backgroundColor: '#F1F8E9', padding: 20, alignItems: 'center' },
-  uploadInstruction: { textAlign: 'center', fontSize: 12, color: '#333', marginTop: 10, fontWeight: '600' },
-  uploadSubInstruction: { textAlign: 'center', fontSize: 10, color: '#666', marginTop: 2, marginBottom: 15 },
-  takePhotoBtn: { backgroundColor: '#00C853', flexDirection: 'row', paddingVertical: 10, paddingHorizontal: 20, borderRadius: 8, alignItems: 'center' },
-  takePhotoText: { color: 'white', fontWeight: 'bold', fontSize: 13 },
-  sectionTitle: { fontSize: 18, fontWeight: 'bold', color: '#333', marginTop: 25, marginBottom: 10 },
-  badgesGrid: { flexDirection: 'row', justifyContent: 'space-between', flexWrap: 'wrap' },
-  badgeCard: { width: '31%', backgroundColor: 'white', borderRadius: 10, padding: 10, alignItems: 'center', elevation: 2, marginBottom: 10 },
-  badgeIconBg: { width: 50, height: 50, borderRadius: 25, justifyContent: 'center', alignItems: 'center', marginBottom: 5 },
-  badgeName: { fontSize: 11, fontWeight: 'bold', color: '#333', textAlign: 'center' },
-  badgePoints: { fontSize: 10, color: '#666' },
-  achievementCard: { backgroundColor: 'white', borderRadius: 12, padding: 15, marginBottom: 10, flexDirection: 'row', alignItems: 'center', elevation: 1, borderLeftWidth: 4, borderLeftColor: '#00C853' },
-  achTitle: { fontWeight: 'bold', color: '#333', fontSize: 14 },
-  achDesc: { fontSize: 11, color: '#666', marginVertical: 2 },
-  achPoints: { fontSize: 12, color: '#00C853', fontWeight: 'bold' },
-  completedTag: { backgroundColor: '#E8F5E9', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, marginLeft: 8 },
-  tagText: { color: '#00C853', fontSize: 9, fontWeight: 'bold' },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
-  modalContent: { width: '85%', backgroundColor: 'white', borderRadius: 20, padding: 25, elevation: 10 },
-  modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 15 },
-  modalTitle: { fontWeight: 'bold', fontSize: 16, color: '#333' },
-  modalText: { fontSize: 13, color: '#555', textAlign: 'center', lineHeight: 20 },
-  noteBox: { flexDirection: 'row', backgroundColor: '#FFF3E0', padding: 10, borderRadius: 8, marginTop: 15, marginBottom: 20, borderLeftWidth: 3, borderLeftColor: '#FF9800' },
-  noteText: { flex: 1, fontSize: 12, color: '#E65100', lineHeight: 18 },
-  proceedBtn: { backgroundColor: '#00C853', paddingVertical: 12, borderRadius: 10, alignItems: 'center' },
-  proceedText: { color: 'white', fontWeight: 'bold', fontSize: 16 },
-  previewContent: { width: '90%', backgroundColor: 'white', borderRadius: 20, padding: 20, alignItems: 'center', elevation: 10 },
-  previewTitle: { fontSize: 18, fontWeight: 'bold', color: '#333', marginBottom: 5 },
-  previewSub: { fontSize: 12, color: '#666', marginBottom: 15 },
-  previewImage: { width: '100%', height: 350, borderRadius: 15, resizeMode: 'contain', marginBottom: 20, backgroundColor: '#f0f0f0' },
-  previewActions: { flexDirection: 'row', width: '100%', justifyContent: 'space-between', gap: 10 },
-  retakeBtn: { flex: 1, paddingVertical: 12, borderRadius: 10, borderWidth: 1, borderColor: '#ccc', alignItems: 'center' },
-  retakeText: { color: '#666', fontWeight: 'bold' },
-  confirmBtn: { flex: 1, backgroundColor: '#00C853', paddingVertical: 12, borderRadius: 10, alignItems: 'center' },
-  confirmText: { color: 'white', fontWeight: 'bold' },
+  body: { padding: 20, marginTop: -20 }, 
+  formCard: { backgroundColor: 'white', borderRadius: 15, padding: 20, marginBottom: 25, elevation: 3, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 5 },
+  cardTitle: { fontSize: 18, fontWeight: 'bold', color: '#333', marginBottom: 15 },
+  label: { fontSize: 13, color: '#666', marginBottom: 6, fontWeight: '600' },
+  input: { backgroundColor: '#F0F0F0', borderRadius: 8, padding: 14, marginBottom: 16, fontSize: 14, color: '#333' },
+  checkboxContainer: { flexDirection: 'row', backgroundColor: '#FFF3E0', padding: 12, borderRadius: 10, borderWidth: 1, borderColor: '#FFE0B2', marginBottom: 20 },
+  checkbox: { width: 20, height: 20, borderRadius: 4, borderWidth: 2, borderColor: '#FF6D00', marginRight: 10, alignItems: 'center', justifyContent: 'center', marginTop: 2 },
+  checkboxTitle: { fontSize: 13, fontWeight: 'bold', color: '#333' },
+  checkboxSub: { fontSize: 11, color: '#666', marginTop: 2, lineHeight: 14 },
+  searchBtn: { backgroundColor: '#E0E0E0', paddingVertical: 14, borderRadius: 25, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#D0D0D0' },
+  searchBtnText: { fontWeight: 'bold', color: '#333', fontSize: 14 },
+  sectionHeader: { fontSize: 18, fontWeight: 'bold', color: '#333', marginBottom: 15 },
+  noResults: { textAlign: 'center', color: '#999', marginTop: 20 },
+  resultCard: { backgroundColor: 'white', borderRadius: 15, padding: 18, marginBottom: 15, borderWidth: 1, borderColor: '#34A853', elevation: 2 },
+  locName: { fontSize: 17, fontWeight: 'bold', color: '#333' },
+  tagContainer: { backgroundColor: '#F5F5F5', alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 4, marginTop: 4, marginBottom: 12 },
+  tagText: { fontSize: 10, color: '#666', fontWeight: '600' },
+  detailRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
+  detailText: { fontSize: 13, color: '#555' },
+  materialsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 10, marginBottom: 15 },
+  materialTag: { backgroundColor: '#E8F5E9', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
+  materialText: { fontSize: 11, color: '#2E7D32', fontWeight: '600' },
+  incentiveBox: { backgroundColor: '#E0F2F1', padding: 15, borderRadius: 10, borderLeftWidth: 4, borderLeftColor: '#00C853' },
+  incentiveLabel: { fontSize: 11, color: '#00695C', marginBottom: 2 },
+  incentiveValue: { fontSize: 15, fontWeight: 'bold', color: '#004D40', lineHeight: 22 },
+  incentiveSub: { fontSize: 11, color: '#00796B', marginTop: 4, fontStyle: 'italic' },
 });
