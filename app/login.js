@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, Image } from 'react-native';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage'; 
-import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 export default function Login() {
   const router = useRouter();
@@ -45,15 +44,21 @@ export default function Login() {
 
   return (
     <View style={styles.container}>
+      
+      {/* Optional: Top design element if needed, otherwise white */}
       <View style={styles.content}>
         
-        {/* 🌿 LOGO SECTION */}
+        {/* 🌿 LOGO SECTION (Updated to Image) */}
         <View style={styles.logoContainer}>
-            {/* Palitan mo ito ng <Image source={require('../../assets/logo.png')} /> kung may image file ka */}
-            <MaterialCommunityIcons name="recycle-variant" size={80} color="#00C853" />
-            <Text style={styles.logoText}>GREENSORT</Text>
+            {/* Make sure 'logo.png' exists in 'mobile/assets/' folder */}
+            <Image 
+                source={require('../assets/images/logo.png')} 
+                style={styles.logoImage} 
+                resizeMode="contain"
+            />
         </View>
 
+        {/* Text Section - Left Aligned */}
         <Text style={styles.title}>Welcome Back!</Text>
         <Text style={styles.subtitle}>Sign in to continue to GreenSort</Text>
 
@@ -62,8 +67,7 @@ export default function Login() {
           <Text style={styles.label}>Email Address</Text>
           <TextInput 
             style={styles.input} 
-            placeholder="email@domain.com" 
-            placeholderTextColor="#AAA"
+            placeholder="" 
             value={email}
             onChangeText={setEmail}
             keyboardType="email-address"
@@ -75,8 +79,7 @@ export default function Login() {
           <Text style={styles.label}>Password</Text>
           <TextInput 
             style={styles.input} 
-            placeholder="Enter Password" 
-            placeholderTextColor="#AAA"
+            placeholder="" 
             value={password}
             onChangeText={setPassword}
             secureTextEntry
@@ -102,18 +105,29 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#ffffff', justifyContent: 'center' },
   content: { paddingHorizontal: 30 },
   
-  logoContainer: { alignItems: 'center', marginBottom: 30 },
-  logoText: { fontSize: 24, fontWeight: 'bold', color: '#00C853', marginTop: 10, letterSpacing: 2 },
+  // 🌿 LOGO STYLES
+  logoContainer: { 
+      alignItems: 'flex-start', // Aligns logo to the left
+      marginBottom: 20 
+  },
+  logoImage: { 
+      width: 120, // Adjust size as needed
+      height: 120, 
+      marginLeft: -10 // Slight adjustment to align with text
+  },
 
+  // 📝 TEXT STYLES
   title: { fontSize: 28, fontWeight: 'bold', color: '#00C853', marginBottom: 5, textAlign: 'left' },
-  subtitle: { fontSize: 14, color: '#888', marginBottom: 30, textAlign: 'left' },
+  subtitle: { fontSize: 14, color: '#888', marginBottom: 40, textAlign: 'left' },
 
-  inputContainer: { marginBottom: 15 },
-  label: { fontSize: 12, color: '#333', fontWeight: '600', marginBottom: 5, marginLeft: 5 },
-  input: { backgroundColor: '#F5F5F5', paddingVertical: 15, paddingHorizontal: 20, borderRadius: 10, fontSize: 14, color: '#333' },
+  // ⌨️ INPUT STYLES
+  inputContainer: { marginBottom: 20 },
+  label: { fontSize: 13, color: '#333', fontWeight: '500', marginBottom: 8 },
+  input: { backgroundColor: '#F5F5F5', paddingVertical: 16, paddingHorizontal: 15, borderRadius: 8, fontSize: 14, color: '#333' },
 
-  button: { backgroundColor: '#00C853', padding: 18, borderRadius: 10, alignItems: 'center', marginTop: 10, shadowColor: '#00C853', shadowOpacity: 0.3, shadowRadius: 5, elevation: 5 },
-  buttonText: { color: '#fff', fontSize: 16, fontWeight: 'bold', letterSpacing: 1 },
+  // 🟢 BUTTON STYLES
+  button: { backgroundColor: '#00C853', padding: 18, borderRadius: 8, alignItems: 'center', marginTop: 10 },
+  buttonText: { color: '#fff', fontSize: 16, fontWeight: 'bold', letterSpacing: 0.5 },
 
   footer: { flexDirection: 'row', justifyContent: 'center', marginTop: 30 },
   link: { color: '#00C853', fontWeight: 'bold' },

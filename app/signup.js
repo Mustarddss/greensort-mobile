@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert, ActivityIndicator, Image } from 'react-native';
 import { useRouter } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
@@ -35,10 +35,14 @@ export default function Signup() {
   return (
     <ScrollView contentContainerStyle={styles.container}>
       
-      {/* 🌿 LOGO HEADER */}
+      {/* 🌿 LOGO HEADER (Updated to Image) */}
       <View style={styles.centerHeader}>
-          <MaterialCommunityIcons name="recycle-variant" size={60} color="#00C853" />
-          <Text style={styles.brandTitle}>GREENSORT</Text>
+          <Image 
+              // 👇 Make sure this path matches where your file is!
+              source={require('../assets/images/signup logo.png')} 
+              style={styles.logoImage}
+              resizeMode="contain"
+          />
       </View>
 
       <View style={styles.headerTextContainer}>
