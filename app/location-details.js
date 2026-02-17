@@ -104,11 +104,14 @@ export default function LocationDetails() {
                 </View>
             </View>
 
-            {/* 🟢 ACTION BUTTON */}
-            <TouchableOpacity style={styles.actionBtn}>
+           {/* 🟢 ACTION BUTTON - UPDATED */}
+                <TouchableOpacity 
+                    style={styles.actionBtn} 
+                    onPress={() => router.push('/qr-generator')} // 👈 Ito ang magdadala sa QR page
+            >
                 <MaterialCommunityIcons name="crop-free" size={24} color="white" style={{marginRight: 8}} />
-                <Text style={styles.actionText}>Scan to Exchange</Text>
-            </TouchableOpacity>
+                    <Text style={styles.actionText}>Scan to Exchange</Text>
+                </TouchableOpacity>
 
         </View>
         <View style={{height: 50}} />

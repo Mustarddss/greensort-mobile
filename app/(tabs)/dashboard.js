@@ -4,13 +4,13 @@ import { useRouter } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 const { width } = Dimensions.get('window');
-const GAP = 12; // Gap between grid items
+const GAP = 12; 
 const ITEM_WIDTH = (width - 40 - GAP) / 2; // Calculate exact width for 2 columns
 
 export default function Dashboard() {
   const router = useRouter();
 
-  // 🟢 1. INITIALIZE DATA (Fixed: Added recentTransactions to prevent crash)
+  // 🟢 1. INITIALIZE DATA 
   const [userData] = useState({
     name: 'Eco Warrior',  
     kgRecycled: 24.5,

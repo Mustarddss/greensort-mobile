@@ -9,14 +9,14 @@ export default function TabLayout() {
       tabBarInactiveTintColor: '#666666',
       headerShown: false,
       tabBarStyle: { 
-        height: 70, // Tinaasan para hindi sikip
+        height: 70, 
         paddingBottom: 10,
         paddingTop: 10,
         backgroundColor: 'white',
         borderTopWidth: 1,
         borderTopColor: '#F0F0F0',
         elevation: 10, // Shadow sa Android
-        shadowColor: '#000', // Shadow sa iOS
+        shadowColor: '#000', // Shadow sa iOS (Black lang dapat para safe)
         shadowOpacity: 0.1,
         shadowRadius: 10,
       },
@@ -27,7 +27,7 @@ export default function TabLayout() {
       }
     }}>
       
-      {/* 1. HOME TAB (dashboard.js) */}
+      {/* 1. HOME TAB */}
       <Tabs.Screen 
         name="dashboard" 
         options={{
@@ -37,9 +37,9 @@ export default function TabLayout() {
           ),
       }} />
 
-      {/* 2. EXCHANGE TAB (rewards.js) */}
+      {/* 2. EXCHANGE TAB */}
       <Tabs.Screen name="rewards" options={{
-          title: 'Exchange', // Binago from "Rewards"
+          title: 'Exchange', 
           tabBarIcon: ({ color }) => (
              <MaterialCommunityIcons name="recycle" size={28} color={color} />
           ),
@@ -47,37 +47,38 @@ export default function TabLayout() {
 
       {/* 3. SCAN TAB (GITNA - Floating Button) */}
       <Tabs.Screen name="scan" options={{
-          title: '', // Walang text sa ilalim
+          title: '', 
           tabBarIcon: ({ focused }) => (
              <View style={{
                  width: 60,
                  height: 60,
-                 backgroundColor: '#00C853', // Green Circle
-                 borderRadius: 30, // Bilog
+                 backgroundColor: '#00C853', 
+                 borderRadius: 30, 
                  justifyContent: 'center',
                  alignItems: 'center',
-                 marginBottom: 30, // Para lumutang pataas
+                 marginBottom: 30, 
                  
-                 // Shadow para maganda
+                 // FIX: Elevation lang gamitin sa Android, iwasan ang colored shadowColor
                  elevation: 5, 
-                 shadowColor: '#00C853',
+                 shadowColor: '#000', // Ginawang black para compatible sa iOS/Android
                  shadowOpacity: 0.3,
                  shadowRadius: 5,
+                 shadowOffset: { width: 0, height: 4 }
              }}>
                  <MaterialCommunityIcons name="crop-free" size={30} color="white" />
              </View>
           ),
       }} />
 
-      {/* 4. UPCYCLE TAB (projects.js) */}
+      {/* 4. UPCYCLE TAB */}
       <Tabs.Screen name="projects" options={{
-          title: 'Upcycle', // Binago from "Guides"
+          title: 'Upcycle', 
           tabBarIcon: ({ color, focused }) => (
              <MaterialCommunityIcons name={focused ? "lightbulb-on" : "lightbulb-outline"} size={28} color={color} />
           ),
       }} />
 
-      {/* 5. PROFILE TAB (profile.js) */}
+      {/* 5. PROFILE TAB */}
       <Tabs.Screen name="profile" options={{
           title: 'Profile',
           tabBarIcon: ({ color, focused }) => (
@@ -85,7 +86,7 @@ export default function TabLayout() {
           ),
       }} />
 
-      {/* HIDE EXTRA FILES (Para hindi lumabas sa tabs) */}
+      {/* HIDE EXTRA FILES */}
       <Tabs.Screen name="history" options={{ href: null }} /> 
       <Tabs.Screen name="explore" options={{ href: null }} /> 
     </Tabs>

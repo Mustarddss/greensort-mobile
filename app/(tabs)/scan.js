@@ -1,21 +1,21 @@
 import { useState } from 'react';
-import { StyleSheet, Text, View, Image, ActivityIndicator, Alert, TouchableOpacity, ScrollView, TextInput, Modal, Dimensions } from 'react-native';
+import { StyleSheet, Text, View, Image, ActivityIndicator, Alert, TouchableOpacity, ScrollView, TextInput, Modal, KeyboardAvoidingView, Platform, Pressable } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
-import { MaterialCommunityIcons, Ionicons, FontAwesome5 } from '@expo/vector-icons';
+import { MaterialCommunityIcons, Ionicons, FontAwesome5, Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 
 export default function ScanPage() {
   const router = useRouter();
+  
+  // STATES
   const [image, setImage] = useState(null);
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [manualInput, setManualInput] = useState('');
   
   // MODAL STATES
   const [modalVisible, setModalVisible] = useState(false);
   const [customIdea, setCustomIdea] = useState('');
-
-  // ⚠️ YOUR IP
-  const API_URL = 'http://192.168.1.5:3000/classify';
 
   // 💡 SUGGESTIONS LOGIC
   const getSuggestions = () => {
@@ -34,15 +34,11 @@ export default function ScanPage() {
         
         let pickerResult = await ImagePicker.launchCameraAsync({ 
             mediaTypes: ImagePicker.MediaTypeOptions.Images, 
-            quality: 0.3,
-            allowsEditing: true, 
-            aspect: [1, 1] 
+            quality: 0.5, allowsEditing: true, aspect: [1, 1] 
         });
         
-        if (!pickerResult.canceled) handleImage(pickerResult.assets[0].uri);
-    } catch (error) {
-        Alert.alert("Error", "Could not open camera.");
-    }
+        if (!pickerResult.canceled) handleAnalysis(pickerResult.assets[0].uri, null);
+    } catch (error) { Alert.alert("Error", "Could not open camera."); }
   };
 
   // 🖼️ PICK IMAGE (GALLERY)
@@ -52,67 +48,67 @@ export default function ScanPage() {
         if (status !== 'granted') { Alert.alert('Permission needed', 'We need access to your gallery!'); return; }
         
         let pickerResult = await ImagePicker.launchImageLibraryAsync({ 
-            mediaTypes: ImagePicker.MediaTypeOptions.Images, 
-            allowsEditing: true, 
-            quality: 0.3, 
-            aspect: [1, 1]
+            mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: true, quality: 0.5, aspect: [1, 1]
         });
         
-        if (!pickerResult.canceled) handleImage(pickerResult.assets[0].uri);
-    } catch (error) {
-        Alert.alert("Error", "Could not open gallery.");
-    }
+        if (!pickerResult.canceled) handleAnalysis(pickerResult.assets[0].uri, null);
+    } catch (error) { Alert.alert("Error", "Could not open gallery."); }
   };
 
-  // 🤖 ANALYZE IMAGE
-  const handleImage = async (uri) => {
-    setImage(uri); setLoading(true); setResult(null);
-    
-    // 👇 MOCK DATA: "Recyclable" para lumabas pareho (Note + Button)
+  // 🤖 ANALYZE FUNCTION
+  const handleAnalysis = async (uri, textInput) => {
+    setLoading(true); setResult(null);
+    if (uri) setImage(uri);
+
+    const detectedItem = textInput ? textInput : "Plastic Bottles (PET)"; 
+    const isRecyclable = detectedItem.toLowerCase().includes('bottle') || detectedItem.toLowerCase().includes('paper') || detectedItem.toLowerCase().includes('plastic');
+
     setTimeout(() => {
         setResult({
             success: true,
-            detected: "Plastic Bottles (PET)",
-            category: "Recyclable", 
-            confidenceScore: 94, 
-            recyclingTip: "Clean and remove caps before recycling. Crush to save space."
+            detected: isRecyclable ? "Plastic Bottles (PET)" : detectedItem,
+            category: isRecyclable ? "Recyclable Plastic" : "General Waste", 
+            confidenceScore: 90, 
+            status: "Recyclable Material",
+            recyclingTip: "Remove caps and labels before recycling. Rinse bottles thoroughly and let dry. Crush to save space."
         });
         setLoading(false);
     }, 2000);
   };
 
-  // 🚀 NAVIGATE TO PROJECTS (AUTO-OPEN LOGIC)
+  // ⌨️ HANDLE MANUAL INPUT
+  const submitManualInput = () => {
+      if (!manualInput.trim()) return;
+      handleAnalysis(null, manualInput);
+      setManualInput('');
+  };
+
+  // 📍 NAVIGATE TO REWARDS
+  const goToRewards = () => {
+      router.push('/(tabs)/rewards');
+  };
+
+  // 🚀 NAVIGATE TO PROJECTS
   const proceedToProject = (idea) => {
-    setModalVisible(false);
-    setCustomIdea('');
-    
+    setModalVisible(false); setCustomIdea('');
     if (result) {
-        // 👇 ITO ANG SIKRETO: Nagpasa tayo ng "openDirectly: true"
-        // Pagdating sa Projects Page, babasahin niya ito at bubuksan agad ang guide.
         router.push({ 
             pathname: '/(tabs)/projects', 
-            params: { 
-                itemName: result.detected, 
-                projectType: idea,
-                openDirectly: 'true' // <--- SIGNAL PARA MAG-AUTO OPEN
-            } 
+            params: { itemName: result.detected, projectType: idea, openDirectly: 'true' } 
         });
     }
   };
 
-  // 👇 HELPER: Check categories
-  const showBarangayNote = result && (result.category === 'Barangay Collectible' || result.category === 'Recyclable');
-  const showUpcycleBtn = result && (result.category === 'Upcyclable' || result.category === 'Recyclable');
-
   return (
+    <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{flex:1}}>
     <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
       
-      {/* 🟢 HEADER */}
+      {/* HEADER */}
       <View style={styles.headerBg}>
-          <View style={styles.headerContent}>
-             <TouchableOpacity onPress={() => router.back()} style={{position: 'absolute', left: 0, top: 5}}>
-                <Ionicons name="arrow-back" size={24} color="white" />
-             </TouchableOpacity>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+             <Ionicons name="arrow-back" size={24} color="white" />
+          </TouchableOpacity>
+          <View style={{marginTop: 10}}>
              <Text style={styles.headerTitle}>Scan Waste</Text>
              <Text style={styles.headerSubtitle}>Use AI to identify and classify your waste</Text>
           </View>
@@ -120,126 +116,188 @@ export default function ScanPage() {
 
       <View style={styles.bodyContent}>
       
-        {/* 📷 CAMERA */}
+        {/* CAMERA PREVIEW */}
         <View style={styles.cameraContainer}>
-            {image ? (
+            {loading ? (
+                 <View style={styles.loadingContainer}>
+                    <ActivityIndicator size="large" color="#00C853" />
+                    <Text style={styles.loadingText}>Analyzing...</Text>
+                 </View>
+            ) : image ? (
                 <Image source={{ uri: image }} style={styles.cameraImage} />
             ) : (
                 <TouchableOpacity style={styles.placeholderContainer} onPress={pickImageCamera}>
-                     <View style={styles.iconCircle}>
-                        <MaterialCommunityIcons name="camera-plus" size={40} color="#00C853" />
-                     </View>
-                     <Text style={styles.placeholderText}>Scan your waste here</Text>
-                     <Text style={styles.placeholderSubText}>and let AI identify it</Text>
+                      <View style={styles.iconCircle}>
+                         <MaterialCommunityIcons name="camera-plus" size={40} color="#00C853" />
+                      </View>
+                      <Text style={styles.placeholderText}>Tap to Scan</Text>
                 </TouchableOpacity>
-            )}
-
-            {loading && (
-                <View style={styles.loadingOverlay}>
-                    <ActivityIndicator size="large" color="#00C853" />
-                    <Text style={styles.loadingText}>Analyzing...</Text>
-                </View>
             )}
         </View>
 
         {/* ✅ RESULT CARD */}
         {result && !loading && (
-             <View style={styles.newResultCard}>
-                <View style={styles.cardHeader}>
-                    <Text style={styles.cardHeaderText}>AI Recognition Result</Text>
-                    <View style={styles.confidenceBadge}>
-                        <Text style={styles.confidenceText}>{result.confidenceScore}% confident</Text>
-                    </View>
-                </View>
+             <View style={styles.resultCard}>
                 
-                <View style={styles.cardBody}>
-                    <Text style={styles.label}>Waste Type</Text>
-                    <Text style={styles.detectedTitle}>{result.detected}</Text>
-                    
-                    <Text style={[styles.label, {marginTop: 10}]}>Category</Text>
-                    <Text style={styles.categoryTitle}>{result.category}</Text>
-
-                    <Text style={[styles.label, {marginTop: 15, marginBottom: 5}]}>Confidence Level</Text>
+                <Text style={styles.cardHeaderTitle}>AI Recognition Result</Text>
+                
+                <View style={styles.accuracyContainer}>
                     <View style={styles.progressBarBg}>
                         <View style={[styles.progressBarFill, {width: `${result.confidenceScore}%`}]} />
                     </View>
-
-                    <View style={styles.tipBox}>
-                        <View style={{flexDirection:'row', alignItems:'center', marginBottom: 5}}>
-                             <MaterialCommunityIcons name="lightbulb-on" size={18} color="#FFB300" />
-                             <Text style={styles.tipHeader}> Recycling Tip</Text>
-                        </View>
-                        <Text style={styles.tipText}>{result.recyclingTip}</Text>
-                    </View>
-
-                    {/* 🌟 LOGIC: SHOW BARANGAY NOTE IF RECYCLABLE OR COLLECTIBLE */}
-                    {showBarangayNote && (
-                        <View style={styles.barangayNoteBox}>
-                            <FontAwesome5 name="coins" size={20} color="#FF6D00" style={{marginBottom: 8}} />
-                            <Text style={styles.barangayNoteText}>
-                                <Text style={{fontWeight: 'bold'}}>This is a Barangay Collectible!</Text> You can collect these recyclable items and turn them into points for cash.
-                            </Text>
-                        </View>
-                    )}
-
-                    {/* ♻️ LOGIC: SHOW UPCYCLE BUTTON IF RECYCLABLE OR UPCYCLABLE */}
-                    {showUpcycleBtn && (
-                        <TouchableOpacity style={styles.upcycleBtn} onPress={() => setModalVisible(true)}>
-                            <MaterialCommunityIcons name="palette-outline" size={24} color="white" style={{marginRight: 10}}/>
-                            <Text style={styles.upcycleBtnText}>Make this Upcycle Project</Text>
-                        </TouchableOpacity>
-                    )}
+                    <Text style={styles.accuracyText}>Accuracy Level: {result.confidenceScore}%</Text>
                 </View>
 
-                <TouchableOpacity style={styles.scanAgainBtn} onPress={() => {setResult(null); setImage(null);}}>
-                    <Text style={styles.scanAgainText}>Scan Another Item</Text>
+                <View style={{marginTop: 15}}>
+                    <Text style={styles.smallLabel}>Waste Type</Text>
+                    <Text style={styles.mainWasteTitle}>{result.detected}</Text>
+                    <Text style={styles.smallLabel}>Category</Text>
+                    <Text style={styles.categoryText}>{result.category}</Text>
+                    <View style={styles.statusChip}>
+                        <MaterialCommunityIcons name="check-circle-outline" size={16} color="#2E7D32" />
+                        <Text style={styles.statusText}>{result.status}</Text>
+                    </View>
+                </View>
+
+                {/* 🔘 ACTION BUTTONS */}
+                <Text style={styles.actionLabel}>What would you like to do?</Text>
+
+                {/* 1. Find Disposal (PRESSABLE: Green Hover) */}
+                <Pressable 
+                    onPress={goToRewards}
+                    style={({ pressed }) => [
+                        styles.outlinedBtn, 
+                        pressed && styles.outlinedBtnActive 
+                    ]}
+                >
+                    {({ pressed }) => (
+                        <>
+                            <View>
+                                <Text style={[styles.outlinedBtnTitle, pressed && {color: 'white'}]}>
+                                    Find Disposal & Incentives
+                                </Text>
+                                <Text style={[styles.outlinedBtnSub, pressed && {color: 'rgba(255,255,255,0.9)'}]}>
+                                    View rewards recommendations
+                                </Text>
+                            </View>
+                            <MaterialCommunityIcons 
+                                name="arrow-right-circle" 
+                                size={24} 
+                                color={pressed ? "white" : "#00C853"} 
+                            />
+                        </>
+                    )}
+                </Pressable>
+
+                {/* 2. View DIY Projects (PRESSABLE: Green Hover - UPDATED!) */}
+                <Pressable 
+                    onPress={() => setModalVisible(true)}
+                    style={({ pressed }) => [
+                        styles.outlinedBtn, 
+                        pressed && styles.outlinedBtnActive 
+                    ]}
+                >
+                    {({ pressed }) => (
+                        <>
+                            <View>
+                                <Text style={[styles.outlinedBtnTitle, pressed && {color: 'white'}]}>
+                                    View DIY upcycling projects
+                                </Text>
+                                <Text style={[styles.outlinedBtnSub, pressed && {color: 'rgba(255,255,255,0.9)'}]}>
+                                    Creative ways to reuse this item
+                                </Text>
+                            </View>
+                            <MaterialCommunityIcons 
+                                name="arrow-right-circle" 
+                                size={24} 
+                                color={pressed ? "white" : "#00C853"} 
+                            />
+                        </>
+                    )}
+                </Pressable>
+
+                {/* MANUAL INPUT */}
+                <Text style={styles.manualInputLabel}>Couldn't get the exact waste result?</Text>
+                <View style={styles.inputWrapper}>
+                    <TextInput 
+                        style={styles.textInput}
+                        placeholder="Type your waste here"
+                        value={manualInput}
+                        onChangeText={setManualInput}
+                    />
+                    <TouchableOpacity onPress={submitManualInput}>
+                        <Feather name="send" size={20} color="#00C853" style={{marginRight: 10}}/>
+                    </TouchableOpacity>
+                </View>
+
+                <TouchableOpacity style={{marginTop: 20, alignItems: 'center'}} onPress={() => {setResult(null); setImage(null);}}>
+                    <Text style={styles.scanAgainLink}>Scan Another Item</Text>
                 </TouchableOpacity>
              </View>
         )}
 
-        {/* 🔘 ACTION BUTTONS */}
-        {!result && !loading && (
-            <View style={styles.actionButtons}>
-                <TouchableOpacity style={styles.scanBtn} onPress={pickImageCamera}>
-                    <MaterialCommunityIcons name="camera" size={20} color="white" style={{marginRight: 10}} />
-                    <Text style={styles.scanBtnText}>Scan Now</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity style={styles.uploadBtn} onPress={pickImageGallery}>
-                    <MaterialCommunityIcons name="image-outline" size={20} color="#00C853" style={{marginRight: 10}} />
-                    <Text style={styles.uploadBtnText}>Upload from Gallery</Text>
-                </TouchableOpacity>
+        {/* 🌿 POST-SCAN RECYCLING TIP */}
+        {result && !loading && (
+            <View style={styles.tipsContainer}>
+                <View style={styles.tipHeaderRow}>
+                    <MaterialCommunityIcons name="leaf" size={18} color="#2E7D32" />
+                    <Text style={styles.tipsTitle}>Recycling Tip</Text>
+                </View>
+                <View style={styles.bulletPoint}><Text style={styles.bulletText}>• {result.recyclingTip}</Text></View>
             </View>
         )}
+        
+        {/* 💰 POST-SCAN COLLECTIBLE NOTE */}
+        {result && !loading && (
+             <View style={styles.collectibleContainer}>
+                 <FontAwesome5 name="coins" size={20} color="#2E7D32" />
+                 <Text style={styles.collectibleText}><Text style={{fontWeight:'bold'}}>This is a Waste Collectible!</Text> Collect and earn rewards.</Text>
+             </View>
+        )}
 
-        {/* 💡 SCANNING TIPS */}
+        {/* 🟢 DEFAULT ACTIONS & TIPS (KUNG WALA PANG SCAN) */}
         {!result && !loading && (
-            <View style={styles.tipsCard}>
-                <View style={styles.tipsHeader}>
-                    <Text style={styles.tipsTitle}>Scanning Tips</Text>
-                    <View style={styles.tipsBadge}>
-                        <Text style={styles.tipsBadgeText}>?</Text>
+            <View>
+                <View style={styles.defaultActions}>
+                    <TouchableOpacity style={styles.scanBtn} onPress={pickImageCamera}>
+                        <MaterialCommunityIcons name="camera" size={20} color="white" style={{marginRight: 10}} />
+                        <Text style={styles.scanBtnText}>Scan Now</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity style={styles.uploadBtn} onPress={pickImageGallery}>
+                        <MaterialCommunityIcons name="image-outline" size={20} color="#00C853" style={{marginRight: 10}} />
+                        <Text style={styles.uploadBtnText}>Upload from Gallery</Text>
+                    </TouchableOpacity>
+                </View>
+
+                {/* 💡 SCANNING TIPS (UPDATED TO GREEN THEME) */}
+                <View style={styles.tipsCard}>
+                    <View style={styles.tipsHeader}>
+                        <Text style={styles.tipsCardTitle}>Scanning Tips</Text>
+                        <View style={styles.tipsBadge}>
+                            <Text style={styles.tipsBadgeText}>?</Text>
+                        </View>
                     </View>
-                </View>
-                
-                <View style={styles.tipItem}>
-                    <View style={styles.bullet} />
-                    <Text style={styles.tipText}>Ensure good lighting for accurate results</Text>
-                </View>
-                <View style={styles.tipItem}>
-                    <View style={styles.bullet} />
-                    <Text style={styles.tipText}>Place the item on a plain background</Text>
-                </View>
-                <View style={styles.tipItem}>
-                    <View style={styles.bullet} />
-                    <Text style={styles.tipText}>Center the waste item in the frame</Text>
+                    
+                    <View style={styles.tipItem}>
+                        <View style={styles.bullet} />
+                        <Text style={styles.tipCardText}>Ensure good lighting for accurate results</Text>
+                    </View>
+                    <View style={styles.tipItem}>
+                        <View style={styles.bullet} />
+                        <Text style={styles.tipCardText}>Place the item on a plain background</Text>
+                    </View>
+                    <View style={styles.tipItem}>
+                        <View style={styles.bullet} />
+                        <Text style={styles.tipCardText}>Center the waste item in the frame</Text>
+                    </View>
                 </View>
             </View>
         )}
 
       </View>
 
-      {/* --- UPCYCLING MODAL --- */}
+      {/* MODAL */}
       {result && (
         <Modal visible={modalVisible} transparent animationType="slide">
             <View style={styles.modalOverlay}>
@@ -251,93 +309,105 @@ export default function ScanPage() {
                         </TouchableOpacity>
                     </View>
                     <Text style={styles.modalSubtitle}>Ideas for {result.detected}:</Text>
-
                     {getSuggestions().map((idea, i) => (
                         <TouchableOpacity key={i} style={styles.modalOption} onPress={() => proceedToProject(idea)}>
                             <Text style={styles.optionText}>{idea}</Text>
                             <MaterialCommunityIcons name="chevron-right" size={24} color="#00C853" />
                         </TouchableOpacity>
                     ))}
-
-                    <Text style={[styles.label, {marginTop: 15, marginBottom: 5}]}>Others (Type your idea):</Text>
-                    <View style={styles.customInputRow}>
-                        <TextInput 
-                            style={styles.customInput} 
-                            placeholder="e.g., Robot Toy" 
-                            value={customIdea} 
-                            onChangeText={setCustomIdea}
-                        />
-                        <TouchableOpacity 
-                            style={[styles.goBtn, !customIdea.trim() && {backgroundColor:'#ccc'}]} 
-                            disabled={!customIdea.trim()}
-                            onPress={() => proceedToProject(customIdea)}
-                        >
-                            <MaterialCommunityIcons name="arrow-right" size={24} color="white" />
-                        </TouchableOpacity>
-                    </View>
                 </View>
             </View>
         </Modal>
       )}
-
-      <View style={{height: 100}} /> 
+      <View style={{height: 50}} /> 
     </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flexGrow: 1, backgroundColor: '#F4F6F8' },
-  headerBg: { backgroundColor: '#00C853', paddingTop: 60, paddingBottom: 25, paddingHorizontal: 20, borderBottomLeftRadius: 25, borderBottomRightRadius: 25, marginBottom: 20 },
-  headerContent: { alignItems: 'center', position: 'relative' },
-  headerTitle: { color: 'white', fontSize: 20, fontWeight: 'bold' },
-  headerSubtitle: { color: 'rgba(255,255,255,0.9)', fontSize: 12, marginTop: 5 },
-  bodyContent: { paddingHorizontal: 20 },
-  cameraContainer: { 
-    width: '100%', height: 280, borderRadius: 15, overflow: 'hidden', 
-    backgroundColor: '#EEEEEE', 
-    marginBottom: 25, elevation: 4, justifyContent: 'center', alignItems: 'center',
-    borderWidth: 1, borderColor: '#E0E0E0', borderStyle: 'dashed'
-  },
-  cameraImage: { width: '100%', height: '100%', resizeMode: 'cover' },
-  placeholderContainer: { alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%' },
-  iconCircle: { width: 70, height: 70, borderRadius: 35, backgroundColor: '#E8F5E9', justifyContent: 'center', alignItems: 'center', marginBottom: 15 },
-  placeholderText: { fontSize: 18, fontWeight: 'bold', color: '#424242' },
-  placeholderSubText: { fontSize: 14, color: '#757575', marginTop: 2 },
-  loadingOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(255,255,255,0.8)', justifyContent: 'center', alignItems: 'center' },
-  loadingText: { marginTop: 15, color: '#00C853', fontWeight: 'bold' },
-  newResultCard: { backgroundColor: 'white', borderRadius: 15, overflow: 'hidden', elevation: 5, shadowColor: '#000', shadowOffset: {width: 0, height: 2}, shadowOpacity: 0.1, shadowRadius: 4, marginBottom: 20 },
-  cardHeader: { backgroundColor: '#E8F5E9', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12, paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: '#C8E6C9' },
-  cardHeaderText: { fontSize: 16, fontWeight: 'bold', color: '#2E7D32' },
-  confidenceBadge: { backgroundColor: '#00C853', paddingVertical: 4, paddingHorizontal: 10, borderRadius: 12 },
-  confidenceText: { color: 'white', fontSize: 11, fontWeight: 'bold' },
-  cardBody: { padding: 20 },
-  label: { fontSize: 12, color: '#757575', fontWeight: '600' },
-  detectedTitle: { fontSize: 22, fontWeight: 'bold', color: '#00C853', marginBottom: 2 },
-  categoryTitle: { fontSize: 18, color: '#333', fontWeight: '500' },
-  progressBarBg: { height: 8, backgroundColor: '#E0E0E0', borderRadius: 4, overflow: 'hidden' },
+  headerBg: { backgroundColor: '#00C853', paddingTop: 50, paddingBottom: 30, paddingHorizontal: 20, borderBottomLeftRadius: 30, borderBottomRightRadius: 30, marginBottom: 10 },
+  backBtn: { marginBottom: 5 },
+  headerTitle: { color: 'white', fontSize: 22, fontWeight: 'bold' },
+  headerSubtitle: { color: 'rgba(255,255,255,0.9)', fontSize: 13 },
+  bodyContent: { paddingHorizontal: 20, marginTop: -20 },
+  cameraContainer: { width: '100%', height: 250, borderRadius: 20, overflow: 'hidden', backgroundColor: '#fff', marginBottom: 20, elevation: 4, justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOffset: {width: 0, height: 2}, shadowOpacity: 0.1, shadowRadius: 4 },
+  cameraImage: { width: '100%', height: '100%', resizeMode: 'contain' },
+  loadingContainer: { alignItems: 'center' },
+  loadingText: { marginTop: 10, color: '#00C853', fontWeight: 'bold' },
+  placeholderContainer: { alignItems: 'center' },
+  iconCircle: { width: 60, height: 60, borderRadius: 30, backgroundColor: '#E8F5E9', justifyContent: 'center', alignItems: 'center', marginBottom: 10 },
+  placeholderText: { fontSize: 16, color: '#666', fontWeight: 'bold' },
+  
+  resultCard: { backgroundColor: 'white', borderRadius: 15, padding: 20, elevation: 3, shadowColor: '#000', shadowOffset: {width: 0, height: 2}, shadowOpacity: 0.1, shadowRadius: 4, marginBottom: 20 },
+  cardHeaderTitle: { fontSize: 14, fontWeight: 'bold', color: '#333', marginBottom: 10 },
+  accuracyContainer: { marginBottom: 15 },
+  progressBarBg: { height: 8, backgroundColor: '#E0E0E0', borderRadius: 4, overflow: 'hidden', marginBottom: 5 },
   progressBarFill: { height: '100%', backgroundColor: '#00C853', borderRadius: 4 },
-  tipBox: { backgroundColor: '#E3F2FD', padding: 15, borderRadius: 10, marginTop: 20, borderLeftWidth: 4, borderLeftColor: '#2196F3' },
-  tipHeader: { fontWeight: 'bold', color: '#1565C0' },
-  tipText: { color: '#0D47A1', fontSize: 13, lineHeight: 18 },
-  barangayNoteBox: { marginTop: 20, backgroundColor: '#FFF3E0', padding: 15, borderRadius: 10, borderWidth: 1, borderColor: '#FFB300', alignItems: 'center' },
-  barangayNoteText: { color: '#E65100', fontSize: 13, textAlign: 'center', lineHeight: 18 },
-  upcycleBtn: { marginTop: 20, backgroundColor: '#2979FF', flexDirection: 'row', justifyContent: 'center', alignItems: 'center', padding: 15, borderRadius: 12, elevation: 3 },
-  upcycleBtnText: { color: 'white', fontSize: 16, fontWeight: 'bold' },
-  scanAgainBtn: { paddingVertical: 15, borderTopWidth: 1, borderTopColor: '#eee', alignItems: 'center' },
-  scanAgainText: { color: '#757575', fontWeight: '600' },
-  actionButtons: { gap: 15 },
+  accuracyText: { fontSize: 12, color: '#00C853', fontWeight: 'bold' },
+  smallLabel: { fontSize: 12, color: '#888', marginBottom: 2 },
+  mainWasteTitle: { fontSize: 20, fontWeight: 'bold', color: '#00C853', marginBottom: 10 },
+  categoryText: { fontSize: 16, color: '#333', marginBottom: 10 },
+  statusChip: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', backgroundColor: '#E8F5E9', paddingVertical: 6, paddingHorizontal: 12, borderRadius: 20, borderWidth: 1, borderColor: '#C8E6C9' },
+  statusText: { color: '#2E7D32', fontWeight: 'bold', fontSize: 12, marginLeft: 5 },
+  actionLabel: { fontSize: 13, fontWeight: 'bold', color: '#333', marginTop: 20, marginBottom: 10 },
+  
+  // 👇 BUTTON STYLES (Used for BOTH Buttons now)
+  outlinedBtn: {
+      backgroundColor: 'white', 
+      borderRadius: 12, 
+      padding: 15, 
+      flexDirection: 'row', 
+      justifyContent: 'space-between', 
+      alignItems: 'center', 
+      marginBottom: 10,
+      borderWidth: 1,
+      borderColor: '#00C853' 
+  },
+  outlinedBtnActive: {
+      backgroundColor: '#00C853', // Nagiging Green pag pinindot (Hover effect)
+  },
+  outlinedBtnTitle: { color: '#00C853', fontWeight: 'bold', fontSize: 14 },
+  outlinedBtnSub: { color: '#666', fontSize: 11 },
+
+  manualInputLabel: { fontSize: 12, color: '#666', fontWeight: '600', marginBottom: 5 },
+  inputWrapper: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#ccc', borderRadius: 10, paddingHorizontal: 5, backgroundColor: '#F9F9F9' },
+  textInput: { flex: 1, paddingVertical: 10, paddingHorizontal: 10, fontSize: 14, color: '#333' },
+  scanAgainLink: { color: '#00C853', fontWeight: 'bold', fontSize: 14 },
+  
+  // POST-SCAN TIPS
+  tipsContainer: { backgroundColor: 'white', borderRadius: 15, padding: 15, borderWidth: 1, borderColor: '#4CAF50', marginBottom: 15 },
+  tipHeaderRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 5 },
+  tipsTitle: { fontWeight: 'bold', color: '#2E7D32', marginLeft: 5, fontSize: 14 },
+  bulletPoint: { marginTop: 5, paddingLeft: 5 },
+  bulletText: { fontSize: 12, color: '#2E7D32', lineHeight: 18 },
+  collectibleContainer: { backgroundColor: '#E8F5E9', borderRadius: 15, padding: 15, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#81C784', marginBottom: 30 },
+  collectibleText: { flex: 1, marginLeft: 10, fontSize: 12, color: '#1B5E20' },
+  
+  defaultActions: { gap: 15, marginTop: 10 },
   scanBtn: { backgroundColor: '#00C853', flexDirection: 'row', justifyContent: 'center', alignItems: 'center', padding: 16, borderRadius: 12, elevation: 3 },
   scanBtnText: { color: 'white', fontSize: 16, fontWeight: 'bold' },
   uploadBtn: { backgroundColor: 'white', flexDirection: 'row', justifyContent: 'center', alignItems: 'center', padding: 16, borderRadius: 12, borderWidth: 1, borderColor: '#00C853' },
   uploadBtnText: { color: '#00C853', fontSize: 16, fontWeight: 'bold' },
-  tipsCard: { backgroundColor: '#E8F0FE', marginTop: 25, padding: 20, borderRadius: 15, borderWidth: 1, borderColor: '#D1E3FC' },
+  
+  // 👇 PRE-SCAN TIPS CARD (UPDATED TO GREEN THEME)
+  tipsCard: { 
+      backgroundColor: '#E8F5E9', // Light Green (instead of Teal)
+      marginTop: 25, 
+      padding: 20, 
+      borderRadius: 15, 
+      borderWidth: 1, 
+      borderColor: '#C8E6C9' 
+  },
   tipsHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
-  tipsTitle: { color: '#1565C0', fontWeight: 'bold', fontSize: 16 },
-  tipsBadge: { backgroundColor: '#FF5722', width: 24, height: 24, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
+  tipsCardTitle: { color: '#2E7D32', fontWeight: 'bold', fontSize: 16 }, // Dark Green Text
+  tipsBadge: { backgroundColor: '#00C853', width: 24, height: 24, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
   tipsBadgeText: { color: 'white', fontWeight: 'bold', fontSize: 12 },
   tipItem: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 10 },
-  bullet: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#1976D2', marginTop: 6, marginRight: 10 },
-  tipText: { color: '#0D47A1', fontSize: 13, lineHeight: 18, flex: 1 },
+  bullet: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#00C853', marginTop: 6, marginRight: 10 }, // Green Bullet
+  tipCardText: { color: '#1B5E20', fontSize: 13, lineHeight: 18, flex: 1 }, // Dark Green Text
+
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
   modalContent: { backgroundColor: 'white', padding: 25, borderTopLeftRadius: 25, borderTopRightRadius: 25 },
   modalHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
@@ -345,7 +415,4 @@ const styles = StyleSheet.create({
   modalSubtitle: { fontSize: 14, color: '#666', marginBottom: 15 },
   modalOption: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 15, borderBottomWidth: 1, borderColor: '#eee', alignItems: 'center' },
   optionText: { fontSize: 16, color: '#333', fontWeight: '500' },
-  customInputRow: { flexDirection: 'row', gap: 10, marginTop: 5 },
-  customInput: { flex: 1, backgroundColor: '#F5F5F5', padding: 12, borderRadius: 10, borderWidth: 1, borderColor: '#DDD' },
-  goBtn: { width: 50, backgroundColor: '#00C853', borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
 });
