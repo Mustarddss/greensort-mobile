@@ -150,7 +150,6 @@ export default function Signup() {
 }
 
 const styles = StyleSheet.create({
-  // Binago ko ang 'container' to 'scrollContainer' at inalis ang flex:1 dito dahil nasa KeyboardAvoidingView na
   scrollContainer: { 
     flexGrow: 1, 
     paddingHorizontal: 30, 
@@ -163,8 +162,8 @@ const styles = StyleSheet.create({
     marginBottom: 10 
   },
   logoImage: {
-    width: 150, 
-    height: 100, 
+    width: 200, 
+    height: 200, 
   },
 
   headerTextContainer: { 
@@ -210,7 +209,7 @@ const styles = StyleSheet.create({
     alignItems: 'center', 
     marginTop: 30, 
     marginBottom: 10,
-    shadowColor: '#00C853', 
+    shadowColor: '#000', 
     shadowOpacity: 0.2, 
     shadowRadius: 4, 
     elevation: 3 

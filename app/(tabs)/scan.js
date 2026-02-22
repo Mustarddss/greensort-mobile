@@ -3,9 +3,11 @@ import { StyleSheet, Text, View, Image, ActivityIndicator, Alert, TouchableOpaci
 import * as ImagePicker from 'expo-image-picker';
 import { MaterialCommunityIcons, Ionicons, FontAwesome5, Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context'; // 👈 Import for Giant Header Fix
 
 export default function ScanPage() {
   const router = useRouter();
+  const insets = useSafeAreaInsets(); // 👈 Kukunin ang exact height ng Notch/Status Bar
   
   // STATES
   const [image, setImage] = useState(null);
@@ -104,7 +106,7 @@ export default function ScanPage() {
     <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
       
       {/* HEADER */}
-      <View style={styles.headerBg}>
+      <View style={[styles.header, { paddingTop: Math.max(insets.top, 20) + 15 }]}>
           <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
              <Ionicons name="arrow-back" size={24} color="white" />
           </TouchableOpacity>
@@ -327,10 +329,16 @@ export default function ScanPage() {
 
 const styles = StyleSheet.create({
   container: { flexGrow: 1, backgroundColor: '#F4F6F8' },
-  headerBg: { backgroundColor: '#00C853', paddingTop: 50, paddingBottom: 30, paddingHorizontal: 20, borderBottomLeftRadius: 30, borderBottomRightRadius: 30, marginBottom: 10 },
+  headerBg: { backgroundColor: '#00C853', 
+    paddingTop: 50, 
+    paddingBottom: 30, 
+    paddingHorizontal: 20, 
+    borderBottomLeftRadius: 30, 
+    borderBottomRightRadius: 30, 
+    marginBottom: 10 },
   backBtn: { marginBottom: 5 },
-  headerTitle: { color: 'white', fontSize: 22, fontWeight: 'bold' },
-  headerSubtitle: { color: 'rgba(255,255,255,0.9)', fontSize: 13 },
+  headerTitle: { color: 'white', fontSize: 22, textAlign: 'center', fontWeight: 'bold' },
+  headerSubtitle: { color: 'rgba(255,255,255,0.9)', textAlign: 'center', fontSize: 13 },
   bodyContent: { paddingHorizontal: 20, marginTop: -20 },
   cameraContainer: { width: '100%', height: 250, borderRadius: 20, overflow: 'hidden', backgroundColor: '#fff', marginBottom: 20, elevation: 4, justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOffset: {width: 0, height: 2}, shadowOpacity: 0.1, shadowRadius: 4 },
   cameraImage: { width: '100%', height: '100%', resizeMode: 'contain' },

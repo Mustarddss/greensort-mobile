@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, ActivityIndicator, Alert } from 'react-native';
 import { MaterialCommunityIcons, Ionicons, FontAwesome5 } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-
+import { useSafeAreaInsets } from 'react-native-safe-area-context'; // 👈 Import for Giant Header Fix
 // 👇 MOCK DATABASE (Ito ang temporary data habang offline)
 const MOCK_LOCATIONS = [
   {
@@ -31,6 +31,7 @@ const MOCK_LOCATIONS = [
 
 export default function Rewards() {
   const router = useRouter();
+  const insets = useSafeAreaInsets(); // 👈 Kukunin ang exact height ng Notch/Status Bar
   
   // 🟢 INPUT STATES
   const [wasteType, setWasteType] = useState('');
@@ -84,7 +85,7 @@ export default function Rewards() {
         <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
         
             {/* 🟠 HEADER */}
-            <View style={styles.header}>
+            <View style={[styles.header, { paddingTop: Math.max(insets.top, 20) + 15 }]}>
                 <View style={styles.headerRow}>
                     <TouchableOpacity onPress={() => router.back()}>
                         <Ionicons name="arrow-back" size={24} color="white" />

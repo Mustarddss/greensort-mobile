@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { StyleSheet, Text, View, Image, TouchableOpacity, ScrollView, FlatList, ActivityIndicator, BackHandler } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { MaterialCommunityIcons, Ionicons, FontAwesome5 } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context'; // 👈 Import for Giant Header Fix
 
 // 👇 DATABASE MOCK DATA (Ready for MongoDB)
 const INITIAL_PROJECTS = [
@@ -68,6 +69,7 @@ export default function ProjectsPage() {
   const [projects, setProjects] = useState(INITIAL_PROJECTS);
   const [selectedProject, setSelectedProject] = useState(null);
   const [loading, setLoading] = useState(false);
+    const insets = useSafeAreaInsets(); // 👈 Kukunin ang exact height ng Notch/Status Bar
 
   // 🔄 1. DEEP LINK LOGIC (FIXED: CONSUME & CLEAR)
   useEffect(() => {
@@ -204,7 +206,7 @@ export default function ProjectsPage() {
   // 📋 RENDER: LIST VIEW (Default)
   return (
     <View style={styles.container}>
-      <View style={styles.headerBg}>
+      <View style={[styles.header, { paddingTop: Math.max(insets.top, 20) + 15 }]}>
           <View style={styles.headerRow}>
              <TouchableOpacity onPress={() => router.back()}>
                 <Ionicons name="arrow-back" size={24} color="white" />
@@ -248,12 +250,49 @@ export default function ProjectsPage() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F4F6F8' },
-  headerBg: { backgroundColor: '#0288D1', paddingTop: 60, paddingBottom: 25, paddingHorizontal: 20, borderBottomLeftRadius: 25, borderBottomRightRadius: 25, marginBottom: 10, elevation: 4 },
-  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  headerTitle: { color: 'white', fontSize: 20, fontWeight: 'bold' },
-  headerSubtitle: { color: 'rgba(255,255,255,0.8)', fontSize: 12, marginTop: 5, textAlign: 'center' },
-  listContainer: { padding: 20 },
-  card: { backgroundColor: 'white', borderRadius: 15, marginBottom: 20, overflow: 'hidden', elevation: 3, shadowColor: '#000', shadowOffset: {width: 0, height: 2}, shadowOpacity: 0.1, shadowRadius: 4 },
+  headerBg: { 
+    backgroundColor: '#0288D1', 
+    paddingTop: 60, 
+    paddingBottom: 25, 
+    paddingHorizontal: 20, 
+    borderBottomLeftRadius: 25, 
+    borderBottomRightRadius: 25, 
+    marginBottom: 10, 
+    elevation: 4 
+},
+  headerRow: { 
+    flexDirection: 'row', 
+    justifyContent: 'space-between', 
+    alignItems: 'center' 
+},
+  headerTitle: { 
+    color: 'white', 
+    fontSize: 20, 
+    fontWeight: 'bold' 
+},
+  headerSubtitle: { 
+    color: 'rgba(255,255,255,0.8)', 
+    fontSize: 12, 
+    marginTop: 5, 
+    textAlign: 'center' 
+},
+  listContainer: { 
+    padding: 20 
+},
+  card: { 
+    backgroundColor: 'white', 
+    borderRadius: 15, 
+    marginBottom: 20, 
+    overflow: 'hidden', 
+    elevation: 3, 
+    shadowColor: '#000', 
+    shadowOffset: {
+        width: 0, 
+        height: 2
+    }, 
+    shadowOpacity: 0.1, 
+    shadowRadius: 4 
+},
   cardImage: { width: '100%', height: 180, resizeMode: 'cover' },
   cardContent: { padding: 15 },
   cardTitle: { fontSize: 18, fontWeight: 'bold', color: '#333', marginBottom: 10 },
@@ -280,7 +319,7 @@ const styles = StyleSheet.create({
   stepNumber: { color: 'white', fontWeight: 'bold' },
   stepText: { color: '#444', fontSize: 14, flex: 1, lineHeight: 20 },
   priceBox: { backgroundColor: '#E8F5E9', borderWidth: 1, borderColor: '#C8E6C9', borderRadius: 15, padding: 15, marginBottom: 20 },
-  priceLabel: { color: '#388E3C', fontWeight: 'bold', fontSize: 14 },
+  priceLabel: { color: '#38628e', fontWeight: 'bold', fontSize: 14 },
   priceValue: { color: '#2E7D32', fontSize: 24, fontWeight: 'bold', marginVertical: 5 },
   priceSub: { color: '#888', fontSize: 11 },
 });

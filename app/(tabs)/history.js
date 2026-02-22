@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, FlatList } from 'react-native';
-import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router'; // 👈 Import Router
+import { StyleSheet, Text, View, Image, TouchableOpacity, FlatList, StatusBar } from 'react-native';
+import { useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // 🗄️ MOCK DATABASE
 const SURRENDER_HISTORY = [
@@ -10,130 +11,99 @@ const SURRENDER_HISTORY = [
     item: 'Plastic Bottles (PET)',
     image: 'https://images.unsplash.com/photo-1605600659908-0ef719419d41?q=80&w=200',
     weight: '2.5 kg',
-    points: 'Waiting...', 
-    date: 'Just Now',
-    status: 'pending', 
-    location: 'Barangay Hall Drop-off'
+    date: 'Jan 12, 2026',
+    location: 'Barangay Sampaloc I',
   },
   {
     id: '2',
-    item: 'Glass Bottles',
+    item: 'Paper & Cardboard',
     image: 'https://images.unsplash.com/photo-1605600659873-d808a13e4d2a?q=80&w=200',
-    weight: '3.2 kg',
-    points: '+32 pts',
-    date: 'Jan 10, 2026',
-    status: 'approved', 
-    location: 'Roaming Truck'
+    weight: '4 kg',
+    date: 'Jan 14, 2026',
+    location: 'Barangay Luciano',
   },
   {
     id: '3',
-    item: 'Greasy Pizza Box',
+    item: 'Glass Bottles',
     image: 'https://images.unsplash.com/photo-1595278069441-2cf29f525a3c?q=80&w=200',
-    weight: '1.0 kg',
-    points: '0 pts',
+    weight: '3.2 kg',
+    date: 'Jan 10, 2026',
+    location: 'Barangay Paliparan II',
+  },
+  {
+    id: '4',
+    item: 'Metal Can',
+    image: 'https://images.unsplash.com/photo-1595278069441-2cf29f525a3c?q=80&w=200',
+    weight: '1.5 kg',
     date: 'Jan 07, 2026',
-    status: 'rejected', 
-    reason: 'Contaminated with food waste. Cannot be recycled.',
-    location: 'Barangay Hall Drop-off'
+    location: 'Barangay Salitran I',
+  },
+   {
+    id: '5',
+    item: 'Cardboard Boxes',
+    image: 'https://images.unsplash.com/photo-1605600659873-d808a13e4d2a?q=80&w=200',
+    weight: '5.5 kg',
+    date: 'Jan 07, 2026',
+    location: 'Barangay Salitran I',
   },
 ];
 
 export default function HistoryPage() {
-  const router = useRouter(); // 👈 Initialize Router
-  const [filter, setFilter] = useState('All');
+  const router = useRouter(); 
+  const insets = useSafeAreaInsets();
 
-  const getFilteredData = () => {
-    if (filter === 'All') return SURRENDER_HISTORY;
-    return SURRENDER_HISTORY.filter(item => item.status === filter.toLowerCase());
-  };
-
-  const getStatusColor = (status) => {
-    switch(status) {
-        case 'approved': return '#00C853'; 
-        case 'pending': return '#FFAB00'; 
-        case 'rejected': return '#FF1744'; 
-        default: return '#999';
-    }
-  };
+  // Calculate Total Weight
+  const totalWeight = SURRENDER_HISTORY
+    .reduce((sum, item) => sum + parseFloat(item.weight.split(' ')[0]), 0)
+    .toFixed(1);
 
   const renderItem = ({ item }) => (
     <View style={styles.card}>
         <Image source={{ uri: item.image }} style={styles.cardImage} />
         
         <View style={styles.cardContent}>
-            <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'flex-start'}}>
-                <View>
-                    <Text style={styles.itemTitle}>{item.item}</Text>
-                    <Text style={styles.locationText}><MaterialCommunityIcons name="map-marker" size={10} /> {item.location}</Text>
-                </View>
-                
-                <View style={[styles.statusBadge, {backgroundColor: getStatusColor(item.status)}]}>
-                    <Text style={styles.statusText}>
-                        {item.status === 'pending' ? 'IN REVIEW' : item.status.toUpperCase()}
-                    </Text>
-                </View>
-            </View>
-
-            <View style={styles.divider} />
-
-            <View style={styles.row}>
-                <Text style={styles.label}>Weight submitted:</Text>
-                <Text style={styles.value}>{item.weight}</Text>
-            </View>
-
-            <View style={styles.row}>
-                <Text style={styles.label}>Points awarded:</Text>
-                <Text style={[styles.value, {color: item.status === 'approved' ? '#00C853' : '#666'}]}>
-                    {item.points}
-                </Text>
-            </View>
+            <Text style={styles.itemTitle}>{item.item}</Text>
             
-            <Text style={styles.dateText}>{item.date}</Text>
+            <View style={styles.row}>
+                <Text style={styles.label}>Weight: </Text>
+                <Text style={styles.weightValue}>{item.weight}</Text>
+            </View>
 
-            {item.status === 'rejected' && (
-                <View style={styles.errorBox}>
-                    <MaterialCommunityIcons name="alert-circle-outline" size={16} color="#D32F2F" />
-                    <Text style={styles.errorText}>Admin Note: {item.reason}</Text>
-                </View>
-            )}
-             {item.status === 'pending' && (
-                <View style={styles.pendingBox}>
-                    <MaterialCommunityIcons name="clock-outline" size={16} color="#E65100" />
-                    <Text style={styles.pendingText}>Admin is verifying your photo...</Text>
-                </View>
-            )}
+            <Text style={styles.dateText}>{item.date}</Text>
+            <Text style={styles.locationText}>{item.location}</Text>
         </View>
     </View>
   );
 
   return (
     <View style={styles.container}>
-      {/* 🟢 HEADER WITH BACK BUTTON */}
-      <View style={styles.header}>
+      <StatusBar barStyle="light-content" backgroundColor="#D500F9" />
+      
+      {/* 🟣 HEADER (CENTERED) */}
+      <View style={[styles.header, { paddingTop: Math.max(insets.top, 20) + 15 }]}>
         <View style={styles.headerRow}>
-            <TouchableOpacity onPress={() => router.back()} style={{marginRight: 10}}>
+            {/* Back Button (Absolute Left) */}
+            <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
                 <Ionicons name="arrow-back" size={24} color="white" />
             </TouchableOpacity>
+            
+            {/* Title (Centered) */}
             <Text style={styles.headerTitle}>Surrender History</Text>
         </View>
-        <Text style={styles.headerSubtitle}>Track status of your submissions</Text>
+        <Text style={styles.headerSubtitle}>Track your waste submissions</Text>
       </View>
 
-      {/* FILTER TABS */}
-      <View style={styles.filterContainer}>
-        {['All', 'Approved', 'Pending', 'Rejected'].map((tab) => (
-            <TouchableOpacity 
-                key={tab} 
-                style={[styles.filterBtn, filter === tab && styles.filterBtnActive]}
-                onPress={() => setFilter(tab)}
-            >
-                <Text style={[styles.filterText, filter === tab && styles.filterTextActive]}>{tab}</Text>
-            </TouchableOpacity>
-        ))}
+      {/* ⚪ SUMMARY CARD */}
+      <View style={styles.summaryCardContainer}>
+        <View style={styles.summaryCard}>
+            <Text style={styles.summaryLabel}>Kilograms Collected</Text>
+            <Text style={styles.summaryValue}>{totalWeight} KG</Text>
+        </View>
       </View>
 
+      {/* 📋 LIST */}
       <FlatList
-        data={getFilteredData()}
+        data={SURRENDER_HISTORY}
         renderItem={renderItem}
         keyExtractor={item => item.id}
         contentContainerStyle={styles.listContainer}
@@ -144,46 +114,70 @@ export default function HistoryPage() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F5F7FA' },
-  
-  // UPDATED HEADER STYLES
-  header: { 
+  container: { flex: 1, backgroundColor: '#F3E5F5' }, 
+
+  // Header Styles
+  headerBg: { 
       backgroundColor: '#D500F9', 
-      padding: 25, 
       paddingTop: 60, 
+      paddingBottom: 25, 
+      paddingHorizontal: 20, 
       borderBottomLeftRadius: 30, 
-      borderBottomRightRadius: 30 
+      borderBottomRightRadius: 30,
+      elevation: 5,
+      alignItems: 'center' // Ensures subtitle centers
   },
-  headerRow: { flexDirection: 'row', alignItems: 'center' }, // Aligns arrow and title
-  headerTitle: { fontSize: 24, fontWeight: 'bold', color: 'white' },
-  headerSubtitle: { color: 'rgba(255,255,255,0.8)', marginTop: 5, marginLeft: 34 }, // Aligned with title
+  headerRow: { 
+      flexDirection: 'row', 
+      alignItems: 'center', 
+      justifyContent: 'center', // Centers the title
+      marginBottom: 5,
+      width: '100%',
+      position: 'relative' // Needed for absolute positioning of back button
+  },
+  backButton: {
+      position: 'absolute',
+      left: 0,
+      zIndex: 10,
+      padding: 5
+  },
+  headerTitle: { fontSize: 22, fontWeight: 'bold', color: 'white' },
+  headerSubtitle: { color: 'rgba(255,255,255,0.9)', fontSize: 13, textAlign: 'center' },
 
-  filterContainer: { flexDirection: 'row', paddingHorizontal: 20, marginTop: 20, marginBottom: 10 },
-  filterBtn: { paddingHorizontal: 15, paddingVertical: 8, borderRadius: 20, marginRight: 10, backgroundColor: 'white', borderWidth: 1, borderColor: '#EEE' },
-  filterBtnActive: { backgroundColor: '#D500F9', borderColor: '#D500F9' },
-  filterText: { fontSize: 12, color: '#666', fontWeight: '600' },
-  filterTextActive: { color: 'white' },
+  // Summary Card
+  summaryCardContainer: { 
+      paddingHorizontal: 20, 
+      marginTop: 20,     
+      marginBottom: 15 
+  },
+  summaryCard: {
+    backgroundColor: 'white',
+    borderRadius: 15,
+    padding: 15,
+    alignItems: 'center', 
+    elevation: 4,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4,
+    borderWidth: 1, borderColor: '#E1BEE7'
+  },
+  summaryLabel: { fontSize: 12, fontWeight: 'bold', color: '#555', textTransform: 'uppercase', letterSpacing: 0.5 },
+  summaryValue: { fontSize: 28, fontWeight: 'bold', color: '#333', marginTop: 5 },
 
-  listContainer: { padding: 20 },
-  card: { backgroundColor: 'white', borderRadius: 15, marginBottom: 15, padding: 15, flexDirection: 'row', elevation: 2 },
-  cardImage: { width: 80, height: 80, borderRadius: 10, backgroundColor: '#EEE' },
-  cardContent: { flex: 1, marginLeft: 15 },
+  // List Styles
+  listContainer: { paddingHorizontal: 20, paddingBottom: 20 },
+  card: { 
+      backgroundColor: 'white', borderRadius: 15, marginBottom: 15, padding: 15, 
+      flexDirection: 'row', alignItems: 'center',
+      elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2
+  },
+  cardImage: { width: 60, height: 80, borderRadius: 10, backgroundColor: '#f0f0f0', marginRight: 15, resizeMode: 'cover' },
+  cardContent: { flex: 1, justifyContent: 'center' },
   
-  itemTitle: { fontSize: 16, fontWeight: 'bold', color: '#333' },
-  locationText: { fontSize: 10, color: '#888', marginTop: 2 },
+  itemTitle: { fontSize: 15, fontWeight: 'bold', color: '#333', marginBottom: 4 },
   
-  statusBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, alignSelf: 'flex-start' },
-  statusText: { color: 'white', fontSize: 10, fontWeight: 'bold' },
+  row: { flexDirection: 'row', alignItems: 'center', marginBottom: 2 },
+  label: { fontSize: 12, color: '#555' },
+  weightValue: { fontSize: 12, fontWeight: 'bold', color: '#333' },
 
-  divider: { height: 1, backgroundColor: '#F0F0F0', marginVertical: 8 },
-  row: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 2 },
-  label: { fontSize: 12, color: '#666' },
-  value: { fontSize: 12, fontWeight: 'bold', color: '#333' },
-  dateText: { fontSize: 10, color: '#999', marginTop: 5, textAlign: 'right' },
-  
-  errorBox: { marginTop: 8, backgroundColor: '#FFEBEE', padding: 8, borderRadius: 8, flexDirection: 'row', alignItems: 'center' },
-  errorText: { color: '#D32F2F', fontSize: 11, marginLeft: 5, flex: 1 },
-  
-  pendingBox: { marginTop: 8, backgroundColor: '#FFF3E0', padding: 8, borderRadius: 8, flexDirection: 'row', alignItems: 'center' },
-  pendingText: { color: '#E65100', fontSize: 11, marginLeft: 5 },
+  dateText: { fontSize: 11, color: '#888', marginBottom: 1 },
+  locationText: { fontSize: 11, color: '#666' },
 });

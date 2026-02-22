@@ -1,10 +1,18 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Image, ScrollView, StatusBar } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, StatusBar, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context'; // 👈 ANG SAGOT SA GIANT HEADER
+
+// Safe shadow para iwas Red Screen sa Android
+const getSafeShadow = () => Platform.select({
+  ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4 },
+  android: { elevation: 3 }
+});
 
 export default function Profile() {
   const router = useRouter();
+  const insets = useSafeAreaInsets(); // 👈 Kinukuha ang exact height ng status bar
 
   // Mock User Data
   const [user] = useState({
@@ -22,18 +30,38 @@ export default function Profile() {
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#00C853" />
+      <StatusBar barStyle="light-content" backgroundColor="#00C853" translucent={true} />
       
-      {/* HEADER */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-            <MaterialCommunityIcons name="arrow-left" size={24} color="white" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Profile</Text>
-        <Text style={styles.headerSubtitle}>Your GreenSort account details</Text>
+      {/* 🟢 HEADER (DYNAMIC PADDING FIX) */}
+      <View style={[
+          styles.header, 
+          // Pinipigilang mag-doble ang laki ng header
+          { paddingTop: Math.max(insets.top, 20) + 15 } 
+      ]}>
+        
+        {/* 3-COLUMN TRICK PARA PERFECT CENTER */}
+        <View style={styles.headerRow}>
+            
+            {/* COLUMN 1: Back Button (Left) */}
+            <View style={styles.headerSide}>
+                <TouchableOpacity onPress={() => router.back()} style={{padding: 5}}>
+                    <MaterialCommunityIcons name="arrow-left" size={28} color="white" />
+                </TouchableOpacity>
+            </View>
+
+            {/* COLUMN 2: Header Text (Center) */}
+            <View style={styles.headerCenter}>
+                <Text style={styles.headerTitle}>Profile</Text>
+                <Text style={styles.headerSubtitle}>Your GreenSort account details</Text>
+            </View>
+
+            {/* COLUMN 3: Invisible Spacer (Right) - Ito ang magpapapantay sa back button! */}
+            <View style={styles.headerSide} />
+            
+        </View>
       </View>
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         
         {/* ID CARD */}
         <View style={styles.idCard}>
@@ -72,15 +100,10 @@ export default function Profile() {
 
         {/* 🟢 BUTTONS ACTION AREA */}
         <View style={styles.actionArea}>
-            {/* APPLY BUTTON */}
-            <TouchableOpacity 
-                style={styles.applyButton} 
-                onPress={() => router.push('/register-location')} // Dito pupunta sa bagong form
-            >
+            <TouchableOpacity style={styles.applyButton} onPress={() => router.push('/register-location')}>
                 <Text style={styles.applyButtonText}>Apply as Drop-off Point</Text>
             </TouchableOpacity>
 
-            {/* LOGOUT BUTTON */}
             <TouchableOpacity style={styles.logoutButton} onPress={() => router.replace('/login')}>
                 <Text style={styles.logoutButtonText}>LOGOUT</Text>
             </TouchableOpacity>
@@ -111,26 +134,44 @@ const StatItem = ({ icon, value, label }) => (
 );
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#E8F5E9' }, // Light green background
+  container: { flex: 1, backgroundColor: '#E8F5E9' }, 
+  
+  // 🟢 HEADER STYLES
   header: {
     backgroundColor: '#00C853',
-    paddingTop: 50, paddingBottom: 30, paddingHorizontal: 20,
-    borderBottomLeftRadius: 30, borderBottomRightRadius: 30,
+    paddingBottom: 35, // Space para sa umapaw na card
+    paddingHorizontal: 15,
+    borderBottomLeftRadius: 30, 
+    borderBottomRightRadius: 30,
+    // WALA NANG HARDCODED PADDINGTOP DITO!
   },
-  headerTitle: { fontSize: 24, fontWeight: 'bold', color: 'white', marginTop: 10 },
-  headerSubtitle: { color: '#E8F5E9', fontSize: 14 },
-  content: { flex: 1, paddingHorizontal: 20, marginTop: -20 },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
+  },
+  // Fixed width para sa left/right columns para sumakto sa gitna ang text
+  headerSide: { width: 50, alignItems: 'flex-start' }, 
+  headerCenter: { flex: 1, alignItems: 'center' },
   
+  headerTitle: { fontSize: 22, fontWeight: 'bold', color: 'white' },
+  headerSubtitle: { color: 'rgba(255,255,255,0.9)', fontSize: 13, marginTop: 2, textAlign: 'center' },
+  
+  scrollContent: { paddingHorizontal: 20 }, 
+
   idCard: {
     backgroundColor: 'white', borderRadius: 20, padding: 20, alignItems: 'center',
-    elevation: 4, marginBottom: 15,
+    marginTop: -25, // Pinatong natin nang konti sa header
+    marginBottom: 15, ...getSafeShadow()
   },
-  name: { fontSize: 20, fontWeight: 'bold', marginTop: 10 },
+  avatarContainer: { marginBottom: 10 },
+  name: { fontSize: 20, fontWeight: 'bold' },
   role: { color: '#666', fontSize: 12 },
   badge: { backgroundColor: '#00C853', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 10, marginTop: 8 },
   badgeText: { color: 'white', fontSize: 10, fontWeight: 'bold' },
 
-  infoCard: { backgroundColor: 'white', borderRadius: 15, padding: 20, marginBottom: 15, elevation: 2 },
+  infoCard: { backgroundColor: 'white', borderRadius: 15, padding: 20, marginBottom: 15, ...getSafeShadow() },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 15 },
   cardTitle: { fontSize: 16, fontWeight: 'bold', color: '#333' },
   editText: { color: '#00C853', fontWeight: 'bold' },
@@ -138,22 +179,16 @@ const styles = StyleSheet.create({
   label: { fontSize: 12, color: '#999' },
   value: { fontSize: 14, color: '#333', fontWeight: '500' },
 
-  statsCard: { backgroundColor: 'white', borderRadius: 15, padding: 20, marginBottom: 20, elevation: 2 },
+  statsCard: { backgroundColor: 'white', borderRadius: 15, padding: 20, marginBottom: 20, ...getSafeShadow() },
   statsRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 15 },
-  statItem: { alignItems: 'center' },
+  statItem: { alignItems: 'center', flex: 1 },
   iconCircle: { backgroundColor: '#E8F5E9', padding: 10, borderRadius: 50, marginBottom: 5 },
   statValue: { fontSize: 16, fontWeight: 'bold', color: '#00C853' },
-  statLabel: { fontSize: 10, color: '#666' },
+  statLabel: { fontSize: 10, color: '#666', textAlign: 'center' },
 
   actionArea: { gap: 15, marginBottom: 20 },
-  applyButton: {
-    backgroundColor: '#2962FF', // Blue Button
-    padding: 18, borderRadius: 12, alignItems: 'center', elevation: 2
-  },
+  applyButton: { backgroundColor: '#2962FF', padding: 18, borderRadius: 12, alignItems: 'center', ...getSafeShadow() },
   applyButtonText: { color: 'white', fontWeight: 'bold', fontSize: 16 },
-  logoutButton: {
-    backgroundColor: '#D50000', // Red Button
-    padding: 18, borderRadius: 12, alignItems: 'center', elevation: 2
-  },
+  logoutButton: { backgroundColor: '#D50000', padding: 18, borderRadius: 12, alignItems: 'center', ...getSafeShadow() },
   logoutButtonText: { color: 'white', fontWeight: 'bold', fontSize: 16 },
 });

@@ -201,7 +201,7 @@ const styles = StyleSheet.create({
       borderRadius: 8, 
       alignItems: 'center', 
       marginTop: 10,
-      shadowColor: '#00C853',
+      shadowColor: '#0000',
       shadowOpacity: 0.2,
       shadowRadius: 4,
       elevation: 3

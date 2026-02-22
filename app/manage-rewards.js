@@ -135,7 +135,7 @@ export default function ManageRewards() {
       <StatusBar barStyle="light-content" backgroundColor="#0066FF" />
 
       {/* HEADER */}
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top > 0 ? insets.top + 10 : 45 }]}>
         <View style={styles.headerRow}>
             <TouchableOpacity onPress={() => router.back()}>
                 <MaterialCommunityIcons name="chevron-left" size={30} color="white" />

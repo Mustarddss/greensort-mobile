@@ -8,6 +8,7 @@ export default function TabLayout() {
       tabBarActiveTintColor: '#00C853', 
       tabBarInactiveTintColor: '#666666',
       headerShown: false,
+      // SIMPLEHAN LANG NATIN ANG STYLE
       tabBarStyle: { 
         height: 70, 
         paddingBottom: 10,
@@ -15,10 +16,7 @@ export default function TabLayout() {
         backgroundColor: 'white',
         borderTopWidth: 1,
         borderTopColor: '#F0F0F0',
-        elevation: 10, // Shadow sa Android
-        shadowColor: '#000', // Shadow sa iOS (Black lang dapat para safe)
-        shadowOpacity: 0.1,
-        shadowRadius: 10,
+        elevation: 10, // Ito lang ang kailangan ng Android
       },
       tabBarLabelStyle: {
         fontSize: 10, 
@@ -45,7 +43,7 @@ export default function TabLayout() {
           ),
       }} />
 
-      {/* 3. SCAN TAB (GITNA - Floating Button) */}
+      {/* 3. SCAN TAB (GITNA) */}
       <Tabs.Screen name="scan" options={{
           title: '', 
           tabBarIcon: ({ focused }) => (
@@ -57,13 +55,7 @@ export default function TabLayout() {
                  justifyContent: 'center',
                  alignItems: 'center',
                  marginBottom: 30, 
-                 
-                 // FIX: Elevation lang gamitin sa Android, iwasan ang colored shadowColor
-                 elevation: 5, 
-                 shadowColor: '#000', // Ginawang black para compatible sa iOS/Android
-                 shadowOpacity: 0.3,
-                 shadowRadius: 5,
-                 shadowOffset: { width: 0, height: 4 }
+                 elevation: 5, // Elevation lang, WALANG SHADOW COLOR
              }}>
                  <MaterialCommunityIcons name="crop-free" size={30} color="white" />
              </View>
