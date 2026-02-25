@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert, ActivityIndicator, Image, KeyboardAvoidingView, Platform } from 'react-native';
+import { useState, useEffect } from 'react'; // 👈 Idinagdag ang useEffect dito
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, Image, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar'; 
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -7,115 +7,86 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 // 🟢 IMPORT SUPABASE
 import { supabase } from '../lib/supabase'; 
 
-export default function Signup() {
+export default function Login() {
   const router = useRouter();
-  
-  const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
-  const [phone, setPhone] = useState(''); // 👈 BAGONG STATE PARA SA PHONE
-  const [address, setAddress] = useState(''); 
   const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // 🟢 SUPABASE SIGNUP FUNCTION
-  const handleSignup = async () => {
-    // 👈 Siningit natin yung !phone sa checking
-    if (!fullName || !email || !phone || !address || !password || !confirmPassword) {
-      Alert.alert('Missing Info', 'Please fill all text fields.');
-      return;
-    }
+  // 🟢 DEEP LINK LISTENER (Ito yung mag-o-auto login kapag kinlick ang link sa email)
+  useEffect(() => {
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_IN' && session) {
+        router.replace('/(tabs)/dashboard'); // Diretso sa dashboard kapag success!
+      }
+    });
 
-    if (password.length < 8) {
-      Alert.alert('Weak Password', 'Password must be at least 8 characters long.');
-      return;
-    }
+    // Cleanup listener pagka-close ng component
+    return () => {
+      authListener.subscription.unsubscribe();
+    };
+  }, []);
 
-    if (password !== confirmPassword) {
-      Alert.alert('Password Mismatch', 'Passwords do not match. Please try again.');
+  // 🟢 SUPABASE LOGIN FUNCTION
+  const handleLogin = async () => {
+    if (!email || !password) {
+      Alert.alert('Error', 'Please fill in all fields');
       return;
     }
 
     setLoading(true);
 
     // 🔗 CONNECT TO SUPABASE
-    const { data, error } = await supabase.auth.signUp({
+    const { error } = await supabase.auth.signInWithPassword({
       email: email,
       password: password,
-      options: {
-        data: {
-          full_name: fullName, 
-          address: address,     
-          phone: phone         // 👈 Ise-save na rin natin ang phone sa database
-        }
-      }
     });
 
     setLoading(false);
 
     if (error) {
-      Alert.alert('Signup Error', error.message);
+      Alert.alert('Login Failed', error.message);
     } else {
-      Alert.alert(
-        'Verify Your Email', 
-        'Account created! Please check your email inbox to verify your account before logging in.', 
-        [{ text: 'Go to Login', onPress: () => router.replace('/login') }]
-      );
+      router.replace('/(tabs)/dashboard');
     }
   };
-  
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#ffffff' }}>
       <StatusBar style="dark" backgroundColor="#ffffff" />
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
           
-          <View style={styles.centerHeader}>
-              <Image source={require('../assets/images/signup logo.png')} style={styles.logoImage} resizeMode="contain" />
+          <View style={styles.logoContainer}>
+              <Image source={require('../assets/images/logo.png')} style={styles.logoImage} resizeMode="contain" />
           </View>
 
-          <View style={styles.headerTextContainer}>
-            <Text style={styles.title}>Create Account</Text>
-            <Text style={styles.subtitle}>Join the GreenSort revolution!</Text>
-          </View>
+          <Text style={styles.title}>Welcome Back!</Text>
+          <Text style={styles.subtitle}>Sign in to continue to GreenSort</Text>
 
-          <View style={styles.form}>
-            <Text style={styles.label}>Full Name</Text>
-            <TextInput style={styles.input} placeholder="Juan Dela Cruz" value={fullName} onChangeText={setFullName} />
+          <View style={styles.formContainer}>
+            <View style={styles.inputContainer}>
+              <Text style={styles.label}>Email Address</Text>
+              <TextInput style={styles.input} placeholder="email@gmail.com" value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" />
+            </View>
 
-            <Text style={styles.label}>Email</Text>
-            <TextInput style={styles.input} placeholder="email@gmail.com" keyboardType="email-address" autoCapitalize="none" value={email} onChangeText={setEmail} />
+            <View style={styles.inputContainer}>
+              <Text style={styles.label}>Password</Text>
+              <TextInput style={styles.input} placeholder="Enter your password" value={password} onChangeText={setPassword} secureTextEntry />
+            </View>
 
-            {/* 👈 BAGONG PHONE NUMBER INPUT */}
-            <Text style={styles.label}>Phone Number</Text>
-            <TextInput 
-                style={styles.input} 
-                placeholder="09123456789" 
-                keyboardType="phone-pad" // 👈 Para numbers lang ang lumabas sa keyboard
-                value={phone} 
-                onChangeText={setPhone} 
-            />
-
-            <Text style={styles.label}>Barangay Address</Text>
-            <TextInput style={styles.input} placeholder="e.g. Brgy. Sampaloc I" value={address} onChangeText={setAddress} />
-
-            <Text style={styles.label}>Password</Text>
-            <TextInput style={styles.input} placeholder="Min. 8 characters" secureTextEntry value={password} onChangeText={setPassword} />
-
-            <Text style={styles.label}>Confirm Password</Text>
-            <TextInput style={styles.input} placeholder="Re-enter your password" secureTextEntry value={confirmPassword} onChangeText={setConfirmPassword} />
-
-            <TouchableOpacity style={styles.button} onPress={handleSignup} disabled={loading}>
-              {loading ? <ActivityIndicator color="white" /> : <Text style={styles.buttonText}>SIGN UP</Text>}
+            <TouchableOpacity style={styles.button} onPress={handleLogin} disabled={loading}>
+                {loading ? <ActivityIndicator color="white" /> : <Text style={styles.buttonText}>LOGIN</Text>}
             </TouchableOpacity>
 
             <View style={styles.footer}>
-                <Text style={{color: '#888'}}>Already have an Account? </Text>
-                <TouchableOpacity onPress={() => router.push('/login')}>
-                    <Text style={styles.link}>Login</Text>
-                </TouchableOpacity>
+              <Text style={{ color: '#888' }}>Don't have an account? </Text>
+              <TouchableOpacity onPress={() => router.push('/signup')}>
+                <Text style={styles.link}>Sign Up</Text>
+              </TouchableOpacity>
             </View>
           </View>
+
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -123,17 +94,17 @@ export default function Signup() {
 }
 
 const styles = StyleSheet.create({
-  scrollContainer: { flexGrow: 1, paddingHorizontal: 30, paddingTop: 20, paddingBottom: 50 },
-  centerHeader: { alignItems: 'center', marginBottom: 10 },
-  logoImage: { width: 200, height: 200 },
-  headerTextContainer: { marginBottom: 25, alignItems: 'flex-start' },
-  title: { fontSize: 28, fontWeight: 'bold', color: '#00C853', marginBottom: 5 },
-  subtitle: { fontSize: 14, color: '#888' },
-  form: { width: '100%' },
-  label: { fontSize: 14, color: '#333', fontWeight: '500', marginBottom: 8, marginTop: 15 },
-  input: { backgroundColor: '#F5F5F5', paddingVertical: 14, paddingHorizontal: 15, borderRadius: 8, fontSize: 14, color: '#333', borderWidth: 1, borderColor: '#EEEEEE' },
-  button: { backgroundColor: '#00C853', paddingVertical: 16, borderRadius: 8, alignItems: 'center', marginTop: 30, marginBottom: 10, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 4, elevation: 3 },
+  scrollContainer: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: 30, paddingBottom: 20 },
+  logoContainer: { alignItems: 'flex-start', marginBottom: 20, marginTop: 20 },
+  logoImage: { width: 120, height: 120, marginLeft: -10 },
+  title: { fontSize: 28, fontWeight: 'bold', color: '#00C853', marginBottom: 5, textAlign: 'left' },
+  subtitle: { fontSize: 14, color: '#888', marginBottom: 40, textAlign: 'left' },
+  formContainer: { width: '100%' },
+  inputContainer: { marginBottom: 20 },
+  label: { fontSize: 13, color: '#333', fontWeight: '500', marginBottom: 8 },
+  input: { backgroundColor: '#F5F5F5', paddingVertical: 16, paddingHorizontal: 15, borderRadius: 8, fontSize: 14, color: '#333', borderWidth: 1, borderColor: '#EEEEEE' },
+  button: { backgroundColor: '#00C853', padding: 18, borderRadius: 8, alignItems: 'center', marginTop: 10, shadowColor: '#0000', shadowOpacity: 0.2, shadowRadius: 4, elevation: 3 },
   buttonText: { color: '#fff', fontSize: 16, fontWeight: 'bold', letterSpacing: 0.5 },
-  footer: { flexDirection: 'row', justifyContent: 'center', marginTop: 15, marginBottom: 20 },
+  footer: { flexDirection: 'row', justifyContent: 'center', marginTop: 30 },
   link: { color: '#00C853', fontWeight: 'bold' },
 });

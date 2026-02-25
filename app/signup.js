@@ -5,13 +5,14 @@ import { StatusBar } from 'expo-status-bar';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 // 🟢 IMPORT SUPABASE
-import { supabase } from '../lib/supabase'; // Siguraduhing tama ang path
+import { supabase } from '../lib/supabase'; 
 
 export default function Signup() {
   const router = useRouter();
   
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState(''); 
   const [address, setAddress] = useState(''); 
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -19,7 +20,7 @@ export default function Signup() {
 
   // 🟢 SUPABASE SIGNUP FUNCTION
   const handleSignup = async () => {
-    if (!fullName || !email || !address || !password || !confirmPassword) {
+    if (!fullName || !email || !phone || !address || !password || !confirmPassword) {
       Alert.alert('Missing Info', 'Please fill all text fields.');
       return;
     }
@@ -42,8 +43,9 @@ export default function Signup() {
       password: password,
       options: {
         data: {
-          full_name: fullName, // Mase-save ang pangalan sa database
-          address: address     // Mase-save ang address sa database
+          full_name: fullName, 
+          address: address,     
+          phone: phone         
         }
       }
     });
@@ -77,19 +79,28 @@ export default function Signup() {
           </View>
 
           <View style={styles.form}>
-            <Text style={styles.label}>Full Name:</Text>
+            <Text style={styles.label}>Full Name</Text>
             <TextInput style={styles.input} placeholder="Juan Dela Cruz" value={fullName} onChangeText={setFullName} />
 
-            <Text style={styles.label}>Email:</Text>
+            <Text style={styles.label}>Email</Text>
             <TextInput style={styles.input} placeholder="email@gmail.com" keyboardType="email-address" autoCapitalize="none" value={email} onChangeText={setEmail} />
 
-            <Text style={styles.label}>Home Address:</Text>
+            <Text style={styles.label}>Phone Number</Text>
+            <TextInput 
+                style={styles.input} 
+                placeholder="09123456789" 
+                keyboardType="phone-pad" 
+                value={phone} 
+                onChangeText={setPhone} 
+            />
+
+            <Text style={styles.label}>Barangay Address</Text>
             <TextInput style={styles.input} placeholder="e.g. Brgy. Sampaloc I" value={address} onChangeText={setAddress} />
 
-            <Text style={styles.label}>Password:</Text>
+            <Text style={styles.label}>Password</Text>
             <TextInput style={styles.input} placeholder="Min. 8 characters" secureTextEntry value={password} onChangeText={setPassword} />
 
-            <Text style={styles.label}>Confirm Password:</Text>
+            <Text style={styles.label}>Confirm Password</Text>
             <TextInput style={styles.input} placeholder="Re-enter your password" secureTextEntry value={confirmPassword} onChangeText={setConfirmPassword} />
 
             <TouchableOpacity style={styles.button} onPress={handleSignup} disabled={loading}>
