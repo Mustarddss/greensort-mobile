@@ -56,7 +56,15 @@ export default function Notifications() {
         contentContainerStyle={{ padding: 20 }}
         ListEmptyComponent={<Text style={styles.emptyText}>No notifications yet.</Text>}
         renderItem={({ item }) => (
-          <View style={styles.notifCard}>
+          // 🟢 GINAWANG CLICKABLE PARA MAKAPUNTA SA CHAT
+          <TouchableOpacity 
+            style={styles.notifCard} 
+            onPress={() => {
+              if (item.action.includes('contact')) {
+                router.push({ pathname: '/chat', params: { chatUser: item.actor_name } });
+              }
+            }}
+          >
             <Image source={{ uri: item.actor_avatar }} style={styles.avatar} />
             <View style={{ flex: 1, marginLeft: 15 }}>
               <Text style={styles.notifText}>
@@ -65,7 +73,8 @@ export default function Notifications() {
               <Text style={styles.timeText}>Just recently</Text>
             </View>
             {getIcon(item.action)}
-          </View>
+          </TouchableOpacity>
+       
         )}
       />
     </View>
