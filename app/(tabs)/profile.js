@@ -18,19 +18,16 @@ export default function Profile() {
 
   const [user, setUser] = useState({ name: 'Loading...', role: 'GreenSort Member', id: 'GS-USER', email: '', phone: '', address: '', avatar: null, stats: { submissions: 0, recycled: 0, projects: 0 } });
   const [editForm, setEditForm] = useState({ name: '', phone: '', address: '', avatar: null });
-  
-  // 🟢 STATE PARA SA MGA SARILI MONG POSTS
   const [myPosts, setMyPosts] = useState([]);
 
-  useEffect(() => {
-    fetchProfileAndPosts();
-  }, []);
+  useEffect(() => { fetchProfileAndPosts(); }, []);
 
   const fetchProfileAndPosts = async () => {
     const { data: { session } } = await supabase.auth.getSession();
     if (session?.user) {
       const metadata = session.user.user_metadata;
       const defaultAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(metadata?.full_name || 'User')}&background=00C853&color=fff&bold=true`;
+      
       const fetchedUser = {
         name: metadata?.full_name || '', email: session.user.email, phone: metadata?.phone || '',
         address: metadata?.address || '', avatar: metadata?.avatar_url || defaultAvatar, 
@@ -39,7 +36,6 @@ export default function Profile() {
       setUser(fetchedUser); 
       setEditForm({ name: fetchedUser.name, phone: fetchedUser.phone, address: fetchedUser.address, avatar: fetchedUser.avatar });
 
-      // 🟢 KUNIN ANG MGA POSTS MO
       const { data: postsData } = await supabase.from('posts').select('*').eq('user', fetchedUser.name).neq('status', 'archived').order('created_at', { ascending: false });
       if (postsData) setMyPosts(postsData);
     }
@@ -73,12 +69,15 @@ export default function Profile() {
     if (!error) {
         await supabase.from('posts').update({ user: editForm.name, avatar: finalAvatarUrl }).eq('user', user.name);
         await supabase.from('comments').update({ user_name: editForm.name, avatar: finalAvatarUrl }).eq('user_name', user.name);
+        await supabase.from('messages').update({ sender_name: editForm.name }).eq('sender_name', user.name);
+        await supabase.from('messages').update({ receiver_name: editForm.name }).eq('receiver_name', user.name);
         await supabase.from('notifications').update({ actor_name: editForm.name, actor_avatar: finalAvatarUrl }).eq('actor_name', user.name);
+        await supabase.from('notifications').update({ owner_name: editForm.name }).eq('owner_name', user.name);
 
         setUser({ ...user, name: editForm.name, phone: editForm.phone, address: editForm.address, avatar: finalAvatarUrl });
         setIsEditing(false);
-        fetchProfileAndPosts(); // Refresh ang posts UI
-        Alert.alert("Success", "Profile updated!");
+        fetchProfileAndPosts(); 
+        Alert.alert("Success", "Profile updated successfully!");
     } else { Alert.alert("Error", error.message); }
     setSaving(false);
   };
@@ -88,22 +87,15 @@ export default function Profile() {
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#00C853" translucent={true} />
-      
-      {/* 🟢 HEADER (MAY SETTINGS ICON NA SA KANAN) */}
       <View style={[styles.header, { paddingTop: Math.max(insets.top, 20) + 15 }]}>
         <View style={styles.headerRow}>
-            <View style={styles.headerSide}></View>
+            <View style={styles.headerSide}><TouchableOpacity onPress={() => router.back()} style={{padding: 5}}><Ionicons name="arrow-back" size={28} color="white" /></TouchableOpacity></View>
             <View style={styles.headerCenter}><Text style={styles.headerTitle}>Profile</Text></View>
-            <View style={[styles.headerSide, { alignItems: 'flex-end' }]}>
-                <TouchableOpacity onPress={() => router.push('/settings')} style={{padding: 5}}>
-                    <Ionicons name="settings-sharp" size={24} color="white" />
-                </TouchableOpacity>
-            </View>
+            <View style={[styles.headerSide, { alignItems: 'flex-end' }]}><TouchableOpacity onPress={() => router.push('/settings')} style={{padding: 5}}><Ionicons name="settings-sharp" size={24} color="white" /></TouchableOpacity></View>
         </View>
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {/* INFO CARD */}
         <View style={styles.idCard}>
             <TouchableOpacity onPress={isEditing ? pickImage : null} style={styles.avatarWrapper}>
                 <Image source={{ uri: isEditing ? editForm.avatar : user.avatar }} style={styles.avatarImage} />
@@ -117,6 +109,7 @@ export default function Profile() {
             <View style={styles.infoRow}><Text style={styles.label}>Full Name</Text>{isEditing ? <TextInput style={styles.inputField} value={editForm.name} onChangeText={(t) => setEditForm({...editForm, name: t})} /> : <Text style={styles.value}>{user.name}</Text>}</View>
             <View style={styles.infoRow}><Text style={styles.label}>Phone Number</Text>{isEditing ? <TextInput style={styles.inputField} value={editForm.phone} keyboardType="phone-pad" onChangeText={(t) => setEditForm({...editForm, phone: t})} /> : <Text style={styles.value}>{user.phone || 'Not set'}</Text>}</View>
             <View style={styles.infoRow}><Text style={styles.label}>Address</Text>{isEditing ? <TextInput style={styles.inputField} value={editForm.address} onChangeText={(t) => setEditForm({...editForm, address: t})} /> : <Text style={styles.value}>{user.address}</Text>}</View>
+            <View style={styles.infoRow}><Text style={styles.label}>Email Address (Read-only)</Text><Text style={[styles.value, {color: '#888'}]}>{user.email}</Text></View>
         </View>
 
         <View style={styles.statsCard}>
@@ -128,7 +121,6 @@ export default function Profile() {
             </View>
         </View>
 
-        {/* 🟢 DITO NA NAKALAGAY YUNG MGA POSTS MO 🟢 */}
         <Text style={{ fontSize: 18, fontWeight: 'bold', color: '#333', marginTop: 10, marginBottom: 15 }}>My Posts</Text>
         
         {myPosts.length === 0 ? (
@@ -137,13 +129,13 @@ export default function Profile() {
             myPosts.map((post) => (
                 <View key={post.id} style={styles.myPostCard}>
                     <View style={{flexDirection: 'row', alignItems: 'center', marginBottom: 10}}>
-                        <Image source={{ uri: post.avatar }} style={{width: 30, height: 30, borderRadius: 15, marginRight: 10}} />
+                        <Image source={{ uri: post.avatar }} style={styles.avatarSmall} />
                         <Text style={{fontWeight: 'bold', flex: 1}}>{post.user}</Text>
-                        <Text style={{color: '#00C853', fontSize: 12, fontWeight: 'bold'}}>{post.type}</Text>
+                        <View style={{backgroundColor: '#E8F5E9', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10}}><Text style={{color: '#00C853', fontSize: 10, fontWeight: 'bold'}}>{post.type}</Text></View>
                     </View>
                     <Text style={{fontWeight: 'bold', fontSize: 16, marginBottom: 5}}>{post.title}</Text>
                     <Text style={{color: '#666', fontSize: 13, marginBottom: 10}} numberOfLines={2}>{post.desc}</Text>
-                    <Image source={{ uri: post.image }} style={{width: '100%', height: 150, borderRadius: 10, backgroundColor: '#eee'}} resizeMode="cover" />
+                    <Image source={{ uri: post.image }} style={styles.postImage} resizeMode="cover" />
                     <View style={{flexDirection: 'row', gap: 15, marginTop: 15}}>
                         <View style={{flexDirection: 'row', alignItems: 'center', gap: 5}}><Ionicons name="heart" size={20} color="#FF1744" /><Text style={{color: '#666'}}>{post.likes}</Text></View>
                         <View style={{flexDirection: 'row', alignItems: 'center', gap: 5}}><Ionicons name="chatbubble" size={18} color="#666" /><Text style={{color: '#666'}}>{post.comments}</Text></View>
@@ -151,7 +143,6 @@ export default function Profile() {
                 </View>
             ))
         )}
-
         <View style={{height: 100}} />
       </ScrollView>
     </View>
@@ -163,13 +154,9 @@ const StatItem = ({ icon, value, label }) => (
 );
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F5F7FA' }, 
-  header: { backgroundColor: '#00C853', paddingBottom: 35, paddingHorizontal: 20, borderBottomLeftRadius: 30, borderBottomRightRadius: 30 },
-  headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%' }, headerSide: { width: 50, alignItems: 'flex-start' }, headerCenter: { flex: 1, alignItems: 'center' },
-  headerTitle: { fontSize: 22, fontWeight: 'bold', color: 'white' },
-  content: { flex: 1, paddingHorizontal: 20 }, 
+  container: { flex: 1, backgroundColor: '#F5F7FA' }, header: { backgroundColor: '#00C853', paddingBottom: 35, paddingHorizontal: 20, borderBottomLeftRadius: 30, borderBottomRightRadius: 30 }, headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%' }, headerSide: { width: 50, alignItems: 'flex-start' }, headerCenter: { flex: 1, alignItems: 'center' }, headerTitle: { fontSize: 22, fontWeight: 'bold', color: 'white' }, content: { flex: 1, paddingHorizontal: 20 }, 
   idCard: { backgroundColor: 'white', borderRadius: 20, padding: 20, alignItems: 'center', marginTop: -25, marginBottom: 15, ...getSafeShadow() }, avatarWrapper: { position: 'relative', marginBottom: 10 }, avatarImage: { width: 90, height: 90, borderRadius: 45, backgroundColor: '#eee', borderWidth: 3, borderColor: '#00C853' }, cameraIconBadge: { position: 'absolute', bottom: 0, right: 0, backgroundColor: '#2962FF', padding: 8, borderRadius: 20, borderWidth: 2, borderColor: 'white' }, name: { fontSize: 20, fontWeight: 'bold' }, role: { color: '#666', fontSize: 12 }, badge: { backgroundColor: '#00C853', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 10, marginTop: 8 }, badgeText: { color: 'white', fontSize: 10, fontWeight: 'bold' },
   infoCard: { backgroundColor: 'white', borderRadius: 15, padding: 20, marginBottom: 15, ...getSafeShadow() }, cardHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 15 }, cardTitle: { fontSize: 16, fontWeight: 'bold', color: '#333' }, editText: { color: '#00C853', fontWeight: 'bold', fontSize: 14 }, saveText: { color: '#2962FF', fontWeight: 'bold', fontSize: 14 }, infoRow: { marginBottom: 15 }, label: { fontSize: 12, color: '#999', marginBottom: 4 }, value: { fontSize: 15, color: '#333', fontWeight: '500' }, inputField: { backgroundColor: '#F5F5F5', padding: 10, borderRadius: 8, fontSize: 15, color: '#333', borderWidth: 1, borderColor: '#eee' },
   statsCard: { backgroundColor: 'white', borderRadius: 15, padding: 20, marginBottom: 20, ...getSafeShadow() }, statsRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 15 }, statItem: { alignItems: 'center', flex: 1 }, iconCircle: { backgroundColor: '#E8F5E9', padding: 10, borderRadius: 50, marginBottom: 5 }, statValue: { fontSize: 16, fontWeight: 'bold', color: '#00C853' }, statLabel: { fontSize: 10, color: '#666', textAlign: 'center' },
-  myPostCard: { backgroundColor: 'white', borderRadius: 15, padding: 15, marginBottom: 15, ...getSafeShadow() }
+  myPostCard: { backgroundColor: 'white', borderRadius: 15, padding: 15, marginBottom: 15, ...getSafeShadow() }, avatarSmall: { width: 34, height: 34, borderRadius: 17, marginRight: 10, backgroundColor: '#eee' }, postImage: { width: '100%', height: 180, borderRadius: 12, backgroundColor: '#f5f5f5' }
 });
