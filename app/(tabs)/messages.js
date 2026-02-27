@@ -15,9 +15,9 @@ export default function MessagesList() {
   useEffect(() => { 
       fetchChats(); 
 
-      // 🟢 REALTIME LISTENER (Para mag-update ang list agad pag may nag-chat)
+      // 🟢 FIX: Ginawang '*' ang event para makinig siya sa BAGONG message (INSERT) at sa NABASANG message (UPDATE)
       const msgChannel = supabase.channel('realtime-msg-list')
-        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, () => {
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, () => {
            fetchChats();
         }).subscribe();
 
@@ -30,7 +30,6 @@ export default function MessagesList() {
     const currentName = session.user.user_metadata?.full_name;
     setMyName(currentName);
 
-    // Kunin lahat ng messages na involved ka
     const { data } = await supabase.from('messages')
       .select('*')
       .or(`sender_name.eq.${currentName},receiver_name.eq.${currentName}`)
@@ -39,34 +38,36 @@ export default function MessagesList() {
     if (data) {
       const chatMap = new Map();
 
-      // 🟢 GROUP MESSAGES LOGIC
       data.forEach(msg => {
         const otherPerson = msg.sender_name === currentName ? msg.receiver_name : msg.sender_name;
 
         if (!chatMap.has(otherPerson)) {
           chatMap.set(otherPerson, { 
             chatUser: otherPerson, 
-            latestMessageOriginal: msg.text, // I-save muna ang orig na text
+            latestMessageOriginal: msg.text,
+            latestImageUrl: msg.image_url, // 🟢 FIX: Kinuha natin kung may image ba o wala
             time: msg.created_at,
-            unreadCount: 0, // Default 0 muna
+            unreadCount: 0, 
             avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(otherPerson)}&background=E8F5E9&color=00C853&bold=true` 
           });
         }
 
-        // Bilangin kung ilan ang hindi mo pa nababasa mula sa kanya
+        // Bilangin ang unread na padala sa'yo
         if (msg.receiver_name === currentName && msg.is_read === false) {
            chatMap.get(otherPerson).unreadCount += 1;
         }
       });
 
-      // 🟢 FORMAT THE PREVIEW MESSAGE (1 vs 2+ Unread)
+      // 🟢 FORMAT THE PREVIEW MESSAGE
       const uniqueChats = Array.from(chatMap.values()).map(chat => {
           let displayMsg = chat.latestMessageOriginal;
+          
           if (chat.unreadCount > 1) {
               displayMsg = `${chat.unreadCount} new messages`;
-          } else if (chat.latestMessageOriginal === '👍') {
+          } else if (chat.latestImageUrl) { // 🟢 FIX: Dito na titingin kung may image, HINDI sa Like icon
               displayMsg = 'Sent an attachment.';
           }
+          
           return { ...chat, displayMessage: displayMsg };
       });
 
@@ -104,7 +105,7 @@ export default function MessagesList() {
         contentContainerStyle={{ padding: 20 }}
         ListEmptyComponent={<Text style={styles.emptyText}>No active conversations.</Text>}
         renderItem={({ item }) => {
-          const isUnread = item.unreadCount > 0; // Check kung unread ba
+          const isUnread = item.unreadCount > 0;
 
           return (
             <TouchableOpacity style={styles.chatCard} onPress={() => router.push({ pathname: '/chat', params: { chatUser: item.chatUser } })}>
@@ -112,20 +113,16 @@ export default function MessagesList() {
               
               <View style={{ flex: 1, justifyContent: 'center' }}>
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                      {/* BOLD PANGALAN KUNG UNREAD */}
                       <Text style={[styles.chatName, isUnread && styles.unreadText]}>{item.chatUser}</Text>
-                      
                       <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                           <Text style={[styles.timeText, isUnread && {color: '#00C853', fontWeight: 'bold'}]}>{formatTime(item.time)}</Text>
                       </View>
                   </View>
 
-                  {/* BOLD MESSAGE + UNREAD INDICATOR */}
                   <View style={{flexDirection: 'row', alignItems: 'center', marginTop: 4, paddingRight: 10}}>
                       <Text style={[styles.latestMessage, isUnread && styles.unreadText]} numberOfLines={1}>
                           {item.displayMessage}
                       </Text>
-                      {/* 🟢 UNREAD DOT (Parang sa Messenger) */}
                       {isUnread && <View style={styles.unreadDot} />}
                   </View>
               </View>
@@ -148,8 +145,6 @@ const styles = StyleSheet.create({
   latestMessage: { fontSize: 14, color: '#666', flex: 1 }, 
   timeText: { fontSize: 12, color: '#999' }, 
   emptyText: { textAlign: 'center', color: '#999', marginTop: 50 },
-
-  // 🟢 UNREAD STYLES 🟢
   unreadText: { fontWeight: '900', color: '#000' },
   unreadDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#00C853', marginLeft: 8 }
 });

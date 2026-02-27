@@ -14,21 +14,19 @@ export default function TabLayout() {
 
   useEffect(() => {
     let myName = '';
-    let globalChannel; // 🟢 ITO YUNG GLOBAL PRESENCE
+    let globalChannel;
 
     const initializeData = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user) {
         myName = session.user.user_metadata?.full_name;
         
-        // 1. Unread Messages Badge
         const { count } = await supabase.from('messages')
           .select('*', { count: 'exact', head: true })
           .eq('receiver_name', myName)
           .eq('is_read', false);
         setUnreadCount(count || 0);
 
-        // 2. 🟢 GLOBAL PRESENCE: Pagkabukas ng app, ONLINE ka na sa lahat!
         globalChannel = supabase.channel('global:presence', {
           config: { presence: { key: myName } }
         });
@@ -50,7 +48,7 @@ export default function TabLayout() {
 
     return () => { 
         supabase.removeChannel(msgChannel); 
-        if (globalChannel) supabase.removeChannel(globalChannel); // Patayin pag sinara ang app
+        if (globalChannel) supabase.removeChannel(globalChannel); 
     };
   }, []);
 
@@ -76,7 +74,9 @@ export default function TabLayout() {
           tabBarBadgeStyle: { backgroundColor: '#FF1744', color: 'white', fontSize: 10 },
           tabBarIcon: ({ color, focused }) => ( <MaterialCommunityIcons name={focused ? "message-text" : "message-text-outline"} size={28} color={color} /> ) 
       }} />
-      <Tabs.Screen name="history" options={{ href: null }} /> <Tabs.Screen name="explore" options={{ href: null }} /> <Tabs.Screen name="profile" options={{ href: null }} /> 
+      <Tabs.Screen name="history" options={{ href: null }} /> 
+      <Tabs.Screen name="explore" options={{ href: null }} /> 
+      <Tabs.Screen name="profile" options={{ href: null }} /> 
     </Tabs>
   );
 }
