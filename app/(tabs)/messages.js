@@ -12,7 +12,17 @@ export default function MessagesList() {
   const [refreshing, setRefreshing] = useState(false);
   const [myName, setMyName] = useState('');
 
-  useEffect(() => { fetchChats(); }, []);
+  useEffect(() => { 
+      fetchChats(); 
+
+      // 🟢 REALTIME LISTENER (Para mag-update ang list agad pag may nag-chat)
+      const msgChannel = supabase.channel('realtime-msg-list')
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, () => {
+           fetchChats();
+        }).subscribe();
+
+      return () => { supabase.removeChannel(msgChannel); };
+  }, []);
 
   const fetchChats = async () => {
     const { data: { session } } = await supabase.auth.getSession();
@@ -20,24 +30,46 @@ export default function MessagesList() {
     const currentName = session.user.user_metadata?.full_name;
     setMyName(currentName);
 
+    // Kunin lahat ng messages na involved ka
     const { data } = await supabase.from('messages')
       .select('*')
       .or(`sender_name.eq.${currentName},receiver_name.eq.${currentName}`)
       .order('created_at', { ascending: false });
 
     if (data) {
-      const uniqueChats = [];
-      const chatSet = new Set();
+      const chatMap = new Map();
+
+      // 🟢 GROUP MESSAGES LOGIC
       data.forEach(msg => {
         const otherPerson = msg.sender_name === currentName ? msg.receiver_name : msg.sender_name;
-        if (!chatSet.has(otherPerson)) {
-          chatSet.add(otherPerson);
-          uniqueChats.push({ 
-            chatUser: otherPerson, latestMessage: msg.text, time: msg.created_at,
+
+        if (!chatMap.has(otherPerson)) {
+          chatMap.set(otherPerson, { 
+            chatUser: otherPerson, 
+            latestMessageOriginal: msg.text, // I-save muna ang orig na text
+            time: msg.created_at,
+            unreadCount: 0, // Default 0 muna
             avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(otherPerson)}&background=E8F5E9&color=00C853&bold=true` 
           });
         }
+
+        // Bilangin kung ilan ang hindi mo pa nababasa mula sa kanya
+        if (msg.receiver_name === currentName && msg.is_read === false) {
+           chatMap.get(otherPerson).unreadCount += 1;
+        }
       });
+
+      // 🟢 FORMAT THE PREVIEW MESSAGE (1 vs 2+ Unread)
+      const uniqueChats = Array.from(chatMap.values()).map(chat => {
+          let displayMsg = chat.latestMessageOriginal;
+          if (chat.unreadCount > 1) {
+              displayMsg = `${chat.unreadCount} new messages`;
+          } else if (chat.latestMessageOriginal === '👍') {
+              displayMsg = 'Sent an attachment.';
+          }
+          return { ...chat, displayMessage: displayMsg };
+      });
+
       setChats(uniqueChats);
     }
   };
@@ -49,14 +81,21 @@ export default function MessagesList() {
   const formatTime = (dateString) => {
     const diffMins = Math.floor((new Date() - new Date(dateString)) / 60000);
     if (diffMins < 1) return 'now'; if (diffMins < 60) return `${diffMins}m ago`;
-    if (diffMins < 1440) return `${Math.floor(diffMins / 60)}h ago`; return `${Math.floor(diffMins / 1440)}d ago`;
+    if (diffMins < 1440) return `${Math.floor(diffMins / 60)}h ago`; 
+    return new Date(dateString).toLocaleDateString([], { weekday: 'short' }).toUpperCase();
   };
 
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
-      <View style={[styles.header, { paddingTop: Math.max(insets.top, 20) + 15 }]}><Text style={styles.headerTitle}>Messages</Text></View>
-      <View style={styles.searchBar}><Ionicons name="search" size={20} color="#999" /><Text style={{color: '#999', marginLeft: 10}}>Search conversations...</Text></View>
+      <View style={[styles.header, { paddingTop: Math.max(insets.top, 20) + 15 }]}>
+          <Text style={styles.headerTitle}>Messages</Text>
+      </View>
+
+      <View style={styles.searchBar}>
+          <Ionicons name="search" size={20} color="#999" />
+          <Text style={{color: '#999', marginLeft: 10}}>Search conversations...</Text>
+      </View>
 
       <FlatList
         data={chats}
@@ -64,24 +103,53 @@ export default function MessagesList() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         contentContainerStyle={{ padding: 20 }}
         ListEmptyComponent={<Text style={styles.emptyText}>No active conversations.</Text>}
-        renderItem={({ item }) => (
-          <TouchableOpacity style={styles.chatCard} onPress={() => router.push({ pathname: '/chat', params: { chatUser: item.chatUser } })}>
-            <Image source={{ uri: item.avatar }} style={styles.avatar} />
-            <View style={{ flex: 1, justifyContent: 'center' }}>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <Text style={styles.chatName}>{item.chatUser}</Text>
-                    <View style={{ flexDirection: 'row', alignItems: 'center' }}><Ionicons name="time-outline" size={12} color="#999" style={{marginRight: 2}} /><Text style={styles.timeText}>{formatTime(item.time)}</Text></View>
-                </View>
-                <Text style={styles.latestMessage} numberOfLines={1}>{item.latestMessage}</Text>
-            </View>
-            <TouchableOpacity style={{paddingLeft: 10}}><Ionicons name="ellipsis-vertical" size={20} color="#999" /></TouchableOpacity>
-          </TouchableOpacity>
-        )}
+        renderItem={({ item }) => {
+          const isUnread = item.unreadCount > 0; // Check kung unread ba
+
+          return (
+            <TouchableOpacity style={styles.chatCard} onPress={() => router.push({ pathname: '/chat', params: { chatUser: item.chatUser } })}>
+              <Image source={{ uri: item.avatar }} style={styles.avatar} />
+              
+              <View style={{ flex: 1, justifyContent: 'center' }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                      {/* BOLD PANGALAN KUNG UNREAD */}
+                      <Text style={[styles.chatName, isUnread && styles.unreadText]}>{item.chatUser}</Text>
+                      
+                      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                          <Text style={[styles.timeText, isUnread && {color: '#00C853', fontWeight: 'bold'}]}>{formatTime(item.time)}</Text>
+                      </View>
+                  </View>
+
+                  {/* BOLD MESSAGE + UNREAD INDICATOR */}
+                  <View style={{flexDirection: 'row', alignItems: 'center', marginTop: 4, paddingRight: 10}}>
+                      <Text style={[styles.latestMessage, isUnread && styles.unreadText]} numberOfLines={1}>
+                          {item.displayMessage}
+                      </Text>
+                      {/* 🟢 UNREAD DOT (Parang sa Messenger) */}
+                      {isUnread && <View style={styles.unreadDot} />}
+                  </View>
+              </View>
+            </TouchableOpacity>
+          );
+        }}
       />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#ffffff' }, header: { backgroundColor: 'white', paddingBottom: 15, paddingHorizontal: 20 }, headerTitle: { fontSize: 28, fontWeight: 'bold', color: '#333' }, searchBar: { backgroundColor: '#F5F7FA', marginHorizontal: 20, padding: 12, borderRadius: 12, flexDirection: 'row', alignItems: 'center', marginBottom: 10 }, chatCard: { flexDirection: 'row', backgroundColor: 'white', paddingVertical: 15, borderBottomWidth: 1, borderBottomColor: '#F5F7FA', alignItems: 'center' }, avatar: { width: 50, height: 50, borderRadius: 25, marginRight: 15 }, chatName: { fontSize: 16, fontWeight: 'bold', color: '#333' }, latestMessage: { fontSize: 14, color: '#666', marginTop: 4 }, timeText: { fontSize: 12, color: '#999' }, emptyText: { textAlign: 'center', color: '#999', marginTop: 50 }
+  container: { flex: 1, backgroundColor: '#ffffff' }, 
+  header: { backgroundColor: 'white', paddingBottom: 15, paddingHorizontal: 20 }, 
+  headerTitle: { fontSize: 28, fontWeight: 'bold', color: '#333' }, 
+  searchBar: { backgroundColor: '#F5F7FA', marginHorizontal: 20, padding: 12, borderRadius: 12, flexDirection: 'row', alignItems: 'center', marginBottom: 10 }, 
+  chatCard: { flexDirection: 'row', backgroundColor: 'white', paddingVertical: 15, borderBottomWidth: 1, borderBottomColor: '#F5F7FA', alignItems: 'center' }, 
+  avatar: { width: 56, height: 56, borderRadius: 28, marginRight: 15 }, 
+  chatName: { fontSize: 16, fontWeight: '500', color: '#444' }, 
+  latestMessage: { fontSize: 14, color: '#666', flex: 1 }, 
+  timeText: { fontSize: 12, color: '#999' }, 
+  emptyText: { textAlign: 'center', color: '#999', marginTop: 50 },
+
+  // 🟢 UNREAD STYLES 🟢
+  unreadText: { fontWeight: '900', color: '#000' },
+  unreadDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#00C853', marginLeft: 8 }
 });
