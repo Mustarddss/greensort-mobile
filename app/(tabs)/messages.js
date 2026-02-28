@@ -14,13 +14,10 @@ export default function MessagesList() {
 
   useEffect(() => { 
       fetchChats(); 
-
-      // 🟢 FIX: Ginawang '*' ang event para makinig siya sa BAGONG message (INSERT) at sa NABASANG message (UPDATE)
       const msgChannel = supabase.channel('realtime-msg-list')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, () => {
            fetchChats();
         }).subscribe();
-
       return () => { supabase.removeChannel(msgChannel); };
   }, []);
 
@@ -37,40 +34,32 @@ export default function MessagesList() {
 
     if (data) {
       const chatMap = new Map();
-
       data.forEach(msg => {
         const otherPerson = msg.sender_name === currentName ? msg.receiver_name : msg.sender_name;
-
         if (!chatMap.has(otherPerson)) {
           chatMap.set(otherPerson, { 
             chatUser: otherPerson, 
             latestMessageOriginal: msg.text,
-            latestImageUrl: msg.image_url, // 🟢 FIX: Kinuha natin kung may image ba o wala
+            latestImageUrl: msg.image_url, 
             time: msg.created_at,
             unreadCount: 0, 
             avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(otherPerson)}&background=E8F5E9&color=00C853&bold=true` 
           });
         }
-
-        // Bilangin ang unread na padala sa'yo
         if (msg.receiver_name === currentName && msg.is_read === false) {
            chatMap.get(otherPerson).unreadCount += 1;
         }
       });
 
-      // 🟢 FORMAT THE PREVIEW MESSAGE
       const uniqueChats = Array.from(chatMap.values()).map(chat => {
           let displayMsg = chat.latestMessageOriginal;
-          
           if (chat.unreadCount > 1) {
               displayMsg = `${chat.unreadCount} new messages`;
-          } else if (chat.latestImageUrl) { // 🟢 FIX: Dito na titingin kung may image, HINDI sa Like icon
+          } else if (chat.latestImageUrl) { 
               displayMsg = 'Sent an attachment.';
           }
-          
           return { ...chat, displayMessage: displayMsg };
       });
-
       setChats(uniqueChats);
     }
   };
@@ -113,17 +102,20 @@ export default function MessagesList() {
               
               <View style={{ flex: 1, justifyContent: 'center' }}>
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <Text style={[styles.chatName, isUnread && styles.unreadText]}>{item.chatUser}</Text>
+                      <Text style={[styles.chatName, isUnread ? styles.unreadText : null]}>{item.chatUser}</Text>
                       <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                          <Text style={[styles.timeText, isUnread && {color: '#00C853', fontWeight: 'bold'}]}>{formatTime(item.time)}</Text>
+                          <Text style={[styles.timeText, isUnread ? {color: '#00C853', fontWeight: 'bold'} : null]}>
+                              {formatTime(item.time)}
+                          </Text>
                       </View>
                   </View>
 
                   <View style={{flexDirection: 'row', alignItems: 'center', marginTop: 4, paddingRight: 10}}>
-                      <Text style={[styles.latestMessage, isUnread && styles.unreadText]} numberOfLines={1}>
+                      <Text style={[styles.latestMessage, isUnread ? styles.unreadText : null]} numberOfLines={1}>
                           {item.displayMessage}
                       </Text>
-                      {isUnread && <View style={styles.unreadDot} />}
+                      {/* 🟢 FIX: Ginawang ternary operator para safe */}
+                      {isUnread ? <View style={styles.unreadDot} /> : null}
                   </View>
               </View>
             </TouchableOpacity>

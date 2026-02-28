@@ -14,7 +14,6 @@ export default function TabLayout() {
 
   useEffect(() => {
     let myName = '';
-    let globalChannel;
 
     const initializeData = async () => {
       const { data: { session } } = await supabase.auth.getSession();
@@ -27,13 +26,14 @@ export default function TabLayout() {
           .eq('is_read', false);
         setUnreadCount(count || 0);
 
-        globalChannel = supabase.channel('global:presence', {
+        // 🟢 FOREVER ONLINE TRACKER 🟢
+        const globalChannel = supabase.channel('green_sort_global', {
           config: { presence: { key: myName } }
         });
         
         globalChannel.subscribe(async (status) => {
           if (status === 'SUBSCRIBED') {
-            await globalChannel.track({ user: myName, status: 'online' });
+            await globalChannel.track({ online: true });
           }
         });
       }
@@ -48,7 +48,7 @@ export default function TabLayout() {
 
     return () => { 
         supabase.removeChannel(msgChannel); 
-        if (globalChannel) supabase.removeChannel(globalChannel); 
+        // WALA NANG removeChannel PARA SA GLOBAL PRESENCE DITO! Hahayaan natin siyang buhay.
     };
   }, []);
 
