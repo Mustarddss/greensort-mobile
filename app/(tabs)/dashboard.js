@@ -176,20 +176,28 @@ export default function Dashboard() {
       <KeyboardAvoidingView style={{flex: 1, backgroundColor: 'white'}} behavior={Platform.OS === "ios" ? "padding" : undefined}>
           <StatusBar barStyle="dark-content" backgroundColor="white" translucent={true} />
           <View style={[styles.createHeader, { paddingTop: Math.max(insets.top, 20) + 15 }]}>
-              <TouchableOpacity onPress={() => {setSelectedPost(null); setReplyingTo(null);}}><Ionicons name="arrow-back" size={24} color="#333" /></TouchableOpacity>
+              <TouchableOpacity onPress={() => {setSelectedPost(null); setReplyingTo(null);}}>
+                <Ionicons name="arrow-back" size={24} color="#333" />
+              </TouchableOpacity>
               <Text style={styles.createHeaderTitle}>Comments</Text>
               <View style={{width: 24}} />
           </View>
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{paddingBottom: 20}}>
               <Image source={{ uri: selectedPost.image }} style={styles.detailImage} />
               <View style={styles.detailContent}>
-                  <Text style={styles.postTitle}>{selectedPost.title}</Text><Text style={styles.postDesc}>{selectedPost.desc}</Text>
+                  <Text style={styles.postTitle}>{selectedPost.title}</Text>
+                  <Text style={styles.postDesc}>{selectedPost.desc}</Text>
                   <Text style={[styles.label, {marginTop: 20}]}>All Comments ({selectedPost.comments})</Text>
                   {mainComments.length === 0 ? <Text style={{color: '#999', marginTop: 10}}>No comments yet. Be the first!</Text> : null}
                   {mainComments.map((comment) => (
                       <View key={comment.id} style={{marginBottom: 15, marginTop: 10}}>
-                          <View style={{flexDirection: 'row'}}><Image source={{ uri: comment.avatar }} style={styles.commentAvatar} />
-                              <View style={{flex: 1}}><View style={styles.commentBubble}><Text style={styles.commentUser}>{comment.user_name}</Text><Text style={styles.commentText}>{comment.text}</Text></View>
+                          <View style={{flexDirection: 'row'}}>
+                            <Image source={{ uri: comment.avatar }} style={styles.commentAvatar} />
+                              <View style={{flex: 1}}>
+                                <View style={styles.commentBubble}>
+                                  <Text style={styles.commentUser}>{comment.user_name}</Text>
+                                  <Text style={styles.commentText}>{comment.text}</Text>
+                                </View>
                                   <View style={{flexDirection: 'row', alignItems: 'center', marginTop: 5, paddingLeft: 10, gap: 15}}>
                                       <Text style={styles.commentTime}>{formatTime(comment.created_at)}</Text>
                                       <TouchableOpacity onPress={() => setReplyingTo({id: comment.id, name: comment.user_name})}><Text style={{fontSize: 11, color: '#00C853', fontWeight: 'bold', marginRight: 15}}>Reply</Text></TouchableOpacity>
@@ -200,7 +208,11 @@ export default function Dashboard() {
                           {getReplies(comment.id).map(reply => (
                               <View key={reply.id} style={{flexDirection: 'row', marginTop: 10, marginLeft: 45, borderLeftWidth: 2, borderLeftColor: '#eee', paddingLeft: 10}}>
                                   <Image source={{ uri: reply.avatar }} style={{width: 28, height: 28, borderRadius: 14, marginRight: 8}} />
-                                  <View style={{flex: 1}}><View style={[styles.commentBubble, {backgroundColor: '#f9f9f9', padding: 10}]}><Text style={styles.commentUser}>{reply.user_name}</Text><Text style={styles.commentText}>{reply.text}</Text></View>
+                                  <View style={{flex: 1}}>
+                                    <View style={[styles.commentBubble, {backgroundColor: '#f9f9f9', padding: 10}]}>
+                                      <Text style={styles.commentUser}>{reply.user_name}</Text>
+                                      <Text style={styles.commentText}>{reply.text}</Text>
+                                    </View>
                                       <View style={{flexDirection: 'row', alignItems: 'center', marginTop: 5, paddingLeft: 10, gap: 15}}>
                                           <Text style={styles.commentTime}>{formatTime(reply.created_at)}</Text>
                                           <TouchableOpacity onPress={() => handleCommentLike(reply)} style={{flexDirection: 'row', alignItems: 'center', gap: 4}}><MaterialCommunityIcons name={reply.liked_by?.includes(userData.name) ? "heart" : "heart-outline"} size={14} color={reply.liked_by?.includes(userData.name) ? "#FF1744" : "#666"} /><Text style={{fontSize: 12, color: reply.liked_by?.includes(userData.name) ? '#FF1744' : '#666'}}>{reply.likes || 0}</Text></TouchableOpacity>
@@ -214,15 +226,89 @@ export default function Dashboard() {
           </ScrollView>
           <View style={{backgroundColor: 'white', borderTopWidth: 1, borderTopColor: '#eee'}}>
               {replyingTo && (<View style={{backgroundColor: '#E8F5E9', padding: 8, paddingHorizontal: 15, flexDirection: 'row', justifyContent: 'space-between'}}><Text style={{fontSize: 12, color: '#00C853'}}>Replying to <Text style={{fontWeight: 'bold'}}>@{replyingTo.name}</Text></Text><TouchableOpacity onPress={() => setReplyingTo(null)}><MaterialCommunityIcons name="close" size={16} color="#666" /></TouchableOpacity></View>)}
-              <View style={[styles.footerInput, {borderTopWidth: 0}]}><TextInput placeholder={replyingTo ? "Write a reply..." : "Write a comment..."} style={styles.inputField} value={newComment} onChangeText={setNewComment} /><TouchableOpacity style={styles.sendBtn} onPress={handleAddComment}><Ionicons name="send" size={20} color="white" /></TouchableOpacity></View>
+              <View style={[styles.footerInput, {borderTopWidth: 0}]}>
+                <TextInput placeholder={replyingTo ? "Write a reply..." : "Write a comment..."} style={styles.inputField} value={newComment} onChangeText={setNewComment} />
+                <TouchableOpacity style={styles.sendBtn} onPress={handleAddComment}>
+                  <Ionicons name="send" size={20} color="white" />
+                </TouchableOpacity>
+              </View>
           </View>
       </KeyboardAvoidingView>
     );
   }
 
+  // 🟢 DITO KO INAYOS YUNG ERROR (TINANGGAL ANG LIGAW NA SPACES)
   if (isCreating) {
       return (
-        <View style={{flex: 1, backgroundColor: 'white'}}><StatusBar barStyle="dark-content" backgroundColor="white" /><View style={[styles.createHeader, { paddingTop: Math.max(insets.top, 20) + 15 }]}><TouchableOpacity onPress={() => {setIsCreating(false); setEditingPostId(null);}}><Ionicons name="arrow-back" size={24} color="#333" /></TouchableOpacity><View><Text style={styles.createHeaderTitle}>{editingPostId ? 'Edit Post' : 'Create Post'}</Text></View><View style={{width: 24}} /> </View><KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{flex: 1}}><ScrollView contentContainerStyle={styles.createContent}><Text style={styles.label}>Post Type</Text><View style={styles.typeRow}>{['For Sale', 'Trade', 'Free'].map(type => (<TouchableOpacity key={type} style={[styles.typeBtn, form.type === type && styles.typeBtnActive, {borderColor: form.type === type ? '#00C853' : '#E0E0E0'}]} onPress={() => setForm({...form, type: type})}><Text style={[styles.typeBtnText, form.type === type && {color: '#00C853'}]}>{type}</Text></TouchableOpacity>))}</View><Text style={styles.label}>Title</Text><TextInput style={styles.input} placeholder="Title" value={form.title} onChangeText={(t) => setForm({...form, title: t})} /><Text style={styles.label}>Description</Text><TextInput style={[styles.input, {height: 80}]} placeholder="Desc" multiline value={form.desc} onChangeText={(t) => setForm({...form, desc: t})} /><Text style={styles.label}>Location</Text><TextInput style={styles.input} placeholder="Barangay, City" value={form.location} onChangeText={(t) => setForm({...form, location: t})} />{form.type === 'For Sale' && (<><Text style={styles.label}>Price *</Text><View style={styles.inputIconWrap}><Text style={{color: '#999', marginRight: 5}}>₱</Text><TextInput style={{flex: 1}} placeholder="0.00" keyboardType="numeric" value={form.price} onChangeText={(t) => setForm({...form, price: t})}/></View></>)}{form.type === 'Trade' && (<><Text style={styles.label}>Looking For</Text><TextInput style={styles.input} placeholder="e.g. Glass bottles..." value={form.lookingFor} onChangeText={(t) => setForm({...form, lookingFor: t})}/></>)}<Text style={styles.label}>Upload Photo</Text><TouchableOpacity style={styles.imageUploadBox} onPress={handleImagePick}>{form.imageUri ? <Image source={{ uri: form.imageUri }} style={{width: '100%', aspectRatio: 16/9, borderRadius: 12}} resizeMode="cover" /> : <MaterialCommunityIcons name="camera-plus" size={30} color="#999" />}</TouchableOpacity><TouchableOpacity style={styles.submitBtn} onPress={handlePostSubmit} disabled={isUploading}>{isUploading ? <ActivityIndicator color="white" /> : <Text style={{color: 'white', fontWeight: 'bold'}}>{editingPostId ? 'SAVE CHANGES' : 'POST NOW'}</Text>}</TouchableOpacity><View style={{height: 100}} /></ScrollView></KeyboardAvoidingView></View>
+        <View style={{flex: 1, backgroundColor: 'white'}}>
+          <StatusBar barStyle="dark-content" backgroundColor="white" />
+          <View style={[styles.createHeader, { paddingTop: Math.max(insets.top, 20) + 15 }]}>
+            <TouchableOpacity onPress={() => {setIsCreating(false); setEditingPostId(null);}}>
+              <Ionicons name="arrow-back" size={24} color="#333" />
+            </TouchableOpacity>
+            <View>
+              <Text style={styles.createHeaderTitle}>{editingPostId ? 'Edit Post' : 'Create Post'}</Text>
+            </View>
+            <View style={{width: 24}} />
+          </View>
+          
+          <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{flex: 1}}>
+            <ScrollView contentContainerStyle={styles.createContent}>
+              <Text style={styles.label}>Post Type</Text>
+              <View style={styles.typeRow}>
+                {['For Sale', 'Trade', 'Free'].map(type => (
+                  <TouchableOpacity key={type} style={[styles.typeBtn, form.type === type && styles.typeBtnActive, {borderColor: form.type === type ? '#00C853' : '#E0E0E0'}]} onPress={() => setForm({...form, type: type})}>
+                    <Text style={[styles.typeBtnText, form.type === type && {color: '#00C853'}]}>{type}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              
+              <Text style={styles.label}>Title</Text>
+              <TextInput style={styles.input} placeholder="Title" value={form.title} onChangeText={(t) => setForm({...form, title: t})} />
+              
+              <Text style={styles.label}>Description</Text>
+              <TextInput style={[styles.input, {height: 80}]} placeholder="Desc" multiline value={form.desc} onChangeText={(t) => setForm({...form, desc: t})} />
+              
+              <Text style={styles.label}>Location</Text>
+              <TextInput style={styles.input} placeholder="Barangay, City" value={form.location} onChangeText={(t) => setForm({...form, location: t})} />
+              
+              {form.type === 'For Sale' && (
+                <>
+                  <Text style={styles.label}>Price *</Text>
+                  <View style={styles.inputIconWrap}>
+                    <Text style={{color: '#999', marginRight: 5}}>₱</Text>
+                    <TextInput style={{flex: 1}} placeholder="0.00" keyboardType="numeric" value={form.price} onChangeText={(t) => setForm({...form, price: t})}/>
+                  </View>
+                </>
+              )}
+              
+              {form.type === 'Trade' && (
+                <>
+                  <Text style={styles.label}>Looking For</Text>
+                  <TextInput style={styles.input} placeholder="e.g. Glass bottles..." value={form.lookingFor} onChangeText={(t) => setForm({...form, lookingFor: t})}/>
+                </>
+              )}
+              
+              <Text style={styles.label}>Upload Photo</Text>
+              <TouchableOpacity style={styles.imageUploadBox} onPress={handleImagePick}>
+                {form.imageUri ? (
+                  <Image source={{ uri: form.imageUri }} style={{width: '100%', aspectRatio: 16/9, borderRadius: 12}} resizeMode="cover" />
+                ) : (
+                  <MaterialCommunityIcons name="camera-plus" size={30} color="#999" />
+                )}
+              </TouchableOpacity>
+              
+              <TouchableOpacity style={styles.submitBtn} onPress={handlePostSubmit} disabled={isUploading}>
+                {isUploading ? (
+                  <ActivityIndicator color="white" />
+                ) : (
+                  <Text style={{color: 'white', fontWeight: 'bold'}}>{editingPostId ? 'SAVE CHANGES' : 'POST NOW'}</Text>
+                )}
+              </TouchableOpacity>
+              <View style={{height: 100}} />
+            </ScrollView>
+          </KeyboardAvoidingView>
+        </View>
       );
   }
 
@@ -261,12 +347,20 @@ export default function Dashboard() {
                     )}
                 </TouchableOpacity>
 
-                <TouchableOpacity style={styles.addPostBtn} onPress={() => setIsCreating(true)}><MaterialCommunityIcons name="plus" size={20} color="white" /></TouchableOpacity>
+                <TouchableOpacity style={styles.addPostBtn} onPress={() => setIsCreating(true)}>
+                  <MaterialCommunityIcons name="plus" size={20} color="white" />
+                </TouchableOpacity>
             </View>
         </View>
         
         <View style={styles.searchContainer}><Ionicons name="search" size={20} color="#3f3e3e" style={{marginLeft: 10}} /><TextInput style={styles.searchInput} placeholder="Search posts, items, or users..." value={searchQuery} onChangeText={setSearchQuery} /></View>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{marginBottom: 15}}>{['All', 'For Sale', 'Trade', 'Free'].map((filter) => (<TouchableOpacity key={filter} style={[styles.filterPill, activeFilter === filter && styles.activePill]} onPress={() => setActiveFilter(filter)}><Text style={[styles.filterText, activeFilter === filter && styles.activeFilterText]}>{filter}</Text></TouchableOpacity>))}</ScrollView>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{marginBottom: 15}}>
+          {['All', 'For Sale', 'Trade', 'Free'].map((filter) => (
+            <TouchableOpacity key={filter} style={[styles.filterPill, activeFilter === filter && styles.activePill]} onPress={() => setActiveFilter(filter)}>
+              <Text style={[styles.filterText, activeFilter === filter && styles.activeFilterText]}>{filter}</Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
         {filteredPosts.length === 0 ? (<Text style={{textAlign: 'center', marginTop: 50, color: '#999'}}>No posts found.</Text>) : (
             filteredPosts.map((post) => (
                 <View key={post.id} style={styles.postCard}>
@@ -279,7 +373,22 @@ export default function Dashboard() {
         <View style={{height: 100}} /> 
       </ScrollView>
 
-      <Modal visible={isProfileMenuVisible} animationType="slide" transparent={true} onRequestClose={() => setProfileMenuVisible(false)}><TouchableOpacity style={{flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end'}} activeOpacity={1} onPress={() => setProfileMenuVisible(false)}><TouchableOpacity activeOpacity={1} style={{backgroundColor: 'white', borderTopLeftRadius: 25, borderTopRightRadius: 25, padding: 25, minHeight: 300}}><View style={{width: 40, height: 5, backgroundColor: '#ddd', borderRadius: 5, alignSelf: 'center', marginBottom: 20}} /><TouchableOpacity style={{flexDirection: 'row', alignItems: 'center', backgroundColor: '#F5F7FA', padding: 15, borderRadius: 16, marginBottom: 20}} onPress={() => { setProfileMenuVisible(false); router.push('/profile'); }}><Image source={{ uri: userData.avatar }} style={{width: 60, height: 60, borderRadius: 30, marginRight: 15}} /><View style={{flex: 1}}><Text style={{fontSize: 18, fontWeight: 'bold', color: '#333'}}>{userData.name}</Text><Text style={{fontSize: 13, color: '#666', marginTop: 2}}>See your profile</Text></View><Ionicons name="chevron-forward" size={24} color="#999" /></TouchableOpacity><TouchableOpacity style={{flexDirection: 'row', alignItems: 'center', paddingVertical: 15, borderBottomWidth: 1, borderBottomColor: '#eee'}} onPress={() => { setProfileMenuVisible(false); router.push('/settings'); }}><View style={{width: 36, height: 36, borderRadius: 18, backgroundColor: '#E8F5E9', justifyContent: 'center', alignItems: 'center', marginRight: 15}}><Ionicons name="settings" size={20} color="#00C853" /></View><Text style={{fontSize: 16, fontWeight: '500', color: '#333'}}>Settings & Privacy</Text></TouchableOpacity></TouchableOpacity></TouchableOpacity></Modal>
+      <Modal visible={isProfileMenuVisible} animationType="slide" transparent={true} onRequestClose={() => setProfileMenuVisible(false)}>
+        <TouchableOpacity style={{flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end'}} activeOpacity={1} onPress={() => setProfileMenuVisible(false)}>
+          <TouchableOpacity activeOpacity={1} style={{backgroundColor: 'white', borderTopLeftRadius: 25, borderTopRightRadius: 25, padding: 25, minHeight: 300}}>
+            <View style={{width: 40, height: 5, backgroundColor: '#ddd', borderRadius: 5, alignSelf: 'center', marginBottom: 20}} />
+            <TouchableOpacity style={{flexDirection: 'row', alignItems: 'center', backgroundColor: '#F5F7FA', padding: 15, borderRadius: 16, marginBottom: 20}} onPress={() => { setProfileMenuVisible(false); router.push('/profile'); }}>
+              <Image source={{ uri: userData.avatar }} style={{width: 60, height: 60, borderRadius: 30, marginRight: 15}} />
+              <View style={{flex: 1}}><Text style={{fontSize: 18, fontWeight: 'bold', color: '#333'}}>{userData.name}</Text><Text style={{fontSize: 13, color: '#666', marginTop: 2}}>See your profile</Text></View>
+              <Ionicons name="chevron-forward" size={24} color="#999" />
+            </TouchableOpacity>
+            <TouchableOpacity style={{flexDirection: 'row', alignItems: 'center', paddingVertical: 15, borderBottomWidth: 1, borderBottomColor: '#eee'}} onPress={() => { setProfileMenuVisible(false); router.push('/settings'); }}>
+              <View style={{width: 36, height: 36, borderRadius: 18, backgroundColor: '#E8F5E9', justifyContent: 'center', alignItems: 'center', marginRight: 15}}><Ionicons name="settings" size={20} color="#00C853" /></View>
+              <Text style={{fontSize: 16, fontWeight: '500', color: '#333'}}>Settings & Privacy</Text>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 }

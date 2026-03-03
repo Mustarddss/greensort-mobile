@@ -1,5 +1,5 @@
-import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, StatusBar, Alert } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, StatusBar, Alert, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -8,6 +8,38 @@ import { supabase } from '../lib/supabase';
 export default function Settings() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  
+  // 🟢 MGA STATES PARA SA STATUS CHECKING
+  const [dropoffStatus, setDropoffStatus] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // 🟢 KUNIN ANG STATUS SA DATABASE PAGKABUKAS NG SETTINGS
+  useEffect(() => {
+    const checkStatus = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const { data, error } = await supabase
+            .from('dropoff_applications')
+            .select('status')
+            .eq('user_email', user.email)
+            .order('created_at', { ascending: false }) // Kunin yung pinakabago
+            .limit(1)
+            .single();
+
+          if (data) {
+            setDropoffStatus(data.status);
+          }
+        }
+      } catch (error) {
+        console.log("Error checking status:", error.message);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    checkStatus();
+  }, []);
 
   const handleLogout = async () => {
     Alert.alert("Log Out", "Are you sure you want to log out?", [
@@ -17,6 +49,48 @@ export default function Settings() {
             router.replace('/login'); 
         }}
     ]);
+  };
+
+  // 🟢 DYNAMIC BUTTON LOGIC
+  const renderDropoffButton = () => {
+    if (isLoading) {
+      return (
+        <View style={styles.menuItem}>
+            <View style={[styles.menuIcon, { backgroundColor: '#E3F2FD' }]}><ActivityIndicator size="small" color="#2962FF" /></View>
+            <Text style={styles.menuText}>Checking status...</Text>
+        </View>
+      );
+    }
+
+    if (dropoffStatus === 'pending') {
+      return (
+        <TouchableOpacity style={styles.menuItem} onPress={() => Alert.alert("Application Pending", "Your application is currently being reviewed by the Admin. Please wait for an email update.")}>
+            <View style={[styles.menuIcon, { backgroundColor: '#FFF3E0' }]}><MaterialCommunityIcons name="timer-sand" size={20} color="#FF9800" /></View>
+            <Text style={styles.menuText}>Application Pending ⏳</Text>
+            <Ionicons name="chevron-forward" size={20} color="#ccc" />
+        </TouchableOpacity>
+      );
+    }
+
+    if (dropoffStatus === 'approved') {
+      return (
+        // ⚠️ PALITAN ANG '/collector-dashboard' NG TOTOONG ROUTE NG DROP-OFF DASHBOARD MO
+        <TouchableOpacity style={styles.menuItem} onPress={() => router.push('/collector-dashboard')}>
+            <View style={[styles.menuIcon, { backgroundColor: '#E8F5E9' }]}><MaterialCommunityIcons name="swap-horizontal" size={20} color="#00C853" /></View>
+            <Text style={styles.menuText}>Switch to Drop-off Mode</Text>
+            <Ionicons name="chevron-forward" size={20} color="#ccc" />
+        </TouchableOpacity>
+      );
+    }
+
+    // DEFAULT (Wala pang application o na-reject/deactivate)
+    return (
+        <TouchableOpacity style={styles.menuItem} onPress={() => router.push('/register-location')}>
+            <View style={[styles.menuIcon, { backgroundColor: '#E3F2FD' }]}><MaterialCommunityIcons name="map-marker-plus" size={20} color="#2962FF" /></View>
+            <Text style={styles.menuText}>Apply as Drop-off Point</Text>
+            <Ionicons name="chevron-forward" size={20} color="#ccc" />
+        </TouchableOpacity>
+    );
   };
 
   return (
@@ -42,11 +116,8 @@ export default function Settings() {
             <Ionicons name="chevron-forward" size={20} color="#ccc" />
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.menuItem} onPress={() => router.push('/register-location')}>
-            <View style={styles.menuIcon}><MaterialCommunityIcons name="map-marker-plus" size={20} color="#2962FF" /></View>
-            <Text style={styles.menuText}>Apply as Drop-off Point</Text>
-            <Ionicons name="chevron-forward" size={20} color="#ccc" />
-        </TouchableOpacity>
+        {/* 🟢 DITO NA LALABAS YUNG DYNAMIC BUTTON */}
+        {renderDropoffButton()}
 
         <View style={{height: 40}} />
 
@@ -60,5 +131,14 @@ export default function Settings() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F5F7FA' }, header: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'white', paddingBottom: 15, paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: '#eee' }, headerTitle: { fontSize: 18, fontWeight: 'bold', color: '#333' }, content: { padding: 20 }, sectionTitle: { fontSize: 13, fontWeight: 'bold', color: '#888', marginBottom: 10, textTransform: 'uppercase', letterSpacing: 1 }, menuItem: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'white', padding: 15, borderRadius: 12, marginBottom: 10 }, menuIcon: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#F5F7FA', justifyContent: 'center', alignItems: 'center', marginRight: 15 }, menuText: { flex: 1, fontSize: 16, color: '#333', fontWeight: '500' }, logoutBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFEBEE', padding: 16, borderRadius: 12 }, logoutText: { color: '#D50000', fontWeight: 'bold', fontSize: 16 }
+  container: { flex: 1, backgroundColor: '#F5F7FA' }, 
+  header: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'white', paddingBottom: 15, paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: '#eee' }, 
+  headerTitle: { fontSize: 18, fontWeight: 'bold', color: '#333' }, 
+  content: { padding: 20 }, 
+  sectionTitle: { fontSize: 13, fontWeight: 'bold', color: '#888', marginBottom: 10, textTransform: 'uppercase', letterSpacing: 1 }, 
+  menuItem: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'white', padding: 15, borderRadius: 12, marginBottom: 10 }, 
+  menuIcon: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#F5F7FA', justifyContent: 'center', alignItems: 'center', marginRight: 15 }, 
+  menuText: { flex: 1, fontSize: 16, color: '#333', fontWeight: '500' }, 
+  logoutBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFEBEE', padding: 16, borderRadius: 12 }, 
+  logoutText: { color: '#D50000', fontWeight: 'bold', fontSize: 16 }
 });

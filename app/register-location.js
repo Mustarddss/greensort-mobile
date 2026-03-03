@@ -1,16 +1,19 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Modal, Alert, Image } from 'react-native';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Modal, Alert, Image, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 
-// 🟢 IMPORT LIBRARY
+// 🟢 IMPORT SUPABASE AT LIBRARY
+import { supabase } from '../lib/supabase'; // Siguraduhin na tama ang path ng supabase config mo
 import { regions, provinces, city_mun, barangays } from 'phil-reg-prov-mun-brgy';
 
 export default function RegisterLocation() {
     const router = useRouter();
     
     // --- FORM STATES ---
+    const [programName, setProgramName] = useState('');
+    const [email, setEmail] = useState('');
     const [locationName, setLocationName] = useState('');
     const [contactNumber, setContactNumber] = useState('');
     
@@ -28,39 +31,29 @@ export default function RegisterLocation() {
     const [duration, setDuration] = useState('5 months or Less (Short - Term)'); 
     const [permitImage, setPermitImage] = useState(null);
     const [socialLink, setSocialLink] = useState('');
+    
+    const [isSubmitting, setIsSubmitting] = useState(false);
     const [isSubmitted, setIsSubmitted] = useState(false); 
 
-    // --- DYNAMIC ADDRESS FILTERING (FIXED) ---
-    
-    // 1. Regions
+    // --- DYNAMIC ADDRESS FILTERING ---
     const regionList = regions.map(r => ({ label: r.name, value: r.reg_code }));
 
-    // 2. Provinces (FIX: Added toString() para mag-match kahit number/string)
     const provinceList = regionCode 
-        ? provinces
-            .filter(p => p.reg_code.toString() === regionCode.toString()) 
-            .map(p => ({ label: p.name, value: p.prov_code })) 
+        ? provinces.filter(p => p.reg_code.toString() === regionCode.toString()).map(p => ({ label: p.name, value: p.prov_code })) 
         : [];
 
-    // 3. Cities/Municipalities (FIX: Added toString())
     const cityList = provinceCode 
-        ? city_mun
-            .filter(c => c.prov_code.toString() === provinceCode.toString())
-            .map(c => ({ label: c.name, value: c.mun_code })) 
+        ? city_mun.filter(c => c.prov_code.toString() === provinceCode.toString()).map(c => ({ label: c.name, value: c.mun_code })) 
         : [];
 
-    // 4. Barangays (FIX: Added toString())
     const barangayList = cityCode 
-        ? barangays
-            .filter(b => b.mun_code.toString() === cityCode.toString())
-            .map(b => ({ label: b.name, value: b.name })) 
+        ? barangays.filter(b => b.mun_code.toString() === cityCode.toString()).map(b => ({ label: b.name, value: b.name })) 
         : [];
 
     // --- HANDLERS ---
     const handleRegionChange = (item) => {
         setSelectedRegion(item.label);
         setRegionCode(item.value);
-        // Reset Lower Levels
         setSelectedProvince(''); setProvinceCode('');
         setSelectedCity(''); setCityCode('');
         setSelectedBarangay('');
@@ -69,7 +62,6 @@ export default function RegisterLocation() {
     const handleProvinceChange = (item) => {
         setSelectedProvince(item.label);
         setProvinceCode(item.value);
-        // Reset Lower Levels
         setSelectedCity(''); setCityCode('');
         setSelectedBarangay('');
     };
@@ -77,7 +69,6 @@ export default function RegisterLocation() {
     const handleCityChange = (item) => {
         setSelectedCity(item.label);
         setCityCode(item.value);
-        // Reset Lower Level
         setSelectedBarangay('');
     };
 
@@ -88,19 +79,19 @@ export default function RegisterLocation() {
     // --- IMAGE PICKER ---
     const pickImage = async () => {
         let result = await ImagePicker.launchImageLibraryAsync({
-            mediaTypes: ImagePicker.MediaTypeOptions.Images,
+            mediaTypes: ['images'], // 🟢 INAYOS NA: Para mawala yung warning sa terminal
             allowsEditing: true,
             aspect: [4, 3],
-            quality: 1,
+            quality: 0.5,
         });
         if (!result.canceled) {
             setPermitImage(result.assets[0].uri);
         }
     };
 
-    // --- SUBMIT ---
-    const handleSubmit = () => {
-        if(!locationName || !contactNumber || !selectedRegion || !selectedProvince || !selectedCity || !selectedBarangay) {
+    // --- SUPABASE SUBMIT LOGIC ---
+    const handleSubmit = async () => {
+        if(!programName || !email || !locationName || !contactNumber || !selectedRegion || !selectedProvince || !selectedCity || !selectedBarangay) {
             Alert.alert("Missing Fields", "Please fill in all location details.");
             return;
         }
@@ -113,24 +104,60 @@ export default function RegisterLocation() {
             return;
         }
 
-        const formData = new FormData();
-        formData.append('location_name', locationName);
-        formData.append('contact', contactNumber);
-        formData.append('full_address', `${selectedBarangay}, ${selectedCity}, ${selectedProvince}, ${selectedRegion}`);
-        formData.append('duration', duration);
-        
-        if (duration.includes('Less')) {
-            formData.append('permit_file', {
-                uri: permitImage,
-                name: 'permit.jpg',
-                type: 'image/jpeg',
-            });
-        } else {
-            formData.append('social_link', socialLink);
+        setIsSubmitting(true);
+        let uploadedPermitUrl = socialLink; // Default to social link if Long Term
+
+        // 1. Upload Image to Storage (kung Short Term at may permit file)
+        if (duration.includes('Less') && permitImage) {
+            try {
+                const formData = new FormData();
+                formData.append('file', {
+                    uri: permitImage,
+                    name: `permit_${Date.now()}.jpg`,
+                    type: 'image/jpeg',
+                });
+
+                const { data: uploadData, error: uploadError } = await supabase.storage
+                    .from('permits')
+                    .upload(`public/${Date.now()}.jpg`, formData);
+
+                if (uploadError) throw uploadError;
+
+                const { data: urlData } = supabase.storage
+                    .from('permits')
+                    .getPublicUrl(uploadData.path);
+                
+                uploadedPermitUrl = urlData.publicUrl;
+            } catch (e) {
+                console.log("Upload Error:", e);
+                Alert.alert("Upload Failed", "Could not upload the permit image. Make sure you added RLS Policies in Supabase.");
+                setIsSubmitting(false);
+                return;
+            }
         }
 
-        console.log("Submitting:", formData);
-        setIsSubmitted(true);
+        // 2. Save Data to Database
+        const { error: dbError } = await supabase.from('dropoff_applications').insert([{
+            user_email: email,
+            program_name: programName,
+            applicant_name: locationName, 
+            contact_number: contactNumber,
+            region: selectedRegion,
+            province: selectedProvince,
+            city: selectedCity,
+            barangay: selectedBarangay,
+            operation_duration: duration,
+            permit_url: uploadedPermitUrl,
+            status: 'pending' // Default pending para hintayin ma-approve ng admin
+        }]);
+
+        if (dbError) {
+            Alert.alert("Error", "Could not submit application. " + dbError.message);
+            setIsSubmitting(false);
+        } else {
+            setIsSubmitting(false);
+            setIsSubmitted(true);
+        }
     };
 
     if (isSubmitted) {
@@ -145,9 +172,9 @@ export default function RegisterLocation() {
                     </Text>
                     <TouchableOpacity 
                         style={styles.greenButton} 
-                        onPress={() => router.push('/collector-dashboard')} 
+                        onPress={() => router.push('/dashboard')} 
                     >
-                        <Text style={styles.buttonText}>Go to Collector Dashboard</Text>
+                        <Text style={styles.buttonText}>Back to User Dashboard</Text>
                     </TouchableOpacity>
                 </View>
             </View>
@@ -166,7 +193,10 @@ export default function RegisterLocation() {
             <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
                 
                 <Text style={styles.sectionTitle}>Basic Information</Text>
-                <InputGroup label="Location Name" placeholder="Brgy. San Isidro Hall / My Store" val={locationName} setVal={setLocationName} />
+                
+                <InputGroup label="Program Name" placeholder="e.g. Trash-to-Cashback" val={programName} setVal={setProgramName} />
+                <InputGroup label="Email Address" placeholder="juan@example.com" val={email} setVal={setEmail} keyboard="email-address" />
+                <InputGroup label="Exact Location of the Program" placeholder="Brgy. San Isidro Hall / My Store" val={locationName} setVal={setLocationName} />
                 <InputGroup label="Contact Number" placeholder="63+ 9123456789" val={contactNumber} setVal={setContactNumber} keyboard="phone-pad" />
 
                 <Text style={styles.sectionTitle}>Location Details</Text>
@@ -177,36 +207,10 @@ export default function RegisterLocation() {
                 </View>
 
                 {/* DYNAMIC DROPDOWNS */}
-                <CustomDropdown 
-                    label="Region" 
-                    value={selectedRegion} 
-                    options={regionList} 
-                    onSelect={handleRegionChange} 
-                />
-                
-                <CustomDropdown 
-                    label="Province" 
-                    value={selectedProvince} 
-                    options={provinceList} 
-                    onSelect={handleProvinceChange} 
-                    disabled={!selectedRegion} 
-                />
-
-                <CustomDropdown 
-                    label="City / Municipality" 
-                    value={selectedCity} 
-                    options={cityList} 
-                    onSelect={handleCityChange} 
-                    disabled={!selectedProvince} 
-                />
-
-                <CustomDropdown 
-                    label="Barangay" 
-                    value={selectedBarangay} 
-                    options={barangayList} 
-                    onSelect={handleBarangayChange} 
-                    disabled={!selectedCity} 
-                />
+                <CustomDropdown label="Region" value={selectedRegion} options={regionList} onSelect={handleRegionChange} />
+                <CustomDropdown label="Province" value={selectedProvince} options={provinceList} onSelect={handleProvinceChange} disabled={!selectedRegion} />
+                <CustomDropdown label="City / Municipality" value={selectedCity} options={cityList} onSelect={handleCityChange} disabled={!selectedProvince} />
+                <CustomDropdown label="Barangay" value={selectedBarangay} options={barangayList} onSelect={handleBarangayChange} disabled={!selectedCity} />
 
                 <Text style={styles.sectionTitle}>Operation Duration</Text>
                 <CustomDropdown 
@@ -246,8 +250,13 @@ export default function RegisterLocation() {
                     )}
                 </View>
 
-                <TouchableOpacity style={styles.submitButton} onPress={handleSubmit}>
-                    <Text style={styles.buttonText}>Submit Application</Text>
+                {/* BUTTON WITH LOADING STATE */}
+                <TouchableOpacity style={[styles.submitButton, isSubmitting && {opacity: 0.7}]} onPress={handleSubmit} disabled={isSubmitting}>
+                    {isSubmitting ? (
+                        <ActivityIndicator color="white" />
+                    ) : (
+                        <Text style={styles.buttonText}>Submit Application</Text>
+                    )}
                 </TouchableOpacity>
 
                 <View style={{height: 50}} />
@@ -331,4 +340,4 @@ const styles = StyleSheet.create({
     modalTitle: { fontWeight: 'bold', marginBottom: 15, fontSize: 16 },
     modalItem: { paddingVertical: 15, borderBottomWidth: 1, borderBottomColor: '#eee' },
     closeBtn: { marginTop: 15, alignItems: 'center' }
-}); 
+});
