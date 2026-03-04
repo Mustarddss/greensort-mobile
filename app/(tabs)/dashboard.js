@@ -1,10 +1,10 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Dimensions, StatusBar, Image, TextInput, KeyboardAvoidingView, Platform, Alert, ActivityIndicator, RefreshControl, Modal } from 'react-native';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
-import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
+import { useCallback, useEffect, useState } from 'react';
+import { ActivityIndicator, Alert, Image, KeyboardAvoidingView, Modal, Platform, RefreshControl, ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import * as ImagePicker from 'expo-image-picker'; 
-import { supabase } from '../../lib/supabase'; 
+import { supabase } from '../../lib/supabase';
 
 export default function Dashboard() {
   const router = useRouter();
@@ -27,10 +27,23 @@ export default function Dashboard() {
   const [replyingTo, setReplyingTo] = useState(null);
   const [isProfileMenuVisible, setProfileMenuVisible] = useState(false);
   
-  // 🟢 STATE PARA SA NOTIFICATION BADGE
+  // 🟢 STATE PARA SA NOTIFICATIONS AT MESSAGES BADGE
   const [unreadNotifs, setUnreadNotifs] = useState(0);
+  const [unreadMessages, setUnreadMessages] = useState(0);
 
-  useEffect(() => { fetchUserSessionAndData(); }, []);
+  useEffect(() => { 
+    fetchUserSessionAndData(); 
+
+    // 🟢 REALTIME LISTENER PARA SA MESSAGES (Para mag-update ang number agad)
+    const msgChannel = supabase.channel('dashboard-unread-msgs')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, () => {
+         fetchUserSessionAndData(); 
+      }).subscribe();
+
+    return () => { 
+        supabase.removeChannel(msgChannel); 
+    };
+  }, []);
 
   const fetchUserSessionAndData = async () => {
     const { data: { session } } = await supabase.auth.getSession();
@@ -41,9 +54,17 @@ export default function Dashboard() {
         avatar: session.user.user_metadata?.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(fullName)}&background=00C853&color=fff&bold=true`
       });
 
-      // 🟢 KUNIN ANG BILANG NG UNREAD NOTIFICATIONS
-      const { count } = await supabase.from('notifications').select('*', { count: 'exact', head: true }).eq('owner_name', fullName).eq('is_read', false);
-      setUnreadNotifs(count || 0);
+      // KUNIN ANG BILANG NG UNREAD NOTIFICATIONS
+      const { count: notifCount } = await supabase.from('notifications').select('*', { count: 'exact', head: true }).eq('owner_name', fullName).eq('is_read', false);
+      setUnreadNotifs(notifCount || 0);
+
+      // 🟢 KUNIN ANG BILANG NG UNREAD MESSAGES
+      const { count: msgCount } = await supabase.from('messages')
+        .select('*', { count: 'exact', head: true })
+        .eq('receiver_name', fullName)
+        .eq('is_read', false);
+      setUnreadMessages(msgCount || 0);
+
     } else { router.replace('/login'); }
     fetchPosts();
   };
@@ -237,7 +258,6 @@ export default function Dashboard() {
     );
   }
 
-  // 🟢 DITO KO INAYOS YUNG ERROR (TINANGGAL ANG LIGAW NA SPACES)
   if (isCreating) {
       return (
         <View style={{flex: 1, backgroundColor: 'white'}}>
@@ -315,12 +335,39 @@ export default function Dashboard() {
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#00C853" translucent={true} />
+      
+      {/* 🟢 TOP HEADER (Nandito na ang Messages at Notifications Button) */}
       <View style={[styles.header, { paddingTop: Math.max(insets.top, 20) + 15 }]}>
         <View style={styles.headerContent}>
-            <View><Text style={styles.appName}>GreenSort</Text><Text style={styles.welcomeText}>Welcome back, {userData.name}!</Text></View>
-            <TouchableOpacity onPress={() => setProfileMenuVisible(true)}>
-                <Image source={{ uri: userData.avatar }} style={{width: 50, height: 50, borderRadius: 25, borderWidth: 2, borderColor: 'white'}} />
-            </TouchableOpacity>
+            <View>
+              <Text style={styles.appName}>GreenSort</Text>
+              <Text style={styles.welcomeText}>Welcome back, {userData.name}!</Text>
+            </View>
+            
+            {/* 🟢 WRAPPER PARA MAGKATABI ANG ICONS 🟢 */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 15 }}>
+                
+                {/* 🟢 NOTIFICATION BELL (WHITE) */}
+                <TouchableOpacity style={styles.topMessageBtn} onPress={() => { setUnreadNotifs(0); router.push('/notifications'); }}>
+                    <Ionicons name="notifications" size={24} color="white" />
+                    {unreadNotifs > 0 && (
+                        <View style={styles.badgeDot}>
+                            <Text style={styles.badgeDotText}>{unreadNotifs > 99 ? '99+' : unreadNotifs}</Text>
+                        </View>
+                    )}
+                </TouchableOpacity>
+
+                {/* 🟢 MESSAGES BUTTON (WHITE) */}
+                <TouchableOpacity style={styles.topMessageBtn} onPress={() => { setUnreadMessages(0); router.push('/messages'); }}>
+                    <Ionicons name="chatbubble-ellipses" size={24} color="white" />
+                    {unreadMessages > 0 && (
+                        <View style={styles.badgeDot}>
+                            <Text style={styles.badgeDotText}>{unreadMessages > 99 ? '99+' : unreadMessages}</Text>
+                        </View>
+                    )}
+                </TouchableOpacity>
+
+            </View>
         </View>
       </View>
 
@@ -337,19 +384,11 @@ export default function Dashboard() {
             <Text style={styles.sectionTitle}>Community Feed</Text>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 15 }}>
                 
-                {/* 🟢 NOTIFICATION ICON NA MAY RED BADGE 🟢 */}
-                <TouchableOpacity style={styles.notifIconBtn} onPress={() => { setUnreadNotifs(0); router.push('/notifications'); }}>
-                    <Ionicons name="notifications-outline" size={22} color="#333" />
-                    {unreadNotifs > 0 && (
-                        <View style={styles.badgeDot}>
-                            <Text style={styles.badgeDotText}>{unreadNotifs > 99 ? '99+' : unreadNotifs}</Text>
-                        </View>
-                    )}
-                </TouchableOpacity>
-
+                {/* 🟢 ADD POST BUTTON NALANG ANG NATIRA DITO 🟢 */}
                 <TouchableOpacity style={styles.addPostBtn} onPress={() => setIsCreating(true)}>
                   <MaterialCommunityIcons name="plus" size={20} color="white" />
                 </TouchableOpacity>
+                
             </View>
         </View>
         
@@ -398,8 +437,8 @@ const ImpactCard = ({ value, unit, icon, color, bgColor }) => (<View style={styl
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F5F7FA' }, header: { backgroundColor: '#00C853', paddingBottom: 25, paddingHorizontal: 25, borderBottomLeftRadius: 25, borderBottomRightRadius: 25, elevation: 4 }, headerContent: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, appName: { color: 'white', fontSize: 24, fontWeight: '800' }, welcomeText: { color: 'rgba(255,255,255,0.9)', fontSize: 13, marginTop: 4 }, scrollView: { flex: 1 }, scrollContent: { paddingHorizontal: 20, paddingTop: 10 }, tipCard: { backgroundColor: '#FFF3E0', padding: 16, borderRadius: 16, marginBottom: 20, borderWidth: 1, borderColor: '#FFE0B2' }, tipHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 }, tipTitle: { fontSize: 14, fontWeight: 'bold', color: '#EF6C00', marginLeft: 8 }, tipText: { fontSize: 12, color: '#E65100', lineHeight: 18 }, impactRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 25, gap: 10 }, impactCard: { flex: 1, backgroundColor: 'white', paddingVertical: 18, borderRadius: 16, alignItems: 'center', elevation: 2 }, impactIconBg: { padding: 10, borderRadius: 12, marginBottom: 10 }, impactValue: { fontSize: 18, fontWeight: 'bold' }, impactUnit: { fontSize: 10, color: '#90A4AE', textAlign: 'center', marginTop: 2 }, sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, marginTop: 10 }, sectionTitle: { fontSize: 20, fontWeight: 'bold', color: '#263238' }, searchContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'white', borderRadius: 12, marginBottom: 15, paddingHorizontal: 10, borderWidth: 1, borderColor: '#eee' }, searchInput: { flex: 1, paddingVertical: 12, paddingHorizontal: 10, fontSize: 14, color: '#333' }, 
   
-  // 🔴 DESIGN PARA SA RED BADGE 🔴
-  notifIconBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'white', justifyContent: 'center', alignItems: 'center', elevation: 2, borderWidth: 1, borderColor: '#eee', position: 'relative' }, 
+  // 🔴 UPDATED DESIGN PARA SA TRANSPARENT TOP BUTTONS
+  topMessageBtn: { justifyContent: 'center', alignItems: 'center', position: 'relative' },
   badgeDot: { position: 'absolute', top: -5, right: -5, backgroundColor: '#FF1744', borderRadius: 10, paddingHorizontal: 5, paddingVertical: 2, minWidth: 20, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'white' },
   badgeDotText: { color: 'white', fontSize: 10, fontWeight: 'bold' },
 

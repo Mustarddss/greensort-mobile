@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
-import { View, Dimensions, Platform } from 'react-native';
-import { Tabs } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { Tabs } from 'expo-router';
+import { useEffect, useState } from 'react';
+import { Dimensions, Platform, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
 
@@ -48,7 +48,6 @@ export default function TabLayout() {
 
     return () => { 
         supabase.removeChannel(msgChannel); 
-        // WALA NANG removeChannel PARA SA GLOBAL PRESENCE DITO! Hahayaan natin siyang buhay.
     };
   }, []);
 
@@ -68,15 +67,19 @@ export default function TabLayout() {
              </View>
           ) }} />
       <Tabs.Screen name="projects" options={{ title: 'Upcycle', tabBarIcon: ({ color, focused }) => ( <MaterialCommunityIcons name={focused ? "lightbulb-on" : "lightbulb-outline"} size={28} color={color} /> ) }} />
-      <Tabs.Screen name="messages" options={{ 
-          title: 'Messages', 
-          tabBarBadge: unreadCount > 0 ? unreadCount : null, 
-          tabBarBadgeStyle: { backgroundColor: '#FF1744', color: 'white', fontSize: 10 },
-          tabBarIcon: ({ color, focused }) => ( <MaterialCommunityIcons name={focused ? "message-text" : "message-text-outline"} size={28} color={color} /> ) 
+      
+      {/* 🟢 BAGONG PROFILE TAB NA NASA IBABA */}
+      <Tabs.Screen name="profile" options={{ 
+          title: 'Profile', 
+          tabBarIcon: ({ color, focused }) => ( 
+              <MaterialCommunityIcons name={focused ? "account" : "account-outline"} size={28} color={color} /> 
+          ) 
       }} />
+
+      {/* 🟢 NAKATAGO NA ANG MGA ITO SA TABS */}
+      <Tabs.Screen name="messages" options={{ href: null }} /> 
       <Tabs.Screen name="history" options={{ href: null }} /> 
       <Tabs.Screen name="explore" options={{ href: null }} /> 
-      <Tabs.Screen name="profile" options={{ href: null }} /> 
     </Tabs>
   );
 }

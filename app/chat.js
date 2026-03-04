@@ -1,10 +1,10 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, TextInput, TouchableOpacity, FlatList, StyleSheet, KeyboardAvoidingView, Platform, StatusBar, Image, Keyboard, ActivityIndicator, Alert } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { supabase } from '../lib/supabase';
+import * as ImagePicker from 'expo-image-picker';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, FlatList, Image, KeyboardAvoidingView, Platform, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import * as ImagePicker from 'expo-image-picker'; 
+import { supabase } from '../lib/supabase';
 
 export default function ChatScreen() {
   const { chatUser } = useLocalSearchParams(); 
@@ -34,14 +34,16 @@ export default function ChatScreen() {
         
         await supabase.from('messages').update({ is_read: true }).eq('sender_name', chatUser).eq('receiver_name', currentUser);
 
-        const { data } = await supabase.from('messages')
+        // 🟢 FIX 1: Nilagyan ng double quotes ("") ang variables para basahin ng Supabase bilang text
+        const { data, error } = await supabase.from('messages')
           .select('*')
-          .or(`and(sender_name.eq.${currentUser},receiver_name.eq.${chatUser}),and(sender_name.eq.${chatUser},receiver_name.eq.${currentUser})`)
+          .or(`and(sender_name.eq."${currentUser}",receiver_name.eq."${chatUser}"),and(sender_name.eq."${chatUser}",receiver_name.eq."${currentUser}")`)
           .order('created_at', { ascending: true });
+          
         if (data) setMessages(data);
+        if (error) console.log("Error fetching messages:", error);
 
         // 🟢 SILENT ONLINE CHECKER 🟢
-        // Sisilipin lang nito yung data nang hindi gumagawa ng panibagong gulo sa connection
         const globalChan = supabase.channel('green_sort_global');
         
         const checkOnlineStatus = () => {
@@ -49,8 +51,8 @@ export default function ChatScreen() {
             setIsOnline(Object.keys(state).includes(chatUser));
         };
 
-        checkOnlineStatus(); // Silipin agad
-        statusInterval = setInterval(checkOnlineStatus, 2000); // I-update tuwing 2 segundo
+        checkOnlineStatus(); 
+        statusInterval = setInterval(checkOnlineStatus, 2000); 
       }
     };
 
@@ -58,19 +60,28 @@ export default function ChatScreen() {
 
     messageChannel = supabase.channel('public:messages')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
-          setMessages(prev => {
-              if (prev.find(m => m.id === payload.new.id)) return prev; 
-              return [...prev, payload.new];
-          });
-          if (payload.new.receiver_name === currentUser && payload.new.sender_name === chatUser) {
-              supabase.from('messages').update({ is_read: true }).eq('id', payload.new.id).then();
+          
+          // 🟢 FIX 2: Siguraduhin na ang bagong message ay para lang sa inyong dalawa
+          const isThisChat = 
+            (payload.new.sender_name === currentUser && payload.new.receiver_name === chatUser) || 
+            (payload.new.sender_name === chatUser && payload.new.receiver_name === currentUser);
+
+          if (isThisChat) {
+              setMessages(prev => {
+                  if (prev.find(m => m.id === payload.new.id)) return prev; 
+                  return [...prev, payload.new];
+              });
+              
+              if (payload.new.receiver_name === currentUser && payload.new.sender_name === chatUser) {
+                  supabase.from('messages').update({ is_read: true }).eq('id', payload.new.id).then();
+              }
           }
+
       }).subscribe();
 
     return () => {
       if (statusInterval) clearInterval(statusInterval);
       if (messageChannel) supabase.removeChannel(messageChannel);
-      // HINDI NATIN PAPATAYIN ANG GLOBAL CHANNEL DITO!
     };
   }, [chatUser]);
 

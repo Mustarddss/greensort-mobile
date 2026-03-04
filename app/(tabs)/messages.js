@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Image, StatusBar, RefreshControl } from 'react-native';
-import { useRouter } from 'expo-router';
-import { supabase } from '../../lib/supabase';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
+import { useCallback, useEffect, useState } from 'react';
+import { FlatList, Image, RefreshControl, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { supabase } from '../../lib/supabase';
 
 export default function MessagesList() {
   const router = useRouter();
@@ -36,10 +36,15 @@ export default function MessagesList() {
       const chatMap = new Map();
       data.forEach(msg => {
         const otherPerson = msg.sender_name === currentName ? msg.receiver_name : msg.sender_name;
+        
+        // 🟢 CHECK KUNG IKAW ANG SENDER NG MESSAGE NA ITO
+        const isMe = msg.sender_name === currentName;
+
         if (!chatMap.has(otherPerson)) {
           chatMap.set(otherPerson, { 
             chatUser: otherPerson, 
-            latestMessageOriginal: msg.text,
+            // 🟢 ILAGAY ANG "You: " KUNG IKAW ANG NAG-SEND PARA ALAM MONG GALING SA'YO KAHIT SA IBANG DEVICE PA
+            latestMessageOriginal: msg.text ? (isMe ? `You: ${msg.text}` : msg.text) : '',
             latestImageUrl: msg.image_url, 
             time: msg.created_at,
             unreadCount: 0, 
@@ -56,7 +61,8 @@ export default function MessagesList() {
           if (chat.unreadCount > 1) {
               displayMsg = `${chat.unreadCount} new messages`;
           } else if (chat.latestImageUrl) { 
-              displayMsg = 'Sent an attachment.';
+              // 🟢 UPDATE LOGIC FOR IMAGE ATTACHMENT
+              displayMsg = chat.latestMessageOriginal.includes('You:') ? 'You sent an attachment.' : 'Sent an attachment.';
           }
           return { ...chat, displayMessage: displayMsg };
       });
@@ -114,7 +120,6 @@ export default function MessagesList() {
                       <Text style={[styles.latestMessage, isUnread ? styles.unreadText : null]} numberOfLines={1}>
                           {item.displayMessage}
                       </Text>
-                      {/* 🟢 FIX: Ginawang ternary operator para safe */}
                       {isUnread ? <View style={styles.unreadDot} /> : null}
                   </View>
               </View>

@@ -1,12 +1,12 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Modal, Alert, Image, ActivityIndicator } from 'react-native';
-import { useRouter } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import { useRouter } from 'expo-router';
+import { useState } from 'react';
+import { ActivityIndicator, Alert, Image, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 // 🟢 IMPORT SUPABASE AT LIBRARY
+import { barangays, city_mun, provinces, regions } from 'phil-reg-prov-mun-brgy';
 import { supabase } from '../lib/supabase'; // Siguraduhin na tama ang path ng supabase config mo
-import { regions, provinces, city_mun, barangays } from 'phil-reg-prov-mun-brgy';
 
 export default function RegisterLocation() {
     const router = useRouter();
