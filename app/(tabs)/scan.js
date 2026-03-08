@@ -124,7 +124,7 @@ export default function ScanPage() {
           <View style={styles.cameraContainer}>
               {loading ? (
                    <View style={styles.loadingContainer}>
-                      <ActivityIndicator size="large" color="#00C853" />
+                      <ActivityIndicator size="large" color="#007C00" />
                       <Text style={styles.loadingText}>Analyzing...</Text>
                    </View>
               ) : image ? (
@@ -132,7 +132,7 @@ export default function ScanPage() {
               ) : (
                   <TouchableOpacity style={styles.placeholderContainer} onPress={pickImageCamera}>
                         <View style={styles.iconCircle}>
-                           <MaterialCommunityIcons name="camera-plus" size={40} color="#00C853" />
+                           <MaterialCommunityIcons name="camera-plus" size={40} color="#007C00" />
                         </View>
                         <Text style={styles.placeholderText}>Tap to Scan</Text>
                   </TouchableOpacity>
@@ -187,7 +187,7 @@ export default function ScanPage() {
                               <MaterialCommunityIcons 
                                   name="arrow-right-circle" 
                                   size={24} 
-                                  color={pressed ? "white" : "#00C853"} 
+                                  color={pressed ? "white" : "#007C00"} 
                               />
                           </>
                       )}
@@ -214,7 +214,7 @@ export default function ScanPage() {
                               <MaterialCommunityIcons 
                                   name="arrow-right-circle" 
                                   size={24} 
-                                  color={pressed ? "white" : "#00C853"} 
+                                  color={pressed ? "white" : "#007C00"} 
                               />
                           </>
                       )}
@@ -230,7 +230,7 @@ export default function ScanPage() {
                           onChangeText={setManualInput}
                       />
                       <TouchableOpacity onPress={submitManualInput}>
-                          <Feather name="send" size={20} color="#00C853" style={{marginRight: 10}}/>
+                          <Feather name="send" size={20} color="#007C00" style={{marginRight: 10}}/>
                       </TouchableOpacity>
                   </View>
 
@@ -269,7 +269,7 @@ export default function ScanPage() {
                       </TouchableOpacity>
 
                       <TouchableOpacity style={styles.uploadBtn} onPress={pickImageGallery}>
-                          <MaterialCommunityIcons name="image-outline" size={20} color="#00C853" style={{marginRight: 10}} />
+                          <MaterialCommunityIcons name="image-outline" size={20} color="#007C00" style={{marginRight: 10}} />
                           <Text style={styles.uploadBtnText}>Upload from Gallery</Text>
                       </TouchableOpacity>
                   </View>
@@ -316,7 +316,7 @@ export default function ScanPage() {
                       {getSuggestions().map((idea, i) => (
                           <TouchableOpacity key={i} style={styles.modalOption} onPress={() => proceedToProject(idea)}>
                               <Text style={styles.optionText}>{idea}</Text>
-                              <MaterialCommunityIcons name="chevron-right" size={24} color="#00C853" />
+                              <MaterialCommunityIcons name="chevron-right" size={24} color="#007C00" />
                           </TouchableOpacity>
                       ))}
                   </View>
@@ -334,7 +334,7 @@ const styles = StyleSheet.create({
   
   // 🟢 FIXED HEADER STYLES (Inalis ang marginBottom para maganda ang pasok ng shadow sa ScrollView)
   header: { 
-      backgroundColor: '#00C853', 
+      backgroundColor: '#007C00', 
       paddingBottom: 25, 
       paddingHorizontal: 20, 
       borderBottomLeftRadius: 25, 
@@ -374,7 +374,7 @@ const styles = StyleSheet.create({
   cameraContainer: { width: '100%', height: 250, borderRadius: 20, overflow: 'hidden', backgroundColor: '#fff', marginBottom: 20, elevation: 4, justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOffset: {width: 0, height: 2}, shadowOpacity: 0.1, shadowRadius: 4 },
   cameraImage: { width: '100%', height: '100%', resizeMode: 'contain' },
   loadingContainer: { alignItems: 'center' },
-  loadingText: { marginTop: 10, color: '#00C853', fontWeight: 'bold' },
+  loadingText: { marginTop: 10, color: '#007C00', fontWeight: 'bold' },
   placeholderContainer: { alignItems: 'center' },
   iconCircle: { width: 60, height: 60, borderRadius: 30, backgroundColor: '#E8F5E9', justifyContent: 'center', alignItems: 'center', marginBottom: 10 },
   placeholderText: { fontSize: 16, color: '#666', fontWeight: 'bold' },
@@ -383,24 +383,24 @@ const styles = StyleSheet.create({
   cardHeaderTitle: { fontSize: 14, fontWeight: 'bold', color: '#333', marginBottom: 10 },
   accuracyContainer: { marginBottom: 15 },
   progressBarBg: { height: 8, backgroundColor: '#E0E0E0', borderRadius: 4, overflow: 'hidden', marginBottom: 5 },
-  progressBarFill: { height: '100%', backgroundColor: '#00C853', borderRadius: 4 },
-  accuracyText: { fontSize: 12, color: '#00C853', fontWeight: 'bold' },
+  progressBarFill: { height: '100%', backgroundColor: '#007C00', borderRadius: 4 },
+  accuracyText: { fontSize: 12, color: '#007C00', fontWeight: 'bold' },
   smallLabel: { fontSize: 12, color: '#888', marginBottom: 2 },
-  mainWasteTitle: { fontSize: 20, fontWeight: 'bold', color: '#00C853', marginBottom: 10 },
+  mainWasteTitle: { fontSize: 20, fontWeight: 'bold', color: '#007C00', marginBottom: 10 },
   categoryText: { fontSize: 16, color: '#333', marginBottom: 10 },
   statusChip: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', backgroundColor: '#E8F5E9', paddingVertical: 6, paddingHorizontal: 12, borderRadius: 20, borderWidth: 1, borderColor: '#C8E6C9' },
   statusText: { color: '#2E7D32', fontWeight: 'bold', fontSize: 12, marginLeft: 5 },
   actionLabel: { fontSize: 13, fontWeight: 'bold', color: '#333', marginTop: 20, marginBottom: 10 },
   
-  outlinedBtn: { backgroundColor: 'white', borderRadius: 12, padding: 15, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, borderWidth: 1, borderColor: '#00C853' },
-  outlinedBtnActive: { backgroundColor: '#00C853' },
-  outlinedBtnTitle: { color: '#00C853', fontWeight: 'bold', fontSize: 14 },
+  outlinedBtn: { backgroundColor: 'white', borderRadius: 12, padding: 15, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, borderWidth: 1, borderColor: '#007C00' },
+  outlinedBtnActive: { backgroundColor: '#007C00' },
+  outlinedBtnTitle: { color: '#007C00', fontWeight: 'bold', fontSize: 14 },
   outlinedBtnSub: { color: '#666', fontSize: 11 },
 
   manualInputLabel: { fontSize: 12, color: '#666', fontWeight: '600', marginBottom: 5 },
   inputWrapper: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#ccc', borderRadius: 10, paddingHorizontal: 5, backgroundColor: '#F9F9F9' },
   textInput: { flex: 1, paddingVertical: 10, paddingHorizontal: 10, fontSize: 14, color: '#333' },
-  scanAgainLink: { color: '#00C853', fontWeight: 'bold', fontSize: 14 },
+  scanAgainLink: { color: '#007C00', fontWeight: 'bold', fontSize: 14 },
   
   tipsContainer: { backgroundColor: 'white', borderRadius: 15, padding: 15, borderWidth: 1, borderColor: '#4CAF50', marginBottom: 15 },
   tipHeaderRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 5 },
@@ -411,18 +411,18 @@ const styles = StyleSheet.create({
   collectibleText: { flex: 1, marginLeft: 10, fontSize: 12, color: '#1B5E20' },
   
   defaultActions: { gap: 15, marginTop: 10 },
-  scanBtn: { backgroundColor: '#00C853', flexDirection: 'row', justifyContent: 'center', alignItems: 'center', padding: 16, borderRadius: 12, elevation: 3 },
+  scanBtn: { backgroundColor: '#007C00', flexDirection: 'row', justifyContent: 'center', alignItems: 'center', padding: 16, borderRadius: 12, elevation: 3 },
   scanBtnText: { color: 'white', fontSize: 16, fontWeight: 'bold' },
-  uploadBtn: { backgroundColor: 'white', flexDirection: 'row', justifyContent: 'center', alignItems: 'center', padding: 16, borderRadius: 12, borderWidth: 1, borderColor: '#00C853' },
-  uploadBtnText: { color: '#00C853', fontSize: 16, fontWeight: 'bold' },
+  uploadBtn: { backgroundColor: 'white', flexDirection: 'row', justifyContent: 'center', alignItems: 'center', padding: 16, borderRadius: 12, borderWidth: 1, borderColor: '#007C00' },
+  uploadBtnText: { color: '#007C00', fontSize: 16, fontWeight: 'bold' },
   
   tipsCard: { backgroundColor: '#E8F5E9', marginTop: 25, padding: 20, borderRadius: 15, borderWidth: 1, borderColor: '#C8E6C9' },
   tipsHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
   tipsCardTitle: { color: '#2E7D32', fontWeight: 'bold', fontSize: 16 },
-  tipsBadge: { backgroundColor: '#00C853', width: 24, height: 24, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
+  tipsBadge: { backgroundColor: '#007C00', width: 24, height: 24, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
   tipsBadgeText: { color: 'white', fontWeight: 'bold', fontSize: 12 },
   tipItem: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 10 },
-  bullet: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#00C853', marginTop: 6, marginRight: 10 },
+  bullet: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#007C00', marginTop: 6, marginRight: 10 },
   tipCardText: { color: '#1B5E20', fontSize: 13, lineHeight: 18, flex: 1 },
 
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },

@@ -55,9 +55,15 @@ export default function Signup() {
     if (error) {
       Alert.alert('Signup Error', error.message);
     } else {
+      
+      // 🟢 FIX: I-force logout agad natin para hindi siya mag-auto login papuntang Dashboard
+      if (data.session) {
+        await supabase.auth.signOut();
+      }
+
       Alert.alert(
-        'Verify Your Email', 
-        'Account created! Please check your email inbox to verify your account before logging in.', 
+        'Account Created', 
+        'Your account has been created successfully! Please log in to continue.', 
         [{ text: 'Go to Login', onPress: () => router.replace('/login') }]
       );
     }
@@ -125,13 +131,13 @@ const styles = StyleSheet.create({
   centerHeader: { alignItems: 'center', marginBottom: 10 },
   logoImage: { width: 200, height: 200 },
   headerTextContainer: { marginBottom: 25, alignItems: 'flex-start' },
-  title: { fontSize: 28, fontWeight: 'bold', color: '#00C853', marginBottom: 5 },
+  title: { fontSize: 28, fontWeight: 'bold', color: '#007C00', marginBottom: 5 },
   subtitle: { fontSize: 14, color: '#888' },
   form: { width: '100%' },
   label: { fontSize: 14, color: '#333', fontWeight: '500', marginBottom: 8, marginTop: 15 },
   input: { backgroundColor: '#F5F5F5', paddingVertical: 14, paddingHorizontal: 15, borderRadius: 8, fontSize: 14, color: '#333', borderWidth: 1, borderColor: '#EEEEEE' },
-  button: { backgroundColor: '#00C853', paddingVertical: 16, borderRadius: 8, alignItems: 'center', marginTop: 30, marginBottom: 10, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 4, elevation: 3 },
+  button: { backgroundColor: '#007C00', paddingVertical: 16, borderRadius: 8, alignItems: 'center', marginTop: 30, marginBottom: 10, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 4, elevation: 3 },
   buttonText: { color: '#fff', fontSize: 16, fontWeight: 'bold', letterSpacing: 0.5 },
   footer: { flexDirection: 'row', justifyContent: 'center', marginTop: 15, marginBottom: 20 },
-  link: { color: '#00C853', fontWeight: 'bold' },
+  link: { color: '#007C00', fontWeight: 'bold' },
 });

@@ -189,6 +189,6 @@ const styles = StyleSheet.create({
   userId: { fontSize: 10, color: '#666', marginTop: 2 },
   wasteType: { fontSize: 11, fontWeight: 'bold', color: '#333' },
   weight: { fontSize: 11, color: '#0066FF', fontWeight: 'bold' },
-  reward: { fontSize: 10, color: '#00C853' },
+  reward: { fontSize: 10, color: '#007C00' },
   points: { fontSize: 10, color: '#555', marginTop: 2 },
 });

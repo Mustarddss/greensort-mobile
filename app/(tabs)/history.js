@@ -1,9 +1,16 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { StyleSheet, Text, View, Image, TouchableOpacity, FlatList, StatusBar, ActivityIndicator } from 'react-native';
+import { StyleSheet, Text, View, Image, TouchableOpacity, FlatList, StatusBar, ActivityIndicator, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { supabase } from '../../lib/supabase'; // 🟢 MAKE SURE TAMA ANG PATH
+import { supabase } from '../../lib/supabase';
+
+// 🟢 SHADOW HELPER (Pareho sa buong app)
+const getSafeShadow = () => Platform.select({ 
+    ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4 }, 
+    android: { elevation: 3 },
+    web: { boxShadow: '0px 2px 4px rgba(0, 0, 0, 0.1)' }
+});
 
 export default function HistoryPage() {
   const router = useRouter(); 
@@ -13,7 +20,6 @@ export default function HistoryPage() {
   const [loading, setLoading] = useState(true);
   const [totalWeight, setTotalWeight] = useState(0);
 
-  // 🟢 FETCH DATA MULA SA SUPABASE
   const fetchHistory = useCallback(async () => {
     setLoading(true);
     const { data: { user } } = await supabase.auth.getUser();
@@ -33,13 +39,10 @@ export default function HistoryPage() {
             .order('created_at', { ascending: false });
 
         if (data && !error) {
-            // Compute Total Weight
             const total = data.reduce((sum, item) => sum + parseFloat(item.weight_kg), 0);
             setTotalWeight(total.toFixed(1));
 
-            // Format Data para sa UI
             const formattedData = await Promise.all(data.map(async (item) => {
-                // Kunin yung pangalan ng Drop-off Center based sa collector_email
                 const { data: center } = await supabase
                     .from('dropoff_applications')
                     .select('program_name')
@@ -49,7 +52,6 @@ export default function HistoryPage() {
                 return {
                     id: item.id.toString(),
                     item: item.waste_type,
-                    // Temporary Placeholder Image (In a real app, you can save specific images per waste type)
                     image: 'https://images.unsplash.com/photo-1605600659873-d808a13e4d2a?q=80&w=200', 
                     weight: `${item.weight_kg} kg`,
                     date: new Date(item.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
@@ -68,22 +70,50 @@ export default function HistoryPage() {
     fetchHistory();
   }, [fetchHistory]);
 
+  // 🟢 SUMMARY CARD (Ginawang component para ilagay sa Header ng FlatList)
+  const renderSummaryCard = () => (
+    <View style={styles.summaryCardContainer}>
+      <View style={styles.summaryCard}>
+          <View style={styles.iconCircle}>
+              <MaterialCommunityIcons name="weight-kilogram" size={32} color="#007C00" />
+          </View>
+          <View style={{flex: 1, marginLeft: 15}}>
+              <Text style={styles.summaryLabel}>Total Waste Recycled</Text>
+              <Text style={styles.summaryValue}>{totalWeight} KG</Text>
+          </View>
+      </View>
+      <Text style={styles.sectionTitle}>Recent Surrenders</Text>
+    </View>
+  );
+
   const renderItem = ({ item }) => (
     <View style={styles.card}>
         <Image source={{ uri: item.image }} style={styles.cardImage} />
         
         <View style={styles.cardContent}>
-            <Text style={styles.itemTitle}>{item.item}</Text>
+            <Text style={styles.itemTitle} numberOfLines={1}>{item.item}</Text>
             
             <View style={styles.row}>
+                <Ionicons name="scale-outline" size={14} color="#666" style={{marginRight: 6}} />
                 <Text style={styles.label}>Weight: </Text>
                 <Text style={styles.weightValue}>{item.weight}</Text>
             </View>
 
-            <Text style={styles.dateText}>{item.date}</Text>
-            <Text style={styles.locationText}>{item.location}</Text>
-            {item.reward !== 'None' && (
-                <Text style={{fontSize: 10, color: '#00C853', marginTop: 2, fontWeight: 'bold'}}>Reward: {item.reward}</Text>
+            <View style={styles.row}>
+                <Ionicons name="calendar-outline" size={14} color="#666" style={{marginRight: 6}} />
+                <Text style={styles.dateText}>{item.date}</Text>
+            </View>
+
+            <View style={styles.row}>
+                <Ionicons name="location-outline" size={14} color="#666" style={{marginRight: 6}} />
+                <Text style={styles.locationText} numberOfLines={1}>{item.location}</Text>
+            </View>
+
+            {item.reward && item.reward !== 'None' && (
+                <View style={styles.rewardBadge}>
+                    <Ionicons name="gift" size={12} color="#007C00" style={{marginRight: 4}} />
+                    <Text style={styles.rewardText}>Reward: {item.reward}</Text>
+                </View>
             )}
         </View>
     </View>
@@ -91,40 +121,37 @@ export default function HistoryPage() {
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#D500F9" />
+      <StatusBar barStyle="light-content" backgroundColor="#007C00" translucent={true} />
       
-      {/* 🟣 HEADER */}
-      <View style={[styles.headerBg, { paddingTop: Math.max(insets.top, 20) + 15 }]}>
-        <View style={styles.headerRow}>
-            <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-                <Ionicons name="arrow-back" size={24} color="white" />
-            </TouchableOpacity>
-            <Text style={styles.headerTitle}>Surrender History</Text>
-        </View>
-        <Text style={styles.headerSubtitle}>Track your waste submissions</Text>
-      </View>
-
-      {/* ⚪ SUMMARY CARD */}
-      <View style={styles.summaryCardContainer}>
-        <View style={styles.summaryCard}>
-            <Text style={styles.summaryLabel}>Kilograms Collected</Text>
-            <Text style={styles.summaryValue}>{totalWeight} KG</Text>
-        </View>
+      {/* 🟢 STANDARD GREEN HEADER */}
+      <View style={[styles.header, { paddingTop: Math.max(insets.top, 20) + 15, paddingBottom: 25 }]}>
+          <View style={styles.headerRow}>
+              <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+                  <Ionicons name="arrow-back" size={24} color="white" />
+              </TouchableOpacity>
+              <View style={{alignItems: 'center'}}>
+                  <Text style={styles.headerTitle}>Surrender History</Text>
+                  <Text style={styles.headerSubtitle}>Track your waste submissions</Text>
+              </View>
+              <View style={{ width: 40 }} />
+          </View>
       </View>
 
       {/* 📋 LIST */}
       {loading ? (
-          <ActivityIndicator size="large" color="#D500F9" style={{marginTop: 50}} />
+          <ActivityIndicator size="large" color="#007C00" style={{marginTop: 50}} />
       ) : (
           <FlatList
             data={history}
             renderItem={renderItem}
             keyExtractor={item => item.id}
+            ListHeaderComponent={renderSummaryCard} // 🟢 Nilagay dito para iwas-scroll bug
             contentContainerStyle={styles.listContainer}
             showsVerticalScrollIndicator={false}
             ListEmptyComponent={
-                <View style={{alignItems: 'center', marginTop: 50}}>
-                    <Text style={{color: '#999'}}>No surrenders yet. Start recycling today!</Text>
+                <View style={styles.emptyState}>
+                    <MaterialCommunityIcons name="history" size={60} color="#ccc" />
+                    <Text style={styles.emptyText}>No surrenders yet. Start recycling today!</Text>
                 </View>
             }
           />
@@ -134,24 +161,40 @@ export default function HistoryPage() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F3E5F5' }, 
-  headerBg: { backgroundColor: '#D500F9', paddingBottom: 25, paddingHorizontal: 20, borderBottomLeftRadius: 30, borderBottomRightRadius: 30, elevation: 5, alignItems: 'center' },
-  headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 5, width: '100%', position: 'relative' },
-  backButton: { position: 'absolute', left: 0, zIndex: 10, padding: 5 },
-  headerTitle: { fontSize: 22, fontWeight: 'bold', color: 'white' },
-  headerSubtitle: { color: 'rgba(255,255,255,0.9)', fontSize: 13, textAlign: 'center' },
-  summaryCardContainer: { paddingHorizontal: 20, marginTop: 20, marginBottom: 15 },
-  summaryCard: { backgroundColor: 'white', borderRadius: 15, padding: 15, alignItems: 'center', elevation: 4, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, borderWidth: 1, borderColor: '#E1BEE7' },
-  summaryLabel: { fontSize: 12, fontWeight: 'bold', color: '#555', textTransform: 'uppercase', letterSpacing: 0.5 },
-  summaryValue: { fontSize: 28, fontWeight: 'bold', color: '#333', marginTop: 5 },
-  listContainer: { paddingHorizontal: 20, paddingBottom: 20 },
-  card: { backgroundColor: 'white', borderRadius: 15, marginBottom: 15, padding: 15, flexDirection: 'row', alignItems: 'center', elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2 },
-  cardImage: { width: 60, height: 80, borderRadius: 10, backgroundColor: '#f0f0f0', marginRight: 15, resizeMode: 'cover' },
+  container: { flex: 1, backgroundColor: '#F5F7FA' }, 
+  
+  // 🟢 HEADER (Tumutugma sa Settings at Dashboard)
+  header: { backgroundColor: '#007C00', paddingHorizontal: 20, borderBottomLeftRadius: 30, borderBottomRightRadius: 30, elevation: 5 },
+  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', width: '100%' },
+  headerTitle: { color: 'white', fontSize: 20, fontWeight: 'bold' },
+  headerSubtitle: { color: 'rgba(255,255,255,0.9)', fontSize: 12, marginTop: 2 },
+  backButton: { backgroundColor: 'rgba(255,255,255,0.2)', padding: 8, borderRadius: 12 },
+
+  // 🟢 SUMMARY CARD
+  summaryCardContainer: { marginTop: 20, marginBottom: 10 },
+  summaryCard: { backgroundColor: 'white', borderRadius: 16, padding: 20, flexDirection: 'row', alignItems: 'center', ...getSafeShadow(), marginBottom: 20 },
+  iconCircle: { backgroundColor: '#E8F5E9', padding: 15, borderRadius: 50 },
+  summaryLabel: { fontSize: 12, color: '#666', fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 },
+  summaryValue: { fontSize: 26, fontWeight: 'bold', color: '#333', marginTop: 2 },
+  sectionTitle: { fontSize: 16, fontWeight: 'bold', color: '#263238', marginBottom: 10 },
+
+  // 🟢 LIST & CARDS
+  listContainer: { paddingHorizontal: 20, paddingBottom: 30 },
+  card: { backgroundColor: 'white', borderRadius: 16, marginBottom: 15, padding: 15, flexDirection: 'row', alignItems: 'center', ...getSafeShadow() },
+  cardImage: { width: 75, height: 95, borderRadius: 12, backgroundColor: '#eee', marginRight: 15 },
   cardContent: { flex: 1, justifyContent: 'center' },
-  itemTitle: { fontSize: 15, fontWeight: 'bold', color: '#333', marginBottom: 4 },
-  row: { flexDirection: 'row', alignItems: 'center', marginBottom: 2 },
-  label: { fontSize: 12, color: '#555' },
-  weightValue: { fontSize: 12, fontWeight: 'bold', color: '#333' },
-  dateText: { fontSize: 11, color: '#888', marginBottom: 1 },
-  locationText: { fontSize: 11, color: '#666' },
+  itemTitle: { fontSize: 16, fontWeight: 'bold', color: '#333', marginBottom: 8 },
+  
+  row: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
+  label: { fontSize: 12, color: '#666' },
+  weightValue: { fontSize: 13, fontWeight: 'bold', color: '#333' },
+  dateText: { fontSize: 12, color: '#666' },
+  locationText: { fontSize: 12, color: '#666', flex: 1 },
+  
+  rewardBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#E8F5E9', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, alignSelf: 'flex-start', marginTop: 6 },
+  rewardText: { fontSize: 10, color: '#007C00', fontWeight: 'bold' },
+
+  // 🟢 EMPTY STATE
+  emptyState: { alignItems: 'center', marginTop: 40 },
+  emptyText: { color: '#999', marginTop: 10, fontSize: 14 }
 });

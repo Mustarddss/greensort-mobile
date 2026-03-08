@@ -37,7 +37,7 @@ const styles = StyleSheet.create({
     paddingVertical: 15,
   },
   linkText: {
-    color: '#00C853', // GreenSort color
+    color: '#007C00', // GreenSort color
     fontWeight: 'bold',
   }
 });

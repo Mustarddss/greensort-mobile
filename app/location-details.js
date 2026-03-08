@@ -133,7 +133,7 @@ const styles = StyleSheet.create({
   warningHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 15 },
   warningTitle: { fontSize: 14, fontWeight: 'bold', color: '#D32F2F' },
   bulletTitle: { fontSize: 13, color: '#333', lineHeight: 20 },
-  actionBtn: { backgroundColor: '#00C853', flexDirection: 'row', justifyContent: 'center', alignItems: 'center', padding: 16, borderRadius: 30, elevation: 5 },
+  actionBtn: { backgroundColor: '#007C00', flexDirection: 'row', justifyContent: 'center', alignItems: 'center', padding: 16, borderRadius: 30, elevation: 5 },
   actionText: { color: 'white', fontWeight: 'bold', fontSize: 16 },
 
   // STYLES FOR CLAIMED

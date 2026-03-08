@@ -164,7 +164,7 @@ export default function RegisterLocation() {
         return (
             <View style={styles.successContainer}>
                 <View style={styles.successCard}>
-                    <MaterialCommunityIcons name="check-circle" size={60} color="#00C853" style={{marginBottom: 10}} />
+                    <MaterialCommunityIcons name="check-circle" size={60} color="#007C00" style={{marginBottom: 10}} />
                     <Text style={styles.successTitle}>Application Submitted! 🌱</Text>
                     <Text style={styles.successText}>
                         Your request to become a Drop-off Point is now Under Review. 
@@ -331,8 +331,8 @@ const styles = StyleSheet.create({
     submitButton: { backgroundColor: '#008000', padding: 15, borderRadius: 10, alignItems: 'center', marginTop: 30 },
     buttonText: { color: 'white', fontWeight: 'bold', fontSize: 16 },
     successContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#fff', padding: 20 },
-    successCard: { width: '100%', padding: 20, borderRadius: 15, borderWidth: 1, borderColor: '#00C853', alignItems: 'center', elevation: 5 },
-    successTitle: { fontSize: 20, fontWeight: 'bold', color: '#00C853', marginBottom: 10 },
+    successCard: { width: '100%', padding: 20, borderRadius: 15, borderWidth: 1, borderColor: '#007C00', alignItems: 'center', elevation: 5 },
+    successTitle: { fontSize: 20, fontWeight: 'bold', color: '#007C00', marginBottom: 10 },
     successText: { textAlign: 'center', color: '#555', marginBottom: 20, lineHeight: 22 },
     greenButton: { backgroundColor: '#008000', paddingHorizontal: 30, paddingVertical: 12, borderRadius: 20 },
     modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 20 },

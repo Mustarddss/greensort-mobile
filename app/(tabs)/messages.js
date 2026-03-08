@@ -110,7 +110,7 @@ export default function MessagesList() {
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                       <Text style={[styles.chatName, isUnread ? styles.unreadText : null]}>{item.chatUser}</Text>
                       <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                          <Text style={[styles.timeText, isUnread ? {color: '#00C853', fontWeight: 'bold'} : null]}>
+                          <Text style={[styles.timeText, isUnread ? {color: '#007C00', fontWeight: 'bold'} : null]}>
                               {formatTime(item.time)}
                           </Text>
                       </View>
@@ -143,5 +143,5 @@ const styles = StyleSheet.create({
   timeText: { fontSize: 12, color: '#999' }, 
   emptyText: { textAlign: 'center', color: '#999', marginTop: 50 },
   unreadText: { fontWeight: '900', color: '#000' },
-  unreadDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#00C853', marginLeft: 8 }
+  unreadDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#007C00', marginLeft: 8 }
 });

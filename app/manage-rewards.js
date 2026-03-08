@@ -166,7 +166,7 @@ export default function ManageRewards() {
         {rewards.map((item) => (
             <View key={item.id} style={styles.card}>
                 <View style={[styles.badge, {backgroundColor: item.is_available ? '#E8F5E9' : '#FFEBEE'}]}>
-                    <Text style={{color: item.is_available ? '#00C853' : '#D32F2F', fontSize: 10, fontWeight: 'bold'}}>{item.is_available ? 'Available' : 'Out of Stock'}</Text>
+                    <Text style={{color: item.is_available ? '#007C00' : '#D32F2F', fontSize: 10, fontWeight: 'bold'}}>{item.is_available ? 'Available' : 'Out of Stock'}</Text>
                 </View>
 
                 <View style={styles.cardContent}>
@@ -183,8 +183,8 @@ export default function ManageRewards() {
                     <TouchableOpacity style={styles.editBtn} onPress={() => openEditModal(item)}>
                         <MaterialCommunityIcons name="pencil" size={16} color="#333" /><Text style={styles.btnLabel}> Edit</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity style={[styles.stockBtn, {borderColor: item.is_available ? '#D32F2F' : '#00C853'}]} onPress={() => toggleStock(item)}>
-                        <Text style={{color: item.is_available ? '#D32F2F' : '#00C853', fontSize: 12, fontWeight: 'bold'}}>{item.is_available ? 'Mark Out of Stock' : 'Mark Available'}</Text>
+                    <TouchableOpacity style={[styles.stockBtn, {borderColor: item.is_available ? '#D32F2F' : '#007C00'}]} onPress={() => toggleStock(item)}>
+                        <Text style={{color: item.is_available ? '#D32F2F' : '#007C00', fontSize: 12, fontWeight: 'bold'}}>{item.is_available ? 'Mark Out of Stock' : 'Mark Available'}</Text>
                     </TouchableOpacity>
                     <TouchableOpacity style={styles.deleteBtn} onPress={() => handleDelete(item.id)}>
                         <MaterialCommunityIcons name="trash-can-outline" size={20} color="white" />
@@ -234,7 +234,7 @@ export default function ManageRewards() {
 
                             <View style={styles.switchRow}>
                                 <Text style={styles.label}>Stock Status (Available)</Text>
-                                <Switch value={isStockAvailable} onValueChange={setIsStockAvailable} trackColor={{ false: "#767577", true: "#00C853" }} />
+                                <Switch value={isStockAvailable} onValueChange={setIsStockAvailable} trackColor={{ false: "#767577", true: "#007C00" }} />
                             </View>
 
                             <View style={styles.modalBtnRow}>
@@ -289,5 +289,5 @@ const styles = StyleSheet.create({
   switchRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 15 },
   modalBtnRow: { flexDirection: 'row', justifyContent: 'flex-end', gap: 10, marginTop: 20 },
   cancelModalBtn: { paddingVertical: 10, paddingHorizontal: 20, backgroundColor: '#eee', borderRadius: 20 },
-  saveModalBtn: { paddingVertical: 10, paddingHorizontal: 20, backgroundColor: '#00C853', borderRadius: 20 },
+  saveModalBtn: { paddingVertical: 10, paddingHorizontal: 20, backgroundColor: '#007C00', borderRadius: 20 },
 });

@@ -87,5 +87,5 @@ const styles = StyleSheet.create({
   qrBorder: { padding: 15, backgroundColor: 'white', borderRadius: 10, borderWidth: 2, borderColor: '#5D4037', borderStyle: 'dashed', marginBottom: 30 },
   instructionText: { textAlign: 'center', color: '#BF360C', fontSize: 14, fontWeight: '600', marginBottom: 10, paddingHorizontal: 10 },
   subInstructionText: { textAlign: 'center', color: '#BF360C', fontSize: 12, opacity: 0.8, marginBottom: 30, lineHeight: 18, paddingHorizontal: 10 },
-  scanIconContainer: { width: 60, height: 60, backgroundColor: '#00C853', borderRadius: 30, justifyContent: 'center', alignItems: 'center', elevation: 5, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 4, marginBottom: 20 }
+  scanIconContainer: { width: 60, height: 60, backgroundColor: '#007C00', borderRadius: 30, justifyContent: 'center', alignItems: 'center', elevation: 5, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 4, marginBottom: 20 }
 });

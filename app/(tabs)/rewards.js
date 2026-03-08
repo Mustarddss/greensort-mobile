@@ -1,26 +1,37 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, ActivityIndicator, Alert, KeyboardAvoidingView, Platform, TouchableWithoutFeedback, Keyboard } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, ActivityIndicator, Alert, KeyboardAvoidingView, Platform, TouchableWithoutFeedback, Keyboard, StatusBar } from 'react-native';
 import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase'; 
+
+const getSafeShadow = () => Platform.select({ 
+    ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4 }, 
+    android: { elevation: 3 } 
+});
+
+const WASTE_OPTIONS = ['Plastics', 'Glass', 'Paper', 'Metals', 'Others'];
 
 export default function Rewards() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   
   const [wasteType, setWasteType] = useState('');
+  const [customWaste, setCustomWaste] = useState(''); // 🟢 State para sa manual typing
   const [quantity, setQuantity] = useState('');
   const [isClean, setIsClean] = useState(false);
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false); 
   
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState([]); 
   const [hasSearched, setHasSearched] = useState(false);
 
-  // 🔍 LIVE SEARCH + SMART CLAIMED CHECKER
   const handleSearch = async () => {
-    if (!wasteType || !quantity) {
-        Alert.alert("Missing Info", "Please enter the waste type and quantity (kg).");
+    // 🟢 Gamitin ang customWaste kung "Others" ang pinili, kundi wasteType
+    const finalWaste = wasteType === 'Others' ? customWaste : wasteType;
+
+    if (!finalWaste || !quantity) {
+        Alert.alert("Missing Info", "Please select a waste type and enter quantity.");
         return;
     }
     setLoading(true);
@@ -29,17 +40,14 @@ export default function Rewards() {
 
     try {
         const { data: { user } } = await supabase.auth.getUser();
-
-        // 1. Kunin lahat ng available rewards
         const { data: rewardsData, error: rewardsError } = await supabase
             .from('rewards_inventory')
             .select('*')
             .eq('is_available', true)
-            .ilike('condition', `%${wasteType}%`); 
+            .ilike('condition', `%${finalWaste}%`); 
 
         if (rewardsError) throw rewardsError;
 
-        // 2. Kunin ang HISTORY ng user para malaman kung na-claim na niya
         const { data: userLogs } = await supabase
             .from('surrender_logs')
             .select('reward_claimed, collector_email')
@@ -58,7 +66,6 @@ export default function Rewards() {
             if (centerData) {
                 const match = reward.condition.match(/(\d+)/);
                 const baseRate = match ? parseFloat(match[1]) : 1;
-                
                 let incentiveText = "";
                 const rewardMultiplier = Math.floor(inputQty / baseRate);
 
@@ -68,22 +75,12 @@ export default function Rewards() {
                     incentiveText = `Need at least ${baseRate}kg for ${reward.name} (Current: ${inputQty}kg)`;
                 }
 
-                // 🟢 SMART CHECKER: Hahanapin kung nag-match kahit may slight typo o extra space
                 const isAlreadyClaimed = userLogs?.some(log => {
                     if (!log.reward_claimed || !reward.name) return false;
-                    
-                    // Tatanggalin ang extra spaces at gagawing lowercase lahat
                     const savedReward = log.reward_claimed.toLowerCase().trim();
                     const centerReward = reward.name.toLowerCase().trim();
-
-                    // Kung exact match, O KUNG kasama sa string (e.g. "Coffee" is inside "10 KG of Coffee bean")
-                    const isNameMatch = savedReward === centerReward || 
-                                        savedReward.includes(centerReward) || 
-                                        centerReward.includes(savedReward);
-                                        
-                    const isCenterMatch = log.collector_email === reward.user_email;
-
-                    return isNameMatch && isCenterMatch;
+                    const isNameMatch = savedReward === centerReward || savedReward.includes(centerReward) || centerReward.includes(savedReward);
+                    return isNameMatch && log.collector_email === reward.user_email;
                 }) || false;
 
                 computedResults.push({
@@ -100,7 +97,7 @@ export default function Rewards() {
                     checklist: reward.checklist || '',
                     computedIncentive: incentiveText,
                     imageUrl: reward.image_url,
-                    isClaimed: isAlreadyClaimed // 🟢 Naipasa na ang mas matalinong checking
+                    isClaimed: isAlreadyClaimed
                 });
             }
         }
@@ -112,30 +109,87 @@ export default function Rewards() {
     }
   };
 
+  const selectOption = (option) => {
+    setWasteType(option);
+    setIsDropdownOpen(false);
+    if (option !== 'Others') setCustomWaste(''); // I-reset ang custom text
+  };
+
   return (
-    <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{flex: 1, backgroundColor: '#F4F6F8'}}>
-        <View style={[styles.header, { paddingTop: Math.max(insets.top, 20) + 15 }]}>
+    <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{flex: 1, backgroundColor: '#F5F7FA'}}>
+        <StatusBar barStyle="light-content" backgroundColor="#007C00" translucent={true} />
+        
+        <View style={[styles.header, { paddingTop: Math.max(insets.top, 20) + 15, paddingBottom: 25 }]}>
             <View style={styles.headerRow}>
-                <TouchableOpacity onPress={() => router.back()}><Ionicons name="arrow-back" size={24} color="white" /></TouchableOpacity>
-                <Text style={styles.headerTitle}>Rewards Drop-off Centers</Text>
-                <View style={{width: 24}} />
+                <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+                    <Ionicons name="arrow-back" size={24} color="white" />
+                </TouchableOpacity>
+                <View style={{alignItems: 'center'}}>
+                    <Text style={styles.headerTitle}>Rewards Centers</Text>
+                    <Text style={styles.headerSubtitle}>Find centers accepting your waste</Text>
+                </View>
+                <View style={{ width: 40 }} />
             </View>
-            <Text style={styles.headerSubtitle}>Find centers accepting your waste</Text>
         </View>
 
-        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-            <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
+        <TouchableWithoutFeedback onPress={() => { Keyboard.dismiss(); setIsDropdownOpen(false); }}>
+            <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
                 <View style={styles.body}>
                     
                     <View style={styles.formCard}>
                         <Text style={styles.cardTitle}>Search Locations</Text>
+                        
                         <Text style={styles.label}>Waste Type</Text>
-                        <TextInput style={styles.input} placeholder="e.g., Pet bottle, Cans" value={wasteType} onChangeText={setWasteType} />
+                        
+                        {/* 🟢 DYNAMIC INPUT SECTION */}
+                        <View style={{ zIndex: 100 }}>
+                          {wasteType === 'Others' ? (
+                            <View style={styles.customInputContainer}>
+                              <TextInput 
+                                style={[styles.input, { flex: 1, marginBottom: 0 }]} 
+                                placeholder="Type waste type (e.g. Battery)" 
+                                autoFocus 
+                                value={customWaste} 
+                                onChangeText={setCustomWaste} 
+                              />
+                              <TouchableOpacity style={styles.resetBtn} onPress={() => setWasteType('')}>
+                                <Ionicons name="close-circle" size={24} color="#999" />
+                              </TouchableOpacity>
+                            </View>
+                          ) : (
+                            <TouchableOpacity 
+                              style={[styles.dropdownTrigger, isDropdownOpen && styles.dropdownTriggerActive]} 
+                              onPress={() => setIsDropdownOpen(!isDropdownOpen)}
+                            >
+                              <Text style={[styles.dropdownText, !wasteType && {color: '#999'}]}>
+                                {wasteType || "Select waste type..."}
+                              </Text>
+                              <Ionicons name={isDropdownOpen ? "chevron-up" : "chevron-down"} size={20} color="#666" />
+                            </TouchableOpacity>
+                          )}
+
+                          {/* 🟢 OVERLAY DROPDOWN (Immediately below the box) */}
+                          {isDropdownOpen && (
+                            <View style={styles.dropdownOverlay}>
+                              {WASTE_OPTIONS.map((option) => (
+                                <TouchableOpacity 
+                                  key={option} 
+                                  style={styles.optionItem} 
+                                  onPress={() => selectOption(option)}
+                                >
+                                  <Text style={styles.optionText}>{option}</Text>
+                                  {wasteType === option && <Ionicons name="checkmark" size={18} color="#007C00" />}
+                                </TouchableOpacity>
+                              ))}
+                            </View>
+                          )}
+                        </View>
+                        
                         <Text style={styles.label}>Quantity (kg)</Text>
                         <TextInput style={styles.input} placeholder="0" keyboardType="numeric" value={quantity} onChangeText={setQuantity} />
 
                         <TouchableOpacity style={[styles.checkboxContainer, isClean && styles.checkboxActive]} onPress={() => setIsClean(!isClean)} activeOpacity={0.8}>
-                            <View style={[styles.checkbox, isClean && {backgroundColor: '#FF6D00', borderColor: '#FF6D00'}]}>
+                            <View style={[styles.checkbox, isClean && {backgroundColor: '#007C00', borderColor: '#007C00'}]}>
                                 {isClean && <Ionicons name="checkmark" size={14} color="white" />}
                             </View>
                             <View style={{flex: 1}}>
@@ -150,39 +204,18 @@ export default function Rewards() {
                     </View>
 
                     {hasSearched && <Text style={styles.sectionHeader}>Available Locations</Text>}
-                    {hasSearched && results.length === 0 && !loading && <Text style={styles.noResults}>No drop-off centers found for this criteria.</Text>}
+                    {hasSearched && results.length === 0 && !loading && <Text style={styles.noResults}>No drop-off centers found.</Text>}
 
                     {results.map((loc) => (
-                        <TouchableOpacity 
-                            key={loc.id} 
-                            style={[styles.resultCard, loc.isClaimed && {borderColor: '#9E9E9E', opacity: 0.8}]} 
-                            onPress={() => router.push({
-                                pathname: '/location-details',
-                                params: { data: JSON.stringify(loc) }
-                            })}
-                        >
-                            {loc.isClaimed && (
-                                <View style={styles.claimedBadge}>
-                                    <Text style={styles.claimedText}>ALREADY CLAIMED</Text>
-                                </View>
-                            )}
-
+                        <TouchableOpacity key={loc.id} style={styles.resultCard} onPress={() => router.push({ pathname: '/location-details', params: { data: JSON.stringify(loc) } })}>
+                            {loc.isClaimed && <View style={styles.claimedBadge}><Text style={styles.claimedText}>ALREADY CLAIMED</Text></View>}
                             <Text style={styles.locName}>{loc.name}</Text>
                             <View style={styles.tagContainer}><Text style={styles.tagText}>{loc.type}</Text></View>
-                            
                             <View style={styles.detailRow}><Ionicons name="location-outline" size={16} color="#666" style={{marginRight: 6}} /><Text style={styles.detailText}>{loc.address}</Text></View>
-                            <View style={styles.detailRow}><Ionicons name="time-outline" size={16} color="#666" style={{marginRight: 6}} /><Text style={styles.detailText}>{loc.schedule}</Text></View>
-
-                            <View style={styles.materialsRow}>
-                                {loc.accepted.map((item, index) => (
-                                    <View key={index} style={styles.materialTag}><Text style={styles.materialText}>{item}</Text></View>
-                                ))}
-                            </View>
-
-                            <View style={[styles.incentiveBox, loc.isClaimed && {backgroundColor: '#F5F5F5', borderLeftColor: '#9E9E9E'}]}>
+                            <View style={styles.materialsRow}>{loc.accepted.map((item, index) => (<View key={index} style={styles.materialTag}><Text style={styles.materialText}>{item}</Text></View>))}</View>
+                            <View style={styles.incentiveBox}>
                                 <Text style={styles.incentiveLabel}>Estimated Reward:</Text>
-                                <Text style={[styles.incentiveValue, loc.isClaimed && {color: '#666'}]}>{loc.computedIncentive}</Text>
-                                <Text style={styles.incentiveSub}>{loc.subText}</Text>
+                                <Text style={styles.incentiveValue}>{loc.computedIncentive}</Text>
                             </View>
                         </TouchableOpacity>
                     ))}
@@ -195,26 +228,73 @@ export default function Rewards() {
 }
 
 const styles = StyleSheet.create({
-  container: { flexGrow: 1 },
-  header: { backgroundColor: '#FF6D00', paddingTop: 60, paddingBottom: 20, paddingHorizontal: 20, borderBottomLeftRadius: 20, borderBottomRightRadius: 20, zIndex: 10, elevation: 5 },
-  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  headerTitle: { fontSize: 18, fontWeight: 'bold', color: 'white' },
-  headerSubtitle: { color: 'rgba(255,255,255,0.9)', textAlign: 'center', marginTop: 5, fontSize: 12 },
-  body: { padding: 20, paddingTop: 15 }, 
-  formCard: { backgroundColor: 'white', borderRadius: 15, padding: 20, marginBottom: 25, elevation: 3, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 5 },
+  scrollContainer: { flexGrow: 1 },
+  header: { backgroundColor: '#007C00', paddingHorizontal: 20, borderBottomLeftRadius: 30, borderBottomRightRadius: 30, elevation: 5 },
+  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', width: '100%' },
+  headerTitle: { color: 'white', fontSize: 22, fontWeight: 'bold' },
+  headerSubtitle: { color: 'rgba(255,255,255,0.9)', fontSize: 13, marginTop: 2 },
+  backButton: { backgroundColor: 'rgba(255,255,255,0.2)', padding: 8, borderRadius: 12 },
+  body: { padding: 20 }, 
+  formCard: { backgroundColor: 'white', borderRadius: 20, padding: 20, marginBottom: 25, ...getSafeShadow() },
   cardTitle: { fontSize: 18, fontWeight: 'bold', color: '#333', marginBottom: 15 },
-  label: { fontSize: 13, color: '#666', marginBottom: 6, fontWeight: '600' },
-  input: { backgroundColor: '#F0F0F0', borderRadius: 8, padding: 14, marginBottom: 16, fontSize: 14, color: '#333' },
-  checkboxContainer: { flexDirection: 'row', backgroundColor: '#FFF3E0', padding: 12, borderRadius: 10, borderWidth: 1, borderColor: '#FFE0B2', marginBottom: 20 },
-  checkboxActive: { backgroundColor: '#FFE0B2', borderColor: '#FFB74D' },
-  checkbox: { width: 20, height: 20, borderRadius: 4, borderWidth: 2, borderColor: '#FF6D00', marginRight: 10, alignItems: 'center', justifyContent: 'center', marginTop: 2 },
+  label: { fontSize: 13, color: '#666', marginBottom: 6, fontWeight: '600', marginTop: 10 },
+  input: { backgroundColor: '#F5F7FA', borderRadius: 10, padding: 14, marginBottom: 16, fontSize: 14, color: '#333', borderWidth: 1, borderColor: '#F0F0F0' },
+  
+  // 🟢 NEW DROPDOWN TRIGGER
+  dropdownTrigger: { 
+    flexDirection: 'row', 
+    justifyContent: 'space-between', 
+    alignItems: 'center', 
+    backgroundColor: '#F5F7FA', 
+    borderRadius: 10, 
+    padding: 14, 
+    borderWidth: 1, 
+    borderColor: '#F0F0F0',
+    zIndex: 100
+  },
+  dropdownTriggerActive: { borderColor: '#007C00' },
+  dropdownText: { fontSize: 14, color: '#333' },
+
+  // 🟢 NEW OVERLAY LIST
+  dropdownOverlay: {
+    position: 'absolute',
+    top: 50, // Right below the trigger
+    left: 0,
+    right: 0,
+    backgroundColor: 'white',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#eee',
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    zIndex: 999, // Super high z-index to float over other inputs
+    paddingVertical: 5
+  },
+  optionItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    padding: 15,
+    borderBottomWidth: 0.5,
+    borderBottomColor: '#f0f0f0'
+  },
+  optionText: { fontSize: 14, color: '#555' },
+
+  // 🟢 OTHERS INPUT STYLES
+  customInputContainer: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 16 },
+  resetBtn: { padding: 5 },
+
+  checkboxContainer: { flexDirection: 'row', backgroundColor: '#e7ffe0', padding: 12, borderRadius: 10, borderWidth: 1, borderColor: '#d1ffb2', marginBottom: 20, marginTop: 10 },
+  checkboxActive: { backgroundColor: '#b2ffbe', borderColor: '#4dff65' },
+  checkbox: { width: 20, height: 20, borderRadius: 4, borderWidth: 2, borderColor: '#007C00', marginRight: 10, alignItems: 'center', justifyContent: 'center', marginTop: 2 },
   checkboxTitle: { fontSize: 13, fontWeight: 'bold', color: '#333' },
   checkboxSub: { fontSize: 11, color: '#666', marginTop: 2, lineHeight: 14 },
-  searchBtn: { backgroundColor: '#FF6D00', paddingVertical: 14, borderRadius: 25, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', elevation: 2 },
+  searchBtn: { backgroundColor: '#007C00', paddingVertical: 14, borderRadius: 25, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', elevation: 2 },
   searchBtnText: { fontWeight: 'bold', color: 'white', fontSize: 14 },
-  sectionHeader: { fontSize: 18, fontWeight: 'bold', color: '#333', marginBottom: 15 },
+  sectionHeader: { fontSize: 18, fontWeight: 'bold', color: '#263238', marginBottom: 15 },
   noResults: { textAlign: 'center', color: '#999', marginTop: 20 },
-  resultCard: { backgroundColor: 'white', borderRadius: 15, padding: 18, marginBottom: 15, borderWidth: 1, borderColor: '#34A853', elevation: 2, position: 'relative' },
+  resultCard: { backgroundColor: 'white', borderRadius: 15, padding: 18, marginBottom: 15, ...getSafeShadow() },
   locName: { fontSize: 17, fontWeight: 'bold', color: '#333' },
   tagContainer: { backgroundColor: '#F5F5F5', alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 4, marginTop: 4, marginBottom: 12 },
   tagText: { fontSize: 10, color: '#666', fontWeight: '600' },
@@ -223,10 +303,9 @@ const styles = StyleSheet.create({
   materialsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 10, marginBottom: 15 },
   materialTag: { backgroundColor: '#E8F5E9', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
   materialText: { fontSize: 11, color: '#2E7D32', fontWeight: '600' },
-  incentiveBox: { backgroundColor: '#E0F2F1', padding: 15, borderRadius: 10, borderLeftWidth: 4, borderLeftColor: '#00C853' },
+  incentiveBox: { backgroundColor: '#E0F2F1', padding: 15, borderRadius: 10, borderLeftWidth: 4, borderLeftColor: '#007C00' },
   incentiveLabel: { fontSize: 11, color: '#00695C', marginBottom: 2 },
   incentiveValue: { fontSize: 15, fontWeight: 'bold', color: '#004D40', lineHeight: 22 },
-  incentiveSub: { fontSize: 11, color: '#00796B', marginTop: 4, fontStyle: 'italic' },
   claimedBadge: { position: 'absolute', top: 15, right: 15, backgroundColor: '#9E9E9E', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 5, zIndex: 5 },
   claimedText: { color: 'white', fontSize: 10, fontWeight: 'bold', letterSpacing: 1 },
 });

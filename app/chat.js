@@ -151,7 +151,7 @@ export default function ChatScreen() {
         <Image source={{uri: chatUserAvatar}} style={{width: 36, height: 36, borderRadius: 18, marginRight: 10}} />
         <View style={{flex: 1}}>
             <Text style={styles.headerTitle}>{chatUser}</Text>
-            <Text style={{fontSize: 12, color: isOnline ? '#00C853' : '#999', fontWeight: isOnline ? 'bold' : 'normal'}}>{isOnline ? 'Active now' : 'Offline'}</Text>
+            <Text style={{fontSize: 12, color: isOnline ? '#007C00' : '#999', fontWeight: isOnline ? 'bold' : 'normal'}}>{isOnline ? 'Active now' : 'Offline'}</Text>
         </View>
         <TouchableOpacity><Ionicons name="ellipsis-vertical" size={24} color="#333" /></TouchableOpacity>
       </View>
@@ -190,8 +190,8 @@ export default function ChatScreen() {
                     <TouchableOpacity activeOpacity={0.8} onLongPress={() => setReplyingTo(item)} style={[styles.bubble, isMe ? styles.myBubble : styles.theirBubble, (item.text === '👍' || item.image_url) ? {backgroundColor: 'transparent', padding: 0, borderWidth: 0, elevation: 0} : null]}>
                         
                         {item.reply_to_text ? (
-                            <View style={[styles.replyBoxRendered, isMe ? {backgroundColor: '#00A040'} : {backgroundColor: '#f0f0f0'}, item.image_url ? {backgroundColor: '#eee'} : null]}>
-                                <Text style={{fontSize: 10, fontWeight: 'bold', color: isMe && !item.image_url ? '#e0e0e0' : '#00C853', marginBottom: 2}}>Replying to {item.reply_to_sender === myName ? 'yourself' : item.reply_to_sender}</Text>
+                            <View style={[styles.replyBoxRendered, isMe ? {backgroundColor: '#007C00'} : {backgroundColor: '#f0f0f0'}, item.image_url ? {backgroundColor: '#eee'} : null]}>
+                                <Text style={{fontSize: 10, fontWeight: 'bold', color: isMe && !item.image_url ? '#e0e0e0' : '#007C00', marginBottom: 2}}>Replying to {item.reply_to_sender === myName ? 'yourself' : item.reply_to_sender}</Text>
                                 <Text style={{fontSize: 12, color: isMe && !item.image_url ? '#fff' : '#666'}} numberOfLines={1}>{item.reply_to_text}</Text>
                             </View>
                         ) : null}
@@ -216,7 +216,7 @@ export default function ChatScreen() {
           {replyingTo ? (
               <View style={styles.replyBanner}>
                   <View style={{flex: 1}}>
-                      <Text style={{fontSize: 12, color: '#00C853', fontWeight: 'bold'}}>Replying to {replyingTo.sender_name === myName ? 'yourself' : replyingTo.sender_name}</Text>
+                      <Text style={{fontSize: 12, color: '#007C00', fontWeight: 'bold'}}>Replying to {replyingTo.sender_name === myName ? 'yourself' : replyingTo.sender_name}</Text>
                       <Text style={{fontSize: 13, color: '#666', marginTop: 2}} numberOfLines={1}>{replyingTo.text}</Text>
                   </View>
                   <TouchableOpacity onPress={() => setReplyingTo(null)} style={{padding: 5}}><MaterialCommunityIcons name="close-circle" size={20} color="#ccc" /></TouchableOpacity>
@@ -225,21 +225,21 @@ export default function ChatScreen() {
 
           <View style={styles.inputContainer}>
             <TouchableOpacity onPress={() => handleImageSend('camera')} disabled={isUploading}>
-                <Ionicons name="camera" size={26} color={isUploading ? "#ccc" : "#00C853"} style={{marginRight: 12}} />
+                <Ionicons name="camera" size={26} color={isUploading ? "#ccc" : "#007C00"} style={{marginRight: 12}} />
             </TouchableOpacity>
             <TouchableOpacity onPress={() => handleImageSend('gallery')} disabled={isUploading}>
-                <Ionicons name="image" size={26} color={isUploading ? "#ccc" : "#00C853"} style={{marginRight: 12}} />
+                <Ionicons name="image" size={26} color={isUploading ? "#ccc" : "#007C00"} style={{marginRight: 12}} />
             </TouchableOpacity>
             
             <TextInput style={styles.input} placeholder="Aa" value={newMessage} onChangeText={setNewMessage} multiline />
             
             {newMessage.trim().length > 0 ? (
                 <TouchableOpacity onPress={() => handleSend(null)}>
-                    <Ionicons name="send" size={24} color="#00C853" style={{marginLeft: 10}} />
+                    <Ionicons name="send" size={24} color="#007C00" style={{marginLeft: 10}} />
                 </TouchableOpacity>
             ) : (
                 <TouchableOpacity onPress={() => handleSend('👍')}>
-                    <MaterialCommunityIcons name="thumb-up" size={28} color="#00C853" style={{marginLeft: 10}} />
+                    <MaterialCommunityIcons name="thumb-up" size={28} color="#007C00" style={{marginLeft: 10}} />
                 </TouchableOpacity>
             )}
           </View>
@@ -256,5 +256,5 @@ export default function ChatScreen() {
 }
 
 const styles = StyleSheet.create({
-  header: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'white', paddingBottom: 15, paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: '#eee', elevation: 2 }, headerTitle: { fontSize: 18, fontWeight: 'bold', color: '#333' }, messageRow: { flexDirection: 'row', width: '100%', alignItems: 'flex-end' }, bubble: { maxWidth: '75%', paddingVertical: 10, paddingHorizontal: 15, borderRadius: 20 }, myBubble: { backgroundColor: '#00C853', borderBottomRightRadius: 4 }, theirBubble: { backgroundColor: '#E4E6EB', borderBottomLeftRadius: 4, elevation: 1, borderWidth: 1, borderColor: '#eee' }, msgText: { fontSize: 15, lineHeight: 20 }, replyBanner: { flexDirection: 'row', backgroundColor: '#F5F7FA', padding: 10, paddingHorizontal: 15, borderLeftWidth: 4, borderLeftColor: '#00C853', alignItems: 'center' }, replyBoxRendered: { padding: 8, borderRadius: 8, marginBottom: 8, borderLeftWidth: 3, borderLeftColor: '#fff', opacity: 0.9 }, inputContainer: { flexDirection: 'row', alignItems: 'flex-end', padding: 10, backgroundColor: 'white', paddingBottom: Platform.OS === 'ios' ? 25 : 10 }, input: { flex: 1, backgroundColor: '#F0F2F5', borderRadius: 20, paddingHorizontal: 15, paddingTop: 10, paddingBottom: 10, fontSize: 16, maxHeight: 100 }
+  header: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'white', paddingBottom: 15, paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: '#eee', elevation: 2 }, headerTitle: { fontSize: 18, fontWeight: 'bold', color: '#333' }, messageRow: { flexDirection: 'row', width: '100%', alignItems: 'flex-end' }, bubble: { maxWidth: '75%', paddingVertical: 10, paddingHorizontal: 15, borderRadius: 20 }, myBubble: { backgroundColor: '#007C00', borderBottomRightRadius: 4 }, theirBubble: { backgroundColor: '#E4E6EB', borderBottomLeftRadius: 4, elevation: 1, borderWidth: 1, borderColor: '#eee' }, msgText: { fontSize: 15, lineHeight: 20 }, replyBanner: { flexDirection: 'row', backgroundColor: '#F5F7FA', padding: 10, paddingHorizontal: 15, borderLeftWidth: 4, borderLeftColor: '#007C00', alignItems: 'center' }, replyBoxRendered: { padding: 8, borderRadius: 8, marginBottom: 8, borderLeftWidth: 3, borderLeftColor: '#fff', opacity: 0.9 }, inputContainer: { flexDirection: 'row', alignItems: 'flex-end', padding: 10, backgroundColor: 'white', paddingBottom: Platform.OS === 'ios' ? 25 : 10 }, input: { flex: 1, backgroundColor: '#F0F2F5', borderRadius: 20, paddingHorizontal: 15, paddingTop: 10, paddingBottom: 10, fontSize: 16, maxHeight: 100 }
 });
