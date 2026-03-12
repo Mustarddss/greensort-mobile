@@ -7,21 +7,19 @@ export {
 } from 'expo-router';
 
 export const unstable_settings = {
-  // Dito natin sinasabi na sa 'login' tayo magsisimula
   initialRouteName: 'login',
 };
 
 export default function RootLayout() {
   return (
     <View style={{ flex: 1 }}>
-      <Stack screenOptions={{ headerShown: false }}>
-        {/* Ito ang listahan ng mga screens mo */}
+      {/* 🟢 IDINAGDAG ANG animation: 'none' DITO SA SCREEN OPTIONS */}
+      <Stack screenOptions={{ headerShown: false, animation: 'none' }}>
         <Stack.Screen name="index" />
         <Stack.Screen name="login" />
         <Stack.Screen name="signup" />
-        
-        {/* IMPORTANT: Ito ang maglo-load ng Tabs/Footer mo kapag nag-login ka */}
         <Stack.Screen name="(tabs)" /> 
+        <Stack.Screen name="settings" />
       </Stack>
     </View>
   );

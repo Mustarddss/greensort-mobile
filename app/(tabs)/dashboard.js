@@ -1,10 +1,12 @@
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import { useRouter, useFocusEffect } from 'expo-router'; // 🟢 IDINAGDAG ANG useFocusEffect
+import { useRouter, useFocusEffect } from 'expo-router'; 
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Image, KeyboardAvoidingView, Modal, Platform, RefreshControl, ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
+// 🟢 IMPORT LINEAR GRADIENT
+import { LinearGradient } from 'expo-linear-gradient';
 
 export default function Dashboard() {
   const router = useRouter();
@@ -23,8 +25,14 @@ export default function Dashboard() {
 
   const [userData, setUserData] = useState({ name: 'Loading...', kgRecycled: 0, submissions: 0, upcycleProjects: 0, points: 45, avatar: null });
   const [form, setForm] = useState({ type: 'For Sale', title: '', desc: '', category: '', price: '', lookingFor: '', location: '', imageUri: null });
+  
   const [newComment, setNewComment] = useState('');
   const [replyingTo, setReplyingTo] = useState(null);
+  const [editingCommentId, setEditingCommentId] = useState(null); 
+  const [commentOptionsModalVisible, setCommentOptionsModalVisible] = useState(false);
+  const [selectedCommentForOptions, setSelectedCommentForOptions] = useState(null);
+  const [commentReportModalVisible, setCommentReportModalVisible] = useState(false);
+  const [commentReportStep, setCommentReportStep] = useState(0);
   
   const [unreadNotifs, setUnreadNotifs] = useState(0);
   const [unreadMessages, setUnreadMessages] = useState(0);
@@ -49,7 +57,6 @@ export default function Dashboard() {
     return () => { supabase.removeChannel(msgChannel); };
   }, []);
 
-  // 🟢 AUTO-REFRESH TUWING BUBUKSAN ANG DASHBOARD
   useFocusEffect(
     useCallback(() => {
       fetchUserSessionAndData();
@@ -75,7 +82,6 @@ export default function Dashboard() {
   const fetchPosts = async () => {
     const { data } = await supabase.from('posts').select('*').order('created_at', { ascending: false });
     if (data) {
-        // 🟢 JS FILTER: ITATAGO ANG ARCHIVED AT SOLD ITEMS SA FEED
         const activePosts = data.filter(post => post.status !== 'archived' && post.status !== 'sold');
         setPosts(activePosts);
     }
@@ -98,7 +104,6 @@ export default function Dashboard() {
     setIsCreating(true);
   };
 
-  // 🟢 PINALITAN ANG ARCHIVE NG MARK AS SOLD NA MAY CONFIRMATION
   const handleSoldAction = async () => {
     const post = selectedPostForOptions;
     setOptionsModalVisible(false);
@@ -106,12 +111,8 @@ export default function Dashboard() {
       { text: "Cancel", style: "cancel" },
       { text: "Confirm", onPress: async () => {
           const { error } = await supabase.from('posts').update({ status: 'sold' }).eq('id', post.id); 
-          if (error) {
-              Alert.alert("Update Failed", "Error: " + error.message);
-              return;
-          }
-          fetchPosts(); 
-          Alert.alert("Success", "Item marked as sold/traded.");
+          if (error) return Alert.alert("Update Failed", "Error: " + error.message);
+          fetchPosts(); Alert.alert("Success", "Item marked as sold/traded.");
       }}
     ]);
   };
@@ -123,10 +124,47 @@ export default function Dashboard() {
       { text: "Cancel", style: "cancel" },
       { text: "Delete", style: 'destructive', onPress: async () => {
           await supabase.from('posts').delete().eq('id', post.id); 
-          fetchPosts(); 
-          Alert.alert("Deleted", "Post removed.");
+          fetchPosts(); Alert.alert("Deleted", "Post removed.");
       }}
     ]);
+  };
+
+  const handleCommentOptions = (comment) => {
+    setSelectedCommentForOptions(comment);
+    setCommentOptionsModalVisible(true);
+  };
+
+  const handleEditCommentAction = () => {
+    setCommentOptionsModalVisible(false);
+    setEditingCommentId(selectedCommentForOptions.id);
+    setNewComment(selectedCommentForOptions.text); 
+    setReplyingTo(null); 
+  };
+
+  const handleDeleteCommentAction = async () => {
+    setCommentOptionsModalVisible(false);
+    Alert.alert("Delete Comment", "Are you sure you want to delete this?", [
+        { text: "Cancel", style: "cancel" },
+        { text: "Delete", style: 'destructive', onPress: async () => {
+            await supabase.from('comments').update({ 
+                text: '[This comment has been deleted]', 
+                is_deleted: true 
+            }).eq('id', selectedCommentForOptions.id);
+            openPostDetails(selectedPost); 
+        }}
+    ]);
+  };
+
+  const handleReportCommentAction = () => {
+    setCommentOptionsModalVisible(false);
+    setCommentReportStep(0);
+    setCommentReportModalVisible(true);
+  };
+
+  const submitCommentReport = (reason) => {
+    Alert.alert("Report Submitted", `Thank you for reporting this comment for: "${reason}". Our admins will review it.`);
+    setCommentReportModalVisible(false);
+    setCommentReportStep(0);
   };
 
   const handleOtherPostOptions = (post) => {
@@ -148,21 +186,19 @@ export default function Dashboard() {
   };
 
   const handlePostSubmit = async () => {
-    if (!form.title || !form.desc || !form.location) return Alert.alert("Wait!", "Please fill in all details.");
+    if (!form.imageUri) return Alert.alert("Photo Required", "Please upload a photo for your post.");
+    if (!form.title || !form.desc || !form.location) return Alert.alert("Wait!", "Please fill in all general details (Title, Desc, Location).");
+    if (form.type === 'For Sale' && (!form.price || form.price.trim() === '')) return Alert.alert("Wait!", "Please enter a price for your item.");
+    if (form.type === 'Trade' && (!form.lookingFor || form.lookingFor.trim() === '')) return Alert.alert("Wait!", "Please specify what you are looking for to trade.");
+
     setIsUploading(true);
     let uploadedImageUrl = form.imageUri; 
     if (form.imageUri && !form.imageUri.startsWith('http')) {
         try {
-            const formData = new FormData();
-            formData.append('file', { uri: form.imageUri, name: `img_${Date.now()}.jpg`, type: 'image/jpeg' });
+            const formData = new FormData(); formData.append('file', { uri: form.imageUri, name: `img_${Date.now()}.jpg`, type: 'image/jpeg' });
             const { data, error } = await supabase.storage.from('post_images').upload(`public/${Date.now()}.jpg`, formData);
-            if (!error) {
-                const { data: urlData } = supabase.storage.from('post_images').getPublicUrl(data.path);
-                uploadedImageUrl = urlData.publicUrl;
-            }
+            if (!error) { const { data: urlData } = supabase.storage.from('post_images').getPublicUrl(data.path); uploadedImageUrl = urlData.publicUrl; }
         } catch(e) { console.log(e); }
-    } else if (!form.imageUri) {
-        uploadedImageUrl = 'https://images.unsplash.com/photo-1530587191325-3db32d826c18?q=80&w=500';
     }
     const postData = { user: userData.name, avatar: userData.avatar, type: form.type, title: form.title, desc: form.desc, price: form.type === 'Free' ? 'Free' : form.type === 'Trade' ? `Trade: ${form.lookingFor}` : `₱${form.price}`, location: form.location, image: uploadedImageUrl };
     if (editingPostId) { await supabase.from('posts').update(postData).eq('id', editingPostId); } 
@@ -174,8 +210,7 @@ export default function Dashboard() {
 
   const handleLike = async (post) => {
     const hasLiked = post.liked_by && post.liked_by.includes(userData.name);
-    let newLikedBy = post.liked_by ? [...post.liked_by] : [];
-    let newLikes = post.likes || 0;
+    let newLikedBy = post.liked_by ? [...post.liked_by] : []; let newLikes = post.likes || 0;
     if (hasLiked) { newLikedBy = newLikedBy.filter(name => name !== userData.name); newLikes = Math.max(0, newLikes - 1); } 
     else { newLikedBy.push(userData.name); newLikes += 1; }
     setPosts(posts.map(p => p.id === post.id ? { ...p, likes: newLikes, liked_by: newLikedBy } : p));
@@ -187,9 +222,9 @@ export default function Dashboard() {
   };
 
   const handleCommentLike = async (comment) => {
+    if (comment.is_deleted) return; 
     const hasLiked = comment.liked_by && comment.liked_by.includes(userData.name);
-    let newLikedBy = comment.liked_by ? [...comment.liked_by] : [];
-    let newLikes = comment.likes || 0;
+    let newLikedBy = comment.liked_by ? [...comment.liked_by] : []; let newLikes = comment.likes || 0;
     if (hasLiked) { newLikedBy = newLikedBy.filter(name => name !== userData.name); newLikes = Math.max(0, newLikes - 1); } 
     else { newLikedBy.push(userData.name); newLikes += 1; }
     await supabase.from('comments').update({ likes: newLikes, liked_by: newLikedBy }).eq('id', comment.id);
@@ -200,7 +235,7 @@ export default function Dashboard() {
     if (post.user === userData.name) return Alert.alert("Oops!", "You can't contact yourself.");
     const safeAvatar = userData.avatar || 'https://ui-avatars.com/api/?name=User&background=00C853&color=fff';
     await supabase.from('notifications').insert([{ owner_name: post.user, actor_name: userData.name, actor_avatar: safeAvatar, action: 'wants to contact you about', post_title: post.title }]);
-    router.push({ pathname: '/chat', params: { chatUser: post.user } });
+    router.push({ pathname: '/chat', params: { chatUser: post.user, postTitle: post.title } });
   };
 
   const openPostDetails = async (post) => {
@@ -211,7 +246,11 @@ export default function Dashboard() {
 
   const handleAddComment = async () => {
     if (!newComment.trim()) return;
-    const commentData = { post_id: selectedPost.id, user_name: userData.name, avatar: userData.avatar, text: newComment, parent_id: replyingTo ? replyingTo.id : null };
+    if (editingCommentId) {
+        await supabase.from('comments').update({ text: newComment, is_edited: true }).eq('id', editingCommentId);
+        setNewComment(''); setEditingCommentId(null); openPostDetails(selectedPost); return;
+    }
+    const commentData = { post_id: selectedPost.id, user_name: userData.name, avatar: userData.avatar, text: newComment, parent_id: replyingTo ? replyingTo.id : null, is_edited: false, is_deleted: false };
     await supabase.from('comments').insert([commentData]);
     await supabase.from('posts').update({ comments: (selectedPost.comments || 0) + 1 }).eq('id', selectedPost.id);
     const targetUser = replyingTo ? replyingTo.name : selectedPost.user;
@@ -238,63 +277,179 @@ export default function Dashboard() {
     const mainComments = postComments.filter(c => !c.parent_id);
     const getReplies = (parentId) => postComments.filter(c => c.parent_id === parentId);
     return (
-      <KeyboardAvoidingView style={{flex: 1, backgroundColor: 'white'}} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-          <StatusBar barStyle="dark-content" backgroundColor="white" translucent={true} />
-          <View style={[styles.createHeader, { paddingTop: Math.max(insets.top, 20) + 15 }]}>
-              <TouchableOpacity onPress={() => {setSelectedPost(null); setReplyingTo(null);}}><Ionicons name="arrow-back" size={24} color="#333" /></TouchableOpacity>
-              <Text style={styles.createHeaderTitle}>Comments</Text>
-              <View style={{width: 24}} />
-          </View>
-          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{paddingBottom: 20}}>
-              <Image source={{ uri: selectedPost.image }} style={styles.detailImage} />
-              <View style={styles.detailContent}>
-                  <Text style={styles.postTitle}>{selectedPost.title}</Text>
-                  <Text style={styles.postDesc}>{selectedPost.desc}</Text>
-                  <Text style={[styles.label, {marginTop: 20}]}>All Comments ({selectedPost.comments})</Text>
-                  {mainComments.length === 0 ? <Text style={{color: '#999', marginTop: 10}}>No comments yet. Be the first!</Text> : null}
-                  {mainComments.map((comment) => (
-                      <View key={comment.id} style={{marginBottom: 15, marginTop: 10}}>
-                          <View style={{flexDirection: 'row'}}>
-                            <Image source={{ uri: comment.avatar }} style={styles.commentAvatar} />
-                              <View style={{flex: 1}}>
-                                <View style={styles.commentBubble}><Text style={styles.commentUser}>{comment.user_name}</Text><Text style={styles.commentText}>{comment.text}</Text></View>
-                                  <View style={{flexDirection: 'row', alignItems: 'center', marginTop: 5, paddingLeft: 10, gap: 15}}>
-                                      <Text style={styles.commentTime}>{formatTime(comment.created_at)}</Text>
-                                      <TouchableOpacity onPress={() => setReplyingTo({id: comment.id, name: comment.user_name})}><Text style={{fontSize: 11, color: '#007C00', fontWeight: 'bold', marginRight: 15}}>Reply</Text></TouchableOpacity>
-                                      <TouchableOpacity onPress={() => handleCommentLike(comment)} style={{flexDirection: 'row', alignItems: 'center', gap: 4}}><MaterialCommunityIcons name={comment.liked_by?.includes(userData.name) ? "heart" : "heart-outline"} size={14} color={comment.liked_by?.includes(userData.name) ? "#FF1744" : "#666"} /><Text style={{fontSize: 12, color: comment.liked_by?.includes(userData.name) ? '#FF1744' : '#666'}}>{comment.likes || 0}</Text></TouchableOpacity>
-                                  </View>
-                              </View>
-                          </View>
-                          {getReplies(comment.id).map(reply => (
-                              <View key={reply.id} style={{flexDirection: 'row', marginTop: 10, marginLeft: 45, borderLeftWidth: 2, borderLeftColor: '#eee', paddingLeft: 10}}>
-                                  <Image source={{ uri: reply.avatar }} style={{width: 28, height: 28, borderRadius: 14, marginRight: 8}} />
-                                  <View style={{flex: 1}}>
-                                    <View style={[styles.commentBubble, {backgroundColor: '#f9f9f9', padding: 10}]}><Text style={styles.commentUser}>{reply.user_name}</Text><Text style={styles.commentText}>{reply.text}</Text></View>
-                                      <View style={{flexDirection: 'row', alignItems: 'center', marginTop: 5, paddingLeft: 10, gap: 15}}>
-                                          <Text style={styles.commentTime}>{formatTime(reply.created_at)}</Text>
-                                          <TouchableOpacity onPress={() => handleCommentLike(reply)} style={{flexDirection: 'row', alignItems: 'center', gap: 4}}><MaterialCommunityIcons name={reply.liked_by?.includes(userData.name) ? "heart" : "heart-outline"} size={14} color={reply.liked_by?.includes(userData.name) ? "#FF1744" : "#666"} /><Text style={{fontSize: 12, color: reply.liked_by?.includes(userData.name) ? '#FF1744' : '#666'}}>{reply.likes || 0}</Text></TouchableOpacity>
+      <View style={{ flex: 1, backgroundColor: '#007C00' }}>
+        <StatusBar barStyle="light-content" backgroundColor="#007C00" translucent={true} />
+        
+        <KeyboardAvoidingView style={{flex: 1, backgroundColor: '#F5F7FA'}} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+            <View style={[styles.subHeader, { paddingTop: Math.max(insets.top, 20) + 15, paddingBottom: 25 }]}>
+                <View style={styles.subHeaderRow}>
+                    <TouchableOpacity onPress={() => {setSelectedPost(null); setReplyingTo(null); setEditingCommentId(null); setNewComment('');}} style={styles.backButton}>
+                        <Ionicons name="arrow-back" size={24} color="white" />
+                    </TouchableOpacity>
+                    <View style={{alignItems: 'center'}}>
+                        <Text style={styles.subHeaderTitle}>Comments</Text>
+                    </View>
+                    <View style={{ width: 40 }} />
+                </View>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{paddingBottom: 20}}>
+                <Image source={{ uri: selectedPost.image }} style={styles.detailImage} />
+                <View style={styles.detailContent}>
+                    <Text style={styles.postTitle}>{selectedPost.title}</Text>
+                    <Text style={styles.postDesc}>{selectedPost.desc}</Text>
+                    <Text style={[styles.label, {marginTop: 20}]}>All Comments ({selectedPost.comments})</Text>
+                    {mainComments.length === 0 ? <Text style={{color: '#999', marginTop: 10}}>No comments yet. Be the first!</Text> : null}
+                    
+                    {mainComments.map((comment) => (
+                        <View key={comment.id} style={{marginBottom: 15, marginTop: 10}}>
+                            <View style={{flexDirection: 'row'}}>
+                              <Image source={{ uri: comment.avatar }} style={[styles.commentAvatar, comment.is_deleted && {opacity: 0.5}]} />
+                                <View style={{flex: 1}}>
+                                  <View style={[styles.commentBubble, comment.is_deleted && {backgroundColor: '#e0e0e0'}]}>
+                                      <View style={{flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center'}}>
+                                          <Text style={[styles.commentUser, comment.is_deleted && {color: '#999'}]}>{comment.user_name}</Text>
+                                          {!comment.is_deleted && (
+                                              <TouchableOpacity onPress={() => handleCommentOptions(comment)} style={{paddingHorizontal: 5}}>
+                                                  <Ionicons name="ellipsis-horizontal" size={16} color="#999" />
+                                              </TouchableOpacity>
+                                          )}
                                       </View>
+                                      <Text style={[styles.commentText, comment.is_deleted && {fontStyle: 'italic', color: '#999'}]}>{comment.text}</Text>
                                   </View>
-                              </View>
-                          ))}
-                      </View>
-                  ))}
-              </View>
-          </ScrollView>
-          <View style={{backgroundColor: 'white', borderTopWidth: 1, borderTopColor: '#eee'}}>
-              {replyingTo && (<View style={{backgroundColor: '#E8F5E9', padding: 8, paddingHorizontal: 15, flexDirection: 'row', justifyContent: 'space-between'}}><Text style={{fontSize: 12, color: '#007C00'}}>Replying to <Text style={{fontWeight: 'bold'}}>@{replyingTo.name}</Text></Text><TouchableOpacity onPress={() => setReplyingTo(null)}><MaterialCommunityIcons name="close" size={16} color="#666" /></TouchableOpacity></View>)}
-              <View style={[styles.footerInput, {borderTopWidth: 0}]}><TextInput placeholder={replyingTo ? "Write a reply..." : "Write a comment..."} style={styles.inputField} value={newComment} onChangeText={setNewComment} /><TouchableOpacity style={styles.sendBtn} onPress={handleAddComment}><Ionicons name="send" size={20} color="white" /></TouchableOpacity></View>
-          </View>
-      </KeyboardAvoidingView>
+                                  
+                                  {!comment.is_deleted && (
+                                      <View style={{flexDirection: 'row', alignItems: 'center', marginTop: 5, paddingLeft: 10, gap: 15}}>
+                                          <Text style={styles.commentTime}>{formatTime(comment.created_at)} {comment.is_edited && <Text style={{fontStyle: 'italic'}}>(edited)</Text>}</Text>
+                                          <TouchableOpacity onPress={() => setReplyingTo({id: comment.id, name: comment.user_name})}><Text style={{fontSize: 11, color: '#007C00', fontWeight: 'bold', marginRight: 15}}>Reply</Text></TouchableOpacity>
+                                          <TouchableOpacity onPress={() => handleCommentLike(comment)} style={{flexDirection: 'row', alignItems: 'center', gap: 4}}><MaterialCommunityIcons name={comment.liked_by?.includes(userData.name) ? "heart" : "heart-outline"} size={14} color={comment.liked_by?.includes(userData.name) ? "#FF1744" : "#666"} /><Text style={{fontSize: 12, color: comment.liked_by?.includes(userData.name) ? '#FF1744' : '#666'}}>{comment.likes || 0}</Text></TouchableOpacity>
+                                      </View>
+                                  )}
+                                  {comment.is_deleted && (
+                                      <View style={{marginTop: 5, paddingLeft: 10}}><Text style={styles.commentTime}>{formatTime(comment.created_at)}</Text></View>
+                                  )}
+                                </View>
+                            </View>
+
+                            {getReplies(comment.id).map(reply => (
+                                <View key={reply.id} style={{flexDirection: 'row', marginTop: 10, marginLeft: 45, borderLeftWidth: 2, borderLeftColor: '#eee', paddingLeft: 10}}>
+                                    <Image source={{ uri: reply.avatar }} style={[styles.replyAvatar, reply.is_deleted && {opacity: 0.5}]} />
+                                    <View style={{flex: 1}}>
+                                      <View style={[styles.commentBubble, {backgroundColor: '#f9f9f9', padding: 10}, reply.is_deleted && {backgroundColor: '#e0e0e0'}]}>
+                                          <View style={{flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center'}}>
+                                              <Text style={[styles.commentUser, reply.is_deleted && {color: '#999'}]}>{reply.user_name}</Text>
+                                              {!reply.is_deleted && (
+                                                  <TouchableOpacity onPress={() => handleCommentOptions(reply)} style={{paddingHorizontal: 5}}>
+                                                      <Ionicons name="ellipsis-horizontal" size={16} color="#999" />
+                                                  </TouchableOpacity>
+                                              )}
+                                          </View>
+                                          <Text style={[styles.commentText, reply.is_deleted && {fontStyle: 'italic', color: '#999'}]}>{reply.text}</Text>
+                                      </View>
+                                      
+                                      {!reply.is_deleted && (
+                                          <View style={{flexDirection: 'row', alignItems: 'center', marginTop: 5, paddingLeft: 10, gap: 15}}>
+                                              <Text style={styles.commentTime}>{formatTime(reply.created_at)} {reply.is_edited && <Text style={{fontStyle: 'italic'}}>(edited)</Text>}</Text>
+                                              <TouchableOpacity onPress={() => handleCommentLike(reply)} style={{flexDirection: 'row', alignItems: 'center', gap: 4}}><MaterialCommunityIcons name={reply.liked_by?.includes(userData.name) ? "heart" : "heart-outline"} size={14} color={reply.liked_by?.includes(userData.name) ? "#FF1744" : "#666"} /><Text style={{fontSize: 12, color: reply.liked_by?.includes(userData.name) ? '#FF1744' : '#666'}}>{reply.likes || 0}</Text></TouchableOpacity>
+                                          </View>
+                                      )}
+                                      {reply.is_deleted && (
+                                          <View style={{marginTop: 5, paddingLeft: 10}}><Text style={styles.commentTime}>{formatTime(reply.created_at)}</Text></View>
+                                      )}
+                                    </View>
+                                </View>
+                            ))}
+                        </View>
+                    ))}
+                </View>
+            </ScrollView>
+            <View style={{backgroundColor: 'white', borderTopWidth: 1, borderTopColor: '#eee'}}>
+                {replyingTo && (<View style={styles.statusBanner}><Text style={{fontSize: 12, color: '#007C00'}}>Replying to <Text style={{fontWeight: 'bold'}}>@{replyingTo.name}</Text></Text><TouchableOpacity onPress={() => setReplyingTo(null)}><MaterialCommunityIcons name="close" size={16} color="#666" /></TouchableOpacity></View>)}
+                {editingCommentId && (<View style={[styles.statusBanner, {backgroundColor: '#FFF3E0'}]}><Text style={{fontSize: 12, color: '#EF6C00'}}>Editing comment...</Text><TouchableOpacity onPress={() => {setEditingCommentId(null); setNewComment('');}}><MaterialCommunityIcons name="close" size={16} color="#666" /></TouchableOpacity></View>)}
+                
+                <View style={[styles.footerInput, {borderTopWidth: 0}]}><TextInput placeholder={editingCommentId ? "Edit your comment..." : replyingTo ? "Write a reply..." : "Write a comment..."} style={styles.inputField} value={newComment} onChangeText={setNewComment} /><TouchableOpacity style={styles.sendBtn} onPress={handleAddComment}><Ionicons name={editingCommentId ? "checkmark" : "send"} size={20} color="white" /></TouchableOpacity></View>
+            </View>
+
+            <Modal visible={commentOptionsModalVisible} animationType="slide" transparent={true} onRequestClose={() => setCommentOptionsModalVisible(false)}>
+              <TouchableOpacity style={{flex: 1, backgroundColor: 'transparent', justifyContent: 'flex-end'}} activeOpacity={1} onPress={() => setCommentOptionsModalVisible(false)}>
+                <TouchableOpacity activeOpacity={1} style={styles.darkModalSheet}>
+                  <View style={{width: 40, height: 5, backgroundColor: '#555', borderRadius: 5, alignSelf: 'center', marginTop: 15, marginBottom: 20}} />
+                  <View style={styles.darkMenuContainer}>
+                      {selectedCommentForOptions?.user_name === userData.name ? (
+                          <>
+                              <TouchableOpacity style={styles.darkMenuItem} onPress={handleEditCommentAction}>
+                                  <Ionicons name="pencil" size={22} color="#fff" style={{marginRight: 15}} />
+                                  <Text style={styles.darkMenuText}>Edit Comment</Text>
+                              </TouchableOpacity>
+                              <TouchableOpacity style={[styles.darkMenuItem, { borderBottomWidth: 0 }]} onPress={handleDeleteCommentAction}>
+                                  <Ionicons name="trash-outline" size={22} color="#FF3B30" style={{marginRight: 15}} />
+                                  <Text style={[styles.darkMenuText, { color: '#FF3B30', fontWeight: 'bold' }]}>Delete Comment</Text>
+                              </TouchableOpacity>
+                          </>
+                      ) : (
+                          <TouchableOpacity style={[styles.darkMenuItem, { borderBottomWidth: 0 }]} onPress={handleReportCommentAction}>
+                              <Ionicons name="warning-outline" size={22} color="#FF3B30" style={{marginRight: 15}} />
+                              <Text style={[styles.darkMenuText, { color: '#FF3B30', fontWeight: 'bold' }]}>Report Comment</Text>
+                          </TouchableOpacity>
+                      )}
+                  </View>
+                  <TouchableOpacity style={styles.darkCancelBtn} onPress={() => setCommentOptionsModalVisible(false)}><Text style={{color: '#fff', fontWeight: 'bold'}}>Cancel</Text></TouchableOpacity>
+                </TouchableOpacity>
+              </TouchableOpacity>
+            </Modal>
+
+            <Modal visible={commentReportModalVisible} animationType="slide" transparent={true} onRequestClose={() => setCommentReportModalVisible(false)}>
+              <TouchableOpacity style={{flex: 1, backgroundColor: 'transparent', justifyContent: 'flex-end'}} activeOpacity={1} onPress={() => setCommentReportModalVisible(false)}>
+                <TouchableOpacity activeOpacity={1} style={styles.darkModalSheet}>
+                  <View style={{width: 40, height: 5, backgroundColor: '#555', borderRadius: 5, alignSelf: 'center', marginTop: 15, marginBottom: 20}} />
+                  {commentReportStep === 0 ? (
+                    <View style={styles.darkMenuContainer}>
+                        <TouchableOpacity style={{flexDirection: 'row', alignItems: 'center', padding: 18}} onPress={() => setCommentReportStep(1)}>
+                            <Ionicons name="warning-outline" size={22} color="#FF3B30" style={{marginRight: 15}} />
+                            <Text style={{fontSize: 16, color: '#FF3B30', fontWeight: 'bold'}}>Report this comment</Text>
+                        </TouchableOpacity>
+                    </View>
+                  ) : (
+                    <View style={{marginBottom: 15}}>
+                        <Text style={{fontSize: 18, fontWeight: 'bold', color: '#fff', marginBottom: 15, textAlign: 'center'}}>Why report this comment?</Text>
+                        {reportReasons.map((reason, index) => (
+                            <TouchableOpacity key={index} style={styles.darkMenuItem} onPress={() => submitCommentReport(reason)}>
+                                <Text style={styles.darkMenuText}>{reason}</Text>
+                                <Ionicons name="chevron-forward" size={20} color="#555" />
+                            </TouchableOpacity>
+                        ))}
+                        <TouchableOpacity style={[styles.darkCancelBtn, {marginTop: 15}]} onPress={() => setCommentReportStep(0)}>
+                            <Text style={{color: '#fff', fontWeight: 'bold'}}>Back</Text>
+                        </TouchableOpacity>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              </TouchableOpacity>
+            </Modal>
+
+        </KeyboardAvoidingView>
+      </View>
     );
   }
 
   if (isCreating) {
       return (
-        <View style={{flex: 1, backgroundColor: 'white'}}>
-          <StatusBar barStyle="dark-content" backgroundColor="white" />
-          <View style={[styles.createHeader, { paddingTop: Math.max(insets.top, 20) + 15 }]}><TouchableOpacity onPress={() => {setIsCreating(false); setEditingPostId(null);}}><Ionicons name="arrow-back" size={24} color="#333" /></TouchableOpacity><View><Text style={styles.createHeaderTitle}>{editingPostId ? 'Edit Post' : 'Create Post'}</Text></View><View style={{width: 24}} /></View>
-          <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{flex: 1}}>
+        <View style={styles.container}>
+          <StatusBar barStyle="light-content" backgroundColor="#007C00" translucent={true} />
+          
+          <View style={[styles.subHeader, { paddingTop: Math.max(insets.top, 20) + 15, paddingBottom: 25 }]}>
+              <View style={styles.subHeaderRow}>
+                  <TouchableOpacity onPress={() => {setIsCreating(false); setEditingPostId(null);}} style={styles.backButton}>
+                      <Ionicons name="arrow-back" size={24} color="white" />
+                  </TouchableOpacity>
+                  <View style={{alignItems: 'center'}}>
+                      <Text style={styles.subHeaderTitle}>{editingPostId ? 'Edit Post' : 'Create Post'}</Text>
+                  </View>
+                  <View style={{ width: 40 }} />
+              </View>
+          </View>
+
+          <KeyboardAvoidingView style={{flex: 1}} behavior={Platform.OS === "ios" ? "padding" : undefined}>
             <ScrollView contentContainerStyle={styles.createContent}>
               <Text style={styles.label}>Post Type</Text>
               <View style={styles.typeRow}>{['For Sale', 'Trade', 'Free'].map(type => (<TouchableOpacity key={type} style={[styles.typeBtn, form.type === type && styles.typeBtnActive, {borderColor: form.type === type ? '#007C00' : '#E0E0E0'}]} onPress={() => setForm({...form, type: type})}><Text style={[styles.typeBtnText, form.type === type && {color: '#007C00'}]}>{type}</Text></TouchableOpacity>))}</View>
@@ -302,7 +457,7 @@ export default function Dashboard() {
               <Text style={styles.label}>Description</Text><TextInput style={[styles.input, {height: 80}]} placeholder="Desc" multiline value={form.desc} onChangeText={(t) => setForm({...form, desc: t})} />
               <Text style={styles.label}>Location</Text><TextInput style={styles.input} placeholder="Barangay, City" value={form.location} onChangeText={(t) => setForm({...form, location: t})} />
               {form.type === 'For Sale' && (<><Text style={styles.label}>Price *</Text><View style={styles.inputIconWrap}><Text style={{color: '#999', marginRight: 5}}>₱</Text><TextInput style={{flex: 1}} placeholder="0.00" keyboardType="numeric" value={form.price} onChangeText={(t) => setForm({...form, price: t})}/></View></>)}
-              {form.type === 'Trade' && (<><Text style={styles.label}>Looking For</Text><TextInput style={styles.input} placeholder="e.g. Glass bottles..." value={form.lookingFor} onChangeText={(t) => setForm({...form, lookingFor: t})}/></>)}
+              {form.type === 'Trade' && (<><Text style={styles.label}>Looking For *</Text><TextInput style={styles.input} placeholder="e.g. Glass bottles..." value={form.lookingFor} onChangeText={(t) => setForm({...form, lookingFor: t})}/></>)}
               <Text style={styles.label}>Upload Photo</Text><TouchableOpacity style={styles.imageUploadBox} onPress={handleImagePick}>{form.imageUri ? (<Image source={{ uri: form.imageUri }} style={{width: '100%', aspectRatio: 16/9, borderRadius: 12}} resizeMode="cover" />) : (<MaterialCommunityIcons name="camera-plus" size={30} color="#999" />)}</TouchableOpacity>
               <TouchableOpacity style={styles.submitBtn} onPress={handlePostSubmit} disabled={isUploading}>{isUploading ? (<ActivityIndicator color="white" />) : (<Text style={{color: 'white', fontWeight: 'bold'}}>{editingPostId ? 'SAVE CHANGES' : 'POST NOW'}</Text>)}</TouchableOpacity>
               <View style={{height: 100}} />
@@ -347,13 +502,19 @@ export default function Dashboard() {
 
         <Text style={[styles.sectionTitle, { marginBottom: 10, marginTop: 5 }]}>Eco Impact</Text>
         
-        <View style={styles.pointsBanner}>
+        {/* 🟢 LINEAR GRADIENT FOR REWARD POINTS BANNER */}
+        <LinearGradient
+            colors={['#007C00', '#004d00']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.pointsBanner}
+        >
             <View style={styles.pointsTitleWrap}>
                 <MaterialCommunityIcons name="star-four-points-circle" size={28} color="#FFD54F" />
                 <Text style={styles.pointsTitle}>Reward Points</Text>
             </View>
             <Text style={styles.pointsValue}>{userData.points} <Text style={{fontSize: 14, fontWeight: 'normal'}}>PTS</Text></Text>
-        </View>
+        </LinearGradient>
 
         <View style={styles.impactRow}>
             <ImpactCard value={userData.kgRecycled} unit="kg recycled" icon="chart-line-variant" color="#007C00" bgColor="#E8F5E9" />
@@ -362,10 +523,9 @@ export default function Dashboard() {
         </View>
 
         <View style={styles.sectionHeader}><Text style={styles.sectionTitle}>Community Feed</Text><TouchableOpacity style={styles.addPostBtn} onPress={() => setIsCreating(true)}><MaterialCommunityIcons name="plus" size={20} color="white" /></TouchableOpacity></View>
-        <View style={styles.searchContainer}><Ionicons name="search" size={20} color="#3f3e3e" style={{marginLeft: 10}} /><TextInput style={styles.searchInput} placeholder="Search posts, items, or users..." placeholderTextColor="#999" value={searchQuery} onChangeText={setSearchQuery} /></View>
+        <View style={styles.searchContainer}><Ionicons name="search" size={20} color="#3f3e3e" style={{marginLeft: 10}} /><TextInput style={styles.searchInput} placeholder="Search posts..." placeholderTextColor="#999" value={searchQuery} onChangeText={setSearchQuery} /></View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{marginBottom: 15}}>{['All', 'For Sale', 'Trade', 'Free'].map((filter) => (<TouchableOpacity key={filter} style={[styles.filterPill, activeFilter === filter && styles.activePill]} onPress={() => setActiveFilter(filter)}><Text style={[styles.filterText, activeFilter === filter && styles.activeFilterText]}>{filter}</Text></TouchableOpacity>))}</ScrollView>
 
-        {/* 🟢 DITO INAPPLY ANG MY POST LOGIC AT HIDDEN CONTACT BUTTON */}
         {filteredPosts.length === 0 ? (<Text style={{textAlign: 'center', marginTop: 50, color: '#999'}}>No posts found.</Text>) : (
             filteredPosts.map((post) => {
                 const isOwner = post.user === userData.name;
@@ -376,7 +536,6 @@ export default function Dashboard() {
                             <View style={{flex: 1, marginLeft: 10}}>
                                 <View style={{flexDirection: 'row', alignItems: 'center', gap: 6}}>
                                     <Text style={styles.postUser}>{post.user}</Text>
-                                    {/* 🟢 "YOU" BADGE */}
                                     {isOwner && (
                                         <View style={styles.meBadge}>
                                             <Text style={styles.meBadgeText}>YOU</Text>
@@ -396,7 +555,6 @@ export default function Dashboard() {
                             </View>
                             <View style={{flexDirection: 'row', alignItems: 'center', gap: 10}}>
                                 <Text style={styles.postPrice}>{post.price}</Text>
-                                {/* 🟢 NAKATAGO ANG CONTACT BUTTON KUNG IKAW ANG OWNER */}
                                 {!isOwner && (
                                   <TouchableOpacity style={styles.contactBtn} onPress={() => handleContact(post)}>
                                     <Text style={styles.contactText}>Contact</Text>
@@ -411,7 +569,7 @@ export default function Dashboard() {
         <View style={{height: 100}} /> 
       </ScrollView>
 
-      {/* 🟢 OPTIONS MODAL PARA SA SARILING POSTS */}
+      {/* POST OPTIONS MODALS */}
       <Modal visible={optionsModalVisible} animationType="slide" transparent={true} onRequestClose={() => setOptionsModalVisible(false)}>
         <TouchableOpacity style={{flex: 1, backgroundColor: 'transparent', justifyContent: 'flex-end'}} activeOpacity={1} onPress={() => setOptionsModalVisible(false)}>
           <TouchableOpacity activeOpacity={1} style={styles.darkModalSheet}>
@@ -421,18 +579,15 @@ export default function Dashboard() {
                 <Ionicons name="create-outline" size={22} color="#fff" style={{marginRight: 15}} />
                 <Text style={styles.darkMenuText}>Edit Post</Text>
               </TouchableOpacity>
-              
               <TouchableOpacity style={styles.darkMenuItem} onPress={handleSoldAction}>
                 <Ionicons name="checkmark-circle-outline" size={22} color="#007C00" style={{marginRight: 15}} />
                 <Text style={[styles.darkMenuText, {color: '#007C00', fontWeight: 'bold'}]}>Mark as Sold/Traded</Text>
               </TouchableOpacity>
-              
               <TouchableOpacity style={[styles.darkMenuItem, { borderBottomWidth: 0 }]} onPress={handleDeleteAction}>
                 <Ionicons name="trash-outline" size={22} color="#FF3B30" style={{marginRight: 15}} />
                 <Text style={[styles.darkMenuText, { color: '#FF3B30', fontWeight: 'bold' }]}>Delete Post</Text>
               </TouchableOpacity>
             </View>
-
             <TouchableOpacity style={styles.darkCancelBtn} onPress={() => setOptionsModalVisible(false)}>
               <Text style={{color: '#fff', fontWeight: 'bold'}}>Cancel</Text>
             </TouchableOpacity>
@@ -440,7 +595,6 @@ export default function Dashboard() {
         </TouchableOpacity>
       </Modal>
 
-      {/* 🟢 REPORT MODAL PARA SA POSTS NG IBA */}
       <Modal visible={reportModalVisible} animationType="slide" transparent={true} onRequestClose={() => setReportModalVisible(false)}>
         <TouchableOpacity style={{flex: 1, backgroundColor: 'transparent', justifyContent: 'flex-end'}} activeOpacity={1} onPress={() => setReportModalVisible(false)}>
           <TouchableOpacity activeOpacity={1} style={styles.darkModalSheet}>
@@ -463,26 +617,23 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F5F7FA' }, 
   header: { backgroundColor: '#007C00', paddingBottom: 25, paddingHorizontal: 25, borderBottomLeftRadius: 25, borderBottomRightRadius: 25, elevation: 4 }, 
   headerContent: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, appName: { color: 'white', fontSize: 24, fontWeight: '800' }, welcomeText: { color: 'rgba(255,255,255,0.9)', fontSize: 13, marginTop: 4 }, 
+  subHeader: { backgroundColor: '#007C00', paddingHorizontal: 20, borderBottomLeftRadius: 30, borderBottomRightRadius: 30, elevation: 5, zIndex: 10 },
+  subHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', width: '100%' },
+  subHeaderTitle: { color: 'white', fontSize: 20, fontWeight: 'bold' },
+  backButton: { backgroundColor: 'rgba(255,255,255,0.2)', padding: 8, borderRadius: 12 },
   scrollView: { flex: 1 }, scrollContent: { paddingHorizontal: 20, paddingTop: 10 }, tipCard: { backgroundColor: '#FFF3E0', padding: 16, borderRadius: 16, marginBottom: 20, borderWidth: 1, borderColor: '#FFE0B2' }, tipHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 }, tipTitle: { fontSize: 14, fontWeight: 'bold', color: '#EF6C00', marginLeft: 8 }, tipText: { fontSize: 12, color: '#E65100', lineHeight: 18 }, 
-  pointsBanner: { backgroundColor: '#007C00', borderRadius: 16, padding: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15, elevation: 3 }, pointsTitleWrap: { flexDirection: 'row', alignItems: 'center' }, pointsTitle: { color: 'white', fontSize: 16, fontWeight: '600', marginLeft: 8 }, pointsValue: { color: 'white', fontSize: 26, fontWeight: 'bold' },
+  
+  // 🟢 NA-UPDATE ANG POINTS BANNER STYLES DAHIL GINAGAMITAN NA NG LINEAR GRADIENT
+  pointsBanner: { borderRadius: 16, padding: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15, elevation: 3 }, 
+  
+  pointsTitleWrap: { flexDirection: 'row', alignItems: 'center' }, pointsTitle: { color: 'white', fontSize: 16, fontWeight: '600', marginLeft: 8 }, pointsValue: { color: 'white', fontSize: 26, fontWeight: 'bold' },
   impactRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 25, gap: 10 }, impactCard: { flex: 1, backgroundColor: 'white', paddingVertical: 18, borderRadius: 16, alignItems: 'center', elevation: 2 }, impactIconBg: { padding: 10, borderRadius: 12, marginBottom: 10 }, impactValue: { fontSize: 18, fontWeight: 'bold' }, impactUnit: { fontSize: 10, color: '#90A4AE', textAlign: 'center', marginTop: 2 }, sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, marginTop: 10 }, sectionTitle: { fontSize: 20, fontWeight: 'bold', color: '#263238' }, searchContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'white', borderRadius: 12, marginBottom: 15, paddingHorizontal: 10, borderWidth: 1, borderColor: '#eee' }, searchInput: { flex: 1, paddingVertical: 12, paddingHorizontal: 10, fontSize: 14, color: '#333' }, 
   topMessageBtn: { justifyContent: 'center', alignItems: 'center', position: 'relative' }, badgeDot: { position: 'absolute', top: -5, right: -5, backgroundColor: '#FF1744', borderRadius: 10, paddingHorizontal: 5, paddingVertical: 2, minWidth: 20, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'white' }, badgeDotText: { color: 'white', fontSize: 10, fontWeight: 'bold' },
   addPostBtn: { backgroundColor: '#007C00', width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center', elevation: 2 }, filterPill: { paddingHorizontal: 20, paddingVertical: 8, backgroundColor: 'white', borderRadius: 20, marginRight: 10, elevation: 1, borderWidth: 1, borderColor: '#eee' }, activePill: { backgroundColor: '#263238', borderColor: '#263238' }, filterText: { fontSize: 13, color: '#666', fontWeight: '600' }, activeFilterText: { color: 'white' }, 
   postCard: { backgroundColor: 'white', borderRadius: 16, padding: 15, marginBottom: 15, elevation: 2 }, 
-  
-  // 🟢 MGA BAGONG STYLES PARA SA CARD MO AT BADGE
   myPostCardBorder: { backgroundColor: '#F1F8E9', borderWidth: 1, borderColor: '#C8E6C9' },
   meBadge: { backgroundColor: '#007C00', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
   meBadgeText: { color: 'white', fontSize: 8, fontWeight: 'bold' },
-
-  postHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 }, postAvatar: { width: 40, height: 40, borderRadius: 20 }, postUser: { fontWeight: 'bold', fontSize: 14, color: '#333' }, postTime: { fontSize: 11, color: '#999' }, typeBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10 }, postTitle: { fontSize: 16, fontWeight: 'bold', color: '#333', marginBottom: 5 }, postDesc: { fontSize: 13, color: '#666', marginBottom: 10 }, postImage: { width: '100%', aspectRatio: 16 / 9, borderRadius: 12, marginBottom: 15, resizeMode: 'cover', backgroundColor: '#f0f0f0' }, postFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, iconRow: { flexDirection: 'row', alignItems: 'center', gap: 5, padding: 5 }, iconText: { fontSize: 14, color: '#666' }, postPrice: { fontSize: 16, fontWeight: 'bold', color: '#007C00' }, contactBtn: { backgroundColor: '#007C00', paddingHorizontal: 15, paddingVertical: 8, borderRadius: 8 }, contactText: { color: 'white', fontWeight: 'bold', fontSize: 12 }, detailImage: { width: '100%', aspectRatio: 4 / 3, backgroundColor: '#eee' }, detailContent: { padding: 20 }, commentAvatar: { width: 36, height: 36, borderRadius: 18, marginRight: 10 }, commentBubble: { flex: 1, backgroundColor: '#F5F7FA', padding: 12, borderRadius: 12 }, commentUser: { fontWeight: 'bold', fontSize: 13, marginBottom: 2 }, commentText: { fontSize: 13, color: '#444' }, commentTime: { fontSize: 10, color: '#999' }, footerInput: { padding: 15, backgroundColor: 'white', borderTopWidth: 1, borderTopColor: '#eee', flexDirection: 'row', alignItems: 'flex-end', gap: 10 }, inputField: { flex: 1, backgroundColor: '#F5F5F5', borderRadius: 20, paddingHorizontal: 15, paddingVertical: 10, maxHeight: 100 }, sendBtn: { width: 40, height: 40, backgroundColor: '#007C00', borderRadius: 20, justifyContent: 'center', alignItems: 'center', marginBottom: 2 }, createHeader: { paddingHorizontal: 20, paddingBottom: 15, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'white', borderBottomWidth: 1, borderBottomColor: '#eee' }, createHeaderTitle: { fontSize: 18, fontWeight: 'bold', color: '#333', textAlign: 'center' }, createContent: { padding: 20 }, label: { fontSize: 14, fontWeight: '700', color: '#333', marginBottom: 4, marginTop: 15 }, input: { backgroundColor: '#F5F7FA', borderRadius: 10, padding: 15, borderWidth: 1, borderColor: '#F0F0F0' }, inputIconWrap: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F5F7FA', borderRadius: 10, paddingHorizontal: 15, paddingVertical: 12, borderWidth: 1, borderColor: '#F0F0F0' }, typeRow: { flexDirection: 'row', gap: 10 }, typeBtn: { flex: 1, paddingVertical: 15, borderRadius: 12, borderWidth: 1, alignItems: 'center', borderColor: '#E0E0E0' }, typeBtnActive: { borderColor: '#007C00', backgroundColor: '#E8F5E9' }, typeBtnText: { fontSize: 12, fontWeight: '600', color: '#666' }, imageUploadBox: { width: '100%', aspectRatio: 16 / 9, borderWidth: 1, borderColor: '#ddd', borderStyle: 'dashed', borderRadius: 12, justifyContent: 'center', alignItems: 'center', backgroundColor: '#FAFAFA', marginTop: 15 }, submitBtn: { padding: 15, borderRadius: 12, backgroundColor: '#007C00', alignItems: 'center', marginTop: 30 },
-
-  darkModalSheet: { backgroundColor: '#1C1C1E', borderTopLeftRadius: 25, borderTopRightRadius: 25, paddingHorizontal: 20, paddingBottom: 35, shadowColor: '#000', shadowOffset: { width: 0, height: -2 }, shadowOpacity: 0.2, shadowRadius: 10, elevation: 15 },
-  darkMenuContainer: { backgroundColor: '#2C2C2E', borderRadius: 15, overflow: 'hidden', marginBottom: 15 },
-  
-  // 🟢 INAYOS ANG ALIGNMENT: Inalis ang justifyContent: 'space-between'
-  darkMenuItem: { flexDirection: 'row', alignItems: 'center', padding: 18, borderBottomWidth: 1, borderBottomColor: '#3A3A3C' },
-  
-  darkMenuText: { fontSize: 16, color: '#fff' },
-  darkCancelBtn: { padding: 18, backgroundColor: '#2C2C2E', borderRadius: 15, alignItems: 'center' }
+  postHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 }, postAvatar: { width: 40, height: 40, borderRadius: 20 }, postUser: { fontWeight: 'bold', fontSize: 14, color: '#333' }, postTime: { fontSize: 11, color: '#999' }, typeBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10 }, postTitle: { fontSize: 16, fontWeight: 'bold', color: '#333', marginBottom: 5 }, postDesc: { fontSize: 13, color: '#666', marginBottom: 10 }, postImage: { width: '100%', aspectRatio: 16 / 9, borderRadius: 12, marginBottom: 15, resizeMode: 'cover', backgroundColor: '#f0f0f0' }, postFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, iconRow: { flexDirection: 'row', alignItems: 'center', gap: 5, padding: 5 }, iconText: { fontSize: 14, color: '#666' }, postPrice: { fontSize: 16, fontWeight: 'bold', color: '#007C00' }, contactBtn: { backgroundColor: '#007C00', paddingHorizontal: 15, paddingVertical: 8, borderRadius: 8 }, contactText: { color: 'white', fontWeight: 'bold', fontSize: 12 }, detailImage: { width: '100%', aspectRatio: 4 / 3, backgroundColor: '#eee' }, detailContent: { padding: 20 }, commentAvatar: { width: 36, height: 36, borderRadius: 18, marginRight: 10 }, replyAvatar: { width: 28, height: 28, borderRadius: 14, marginRight: 8 }, commentBubble: { flex: 1, backgroundColor: '#F5F7FA', padding: 12, borderRadius: 12 }, commentUser: { fontWeight: 'bold', fontSize: 13, marginBottom: 2 }, commentText: { fontSize: 13, color: '#444' }, commentTime: { fontSize: 10, color: '#999' }, footerInput: { padding: 15, backgroundColor: 'white', borderTopWidth: 1, borderTopColor: '#eee', flexDirection: 'row', alignItems: 'flex-end', gap: 10 }, statusBanner: { backgroundColor: '#E8F5E9', padding: 8, paddingHorizontal: 15, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, inputField: { flex: 1, backgroundColor: '#F5F5F5', borderRadius: 20, paddingHorizontal: 15, paddingVertical: 10, maxHeight: 100 }, sendBtn: { width: 40, height: 40, backgroundColor: '#007C00', borderRadius: 20, justifyContent: 'center', alignItems: 'center', marginBottom: 2 }, createContent: { padding: 20 }, label: { fontSize: 14, fontWeight: '700', color: '#333', marginBottom: 4, marginTop: 15 }, input: { backgroundColor: '#F5F7FA', borderRadius: 10, padding: 15, borderWidth: 1, borderColor: '#F0F0F0' }, inputIconWrap: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F5F7FA', borderRadius: 10, paddingHorizontal: 15, paddingVertical: 12, borderWidth: 1, borderColor: '#F0F0F0' }, typeRow: { flexDirection: 'row', gap: 10 }, typeBtn: { flex: 1, paddingVertical: 15, borderRadius: 12, borderWidth: 1, alignItems: 'center', borderColor: '#E0E0E0' }, typeBtnActive: { borderColor: '#007C00', backgroundColor: '#E8F5E9' }, typeBtnText: { fontSize: 12, fontWeight: '600', color: '#666' }, imageUploadBox: { width: '100%', aspectRatio: 16 / 9, borderWidth: 1, borderColor: '#ddd', borderStyle: 'dashed', borderRadius: 12, justifyContent: 'center', alignItems: 'center', backgroundColor: '#FAFAFA', marginTop: 15 }, submitBtn: { padding: 15, borderRadius: 12, backgroundColor: '#007C00', alignItems: 'center', marginTop: 30 },
+  darkModalSheet: { backgroundColor: '#1C1C1E', borderTopLeftRadius: 25, borderTopRightRadius: 25, paddingHorizontal: 20, paddingBottom: 35, shadowColor: '#000', shadowOffset: { width: 0, height: -2 }, shadowOpacity: 0.2, shadowRadius: 10, elevation: 15 }, darkMenuContainer: { backgroundColor: '#2C2C2E', borderRadius: 15, overflow: 'hidden', marginBottom: 15 }, darkMenuItem: { flexDirection: 'row', alignItems: 'center', padding: 18, borderBottomWidth: 1, borderBottomColor: '#3A3A3C' }, darkMenuText: { fontSize: 16, color: '#fff' }, darkCancelBtn: { padding: 18, backgroundColor: '#2C2C2E', borderRadius: 15, alignItems: 'center' }
 });

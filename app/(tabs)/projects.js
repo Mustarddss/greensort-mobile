@@ -121,15 +121,27 @@ export default function ProjectsPage() {
           </View>
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false}>
-          {/* 🟢 SEARCH BAR: Placed cleanly below the header */}
-          <View style={styles.searchContainer}>
-            <View style={styles.searchBar}>
-                <Ionicons name="search" size={20} color="#999" />
-                <TextInput placeholder="Search projects or materials..." style={styles.searchInput} value={searchQuery} onChangeText={setSearchQuery} />
-                {searchQuery.length > 0 && <TouchableOpacity onPress={() => setSearchQuery('')}><Ionicons name="close-circle" size={18} color="#ccc" /></TouchableOpacity>}
-            </View>
-          </View>
+     <ScrollView showsVerticalScrollIndicator={false}>
+      {/* 🟢 SEARCH BAR: Placed cleanly below the header */}
+      <View style={styles.searchContainer}>
+        <View style={styles.searchBar}>
+            <Ionicons name="search" size={20} color="#999" />
+            
+            <TextInput 
+                placeholder="Search projects or materials..." 
+                placeholderTextColor="#A9A9A9" /* 👈 Dito binabago ang kulay ng placeholder */
+                style={styles.searchInput} 
+                value={searchQuery} 
+                onChangeText={setSearchQuery} 
+            />
+            
+            {searchQuery.length > 0 && (
+                <TouchableOpacity onPress={() => setSearchQuery('')}>
+                    <Ionicons name="close-circle" size={18} color="#999" />
+                </TouchableOpacity>
+            )}
+        </View>
+      </View>
 
           <View style={styles.categoryContainer}>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryScroll}>
@@ -182,7 +194,7 @@ const styles = StyleSheet.create({
 
   searchContainer: { paddingHorizontal: 20, marginTop: 20 },
   searchBar: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'white', borderRadius: 15, paddingHorizontal: 15, height: 52, ...getSafeShadow() },
-  searchInput: { flex: 1, marginLeft: 10, fontSize: 14, color: '#333' },
+  searchInput: { flex: 1, marginLeft: 10, fontSize: 14, color: '#999' },
 
   categoryContainer: { marginTop: 10 },
   categoryScroll: { paddingHorizontal: 20, paddingVertical: 10 },

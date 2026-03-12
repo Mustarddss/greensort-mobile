@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Image, ScrollView, StatusBar, Platform, TextInput, ActivityIndicator, Alert, RefreshControl, KeyboardAvoidingView, Modal } from 'react-native';
-import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router'; // 🟢 IDINAGDAG ANG useLocalSearchParams
+import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router'; 
 import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker'; 
@@ -12,7 +12,7 @@ const getSafeShadow = () => Platform.select({ ios: { shadowColor: '#000', shadow
 export default function Profile() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const params = useLocalSearchParams(); // 🟢 KUKUNIN ANG IPINASANG DATA DITO
+  const params = useLocalSearchParams(); 
   
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -35,7 +35,6 @@ export default function Profile() {
     useCallback(() => {
       fetchProfileAndPosts();
 
-      // 🟢 AUTO-OPEN EDIT FORM KUNG MAY IPINASANG POST MULA SA 'RELIST & EDIT'
       if (params.autoEditPost) {
           try {
               const post = JSON.parse(params.autoEditPost);
@@ -51,13 +50,12 @@ export default function Profile() {
               });
               setIsEditingPost(true);
               
-              // Alisin ang parameter para hindi na mag-open ulit kapag bumalik
               router.setParams({ autoEditPost: '' }); 
           } catch (e) {
               console.log("Error parsing autoEditPost", e);
           }
       }
-    }, [params.autoEditPost]) // Re-run kung may bagong pinasok
+    }, [params.autoEditPost]) 
   );
 
   const fetchProfileAndPosts = async () => {
@@ -306,9 +304,20 @@ export default function Profile() {
       <StatusBar barStyle="light-content" backgroundColor="#007C00" translucent={true} />
       <View style={[styles.header, { paddingTop: Math.max(insets.top, 20) + 15 }]}>
         <View style={styles.headerRow}>
-            <View style={styles.headerSide}><TouchableOpacity onPress={() => router.back()} style={{padding: 5}}><Ionicons name="arrow-back" size={28} color="white" /></TouchableOpacity></View>
+            {/* 🟢 INAPPLY ANG styles.iconButton DITO PARA MAY GLASS BACKGROUND */}
+            <View style={styles.headerSide}>
+                <TouchableOpacity onPress={() => router.back()} style={styles.iconButton}>
+                    <Ionicons name="arrow-back" size={24} color="white" />
+                </TouchableOpacity>
+            </View>
             <View style={styles.headerCenter}><Text style={styles.headerTitle}>Profile</Text></View>
-            <View style={[styles.headerSide, { alignItems: 'flex-end' }]}><TouchableOpacity onPress={() => router.push('/settings')} style={{padding: 5}}><Ionicons name="settings-sharp" size={24} color="white" /></TouchableOpacity></View>
+            
+            {/* 🟢 INAPPLY DIN DITO SA SETTINGS BUTTON PARA PANTAY AT BALANCE */}
+            <View style={[styles.headerSide, { alignItems: 'flex-end' }]}>
+                <TouchableOpacity onPress={() => router.push('/settings')} style={styles.iconButton}>
+                    <Ionicons name="settings-sharp" size={24} color="white" />
+                </TouchableOpacity>
+            </View>
         </View>
       </View>
 
@@ -414,6 +423,10 @@ const styles = StyleSheet.create({
   headerSide: { width: 50, alignItems: 'flex-start' }, 
   headerCenter: { flex: 1, alignItems: 'center' }, 
   headerTitle: { fontSize: 22, fontWeight: 'bold', color: 'white' }, 
+  
+  // 🟢 BAGONG STYLE PARA SA BACK AT SETTINGS BUTTONS
+  iconButton: { backgroundColor: 'rgba(255,255,255,0.25)', padding: 8, borderRadius: 14, justifyContent: 'center', alignItems: 'center' },
+
   content: { flex: 1, paddingHorizontal: 20, zIndex: 1 }, 
   idCard: { backgroundColor: 'white', borderRadius: 20, padding: 20, alignItems: 'center', marginTop: 20, marginBottom: 15, ...getSafeShadow() }, 
   avatarWrapper: { position: 'relative', marginBottom: 10 }, avatarImage: { width: 90, height: 90, borderRadius: 45, backgroundColor: '#eee', borderWidth: 3, borderColor: '#007C00' }, cameraIconBadge: { position: 'absolute', bottom: 0, right: 0, backgroundColor: '#2962FF', padding: 8, borderRadius: 20, borderWidth: 2, borderColor: 'white' }, name: { fontSize: 20, fontWeight: 'bold' }, role: { color: '#666', fontSize: 12 }, badge: { backgroundColor: '#007C00', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 10, marginTop: 8 }, badgeText: { color: 'white', fontSize: 10, fontWeight: 'bold' },
