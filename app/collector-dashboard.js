@@ -19,7 +19,7 @@ export default function CollectorDashboard() {
   const [editForm, setEditForm] = useState({ phone: '', location: '', days: '', hours: '' });
   const [isSaving, setIsSaving] = useState(false);
 
-  // 🟢 ZEROED OUT DATA (Hihintayin ang backend para malagyan ng laman)
+  // 🟢 DYNAMIC DATA STATES
   const [stats, setStats] = useState({ todaySurrenders: 0, todayWeight: '0kg', monthSurrenders: 0 });
   const [recentSurrenders, setRecentSurrenders] = useState([]);
 
@@ -48,8 +48,81 @@ export default function CollectorDashboard() {
             });
             setIsOnline(data.is_online !== false); 
         }
+        
+        // 🟢 KUNIN ANG MGA RECENT SURRENDERS AT STATS GAMIT ANG TAMANG TABLE
+        await fetchSurrendersAndStats(user.email);
     }
     setIsLoading(false);
+  };
+
+  const fetchSurrendersAndStats = async (email) => {
+    try {
+      // 1. KUNIN ANG TOP 10 RECENT SURRENDERS SA surrender_logs
+      const { data: recentData } = await supabase
+          .from('surrender_logs') 
+          .select('*')
+          .eq('collector_email', email)
+          .order('created_at', { ascending: false })
+          .limit(10);
+
+      if (recentData) {
+          const formatted = recentData.map(item => ({
+              id: item.id,
+              name: item.resident_name || 'Walk-in User', 
+              time: formatTime(item.created_at),
+              item: item.waste_type || 'Recyclables', 
+              weight: `${item.weight_kg || 0}kg`, 
+              status: 'Received' // Walang status column ang surrender_logs kaya naka-default ito
+          }));
+          setRecentSurrenders(formatted);
+      }
+
+      // 2. I-CALCULATE ANG TODAY'S SUMMARY
+      const startOfToday = new Date();
+      startOfToday.setHours(0,0,0,0);
+      const startOfMonth = new Date();
+      startOfMonth.setDate(1);
+      startOfMonth.setHours(0,0,0,0);
+
+      const { data: monthData } = await supabase
+          .from('surrender_logs') 
+          .select('weight_kg, created_at')
+          .eq('collector_email', email)
+          .gte('created_at', startOfMonth.toISOString());
+
+      if (monthData) {
+          const monthSurrenders = monthData.length;
+          let todaySurrenders = 0;
+          let todayTotalWeight = 0;
+
+          monthData.forEach(s => {
+              const sDate = new Date(s.created_at);
+              if (sDate >= startOfToday) {
+                  todaySurrenders++;
+                  todayTotalWeight += Number(s.weight_kg || 0);
+              }
+          });
+
+          setStats({
+              todaySurrenders,
+              todayWeight: `${todayTotalWeight.toFixed(1)}kg`,
+              monthSurrenders
+          });
+      }
+    } catch (error) {
+        console.log("Error fetching stats: ", error);
+    }
+  };
+
+  // HELPER FUNCTION PARA SA ORAS
+  const formatTime = (dateString) => {
+    const date = new Date(dateString);
+    let hours = date.getHours();
+    let minutes = date.getMinutes();
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12 || 12;
+    minutes = minutes < 10 ? '0' + minutes : minutes;
+    return `${hours}:${minutes} ${ampm}`;
   };
 
   const handleToggleOnline = async (value) => {
@@ -144,10 +217,10 @@ export default function CollectorDashboard() {
         <View style={styles.listContainer}>
             <View style={styles.listHeader}>
                 <View style={{flexDirection: 'row', alignItems: 'center'}}><MaterialCommunityIcons name="clock-outline" size={20} color="#333" /><Text style={styles.listTitle}> Recent Surrenders</Text></View>
-                <TouchableOpacity><Text style={styles.viewAll}>View All</Text></TouchableOpacity>
+                <TouchableOpacity onPress={() => router.push('/digital-logbook')}><Text style={styles.viewAll}>View All</Text></TouchableOpacity>
             </View>
             <ScrollView style={{height: 250}} showsVerticalScrollIndicator={false}>
-                {/* 🟢 EMPTY STATE LOGIC */}
+                {/* 🟢 DYNAMIC LIST */}
                 {recentSurrenders.length === 0 ? (
                     <Text style={{textAlign: 'center', marginTop: 50, color: '#999'}}>No recent surrenders yet.</Text>
                 ) : (
@@ -172,7 +245,7 @@ export default function CollectorDashboard() {
         </View>
       </View>
 
-      {/* ⚙️ SETTINGS MODAL (NAKA-KEYBOARD AVOID NA) */}
+      {/* ⚙️ SETTINGS MODAL */}
       <Modal visible={isSettingsVisible} animationType="slide" transparent={true}>
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
             <TouchableWithoutFeedback onPress={Keyboard.dismiss}>

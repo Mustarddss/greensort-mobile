@@ -17,7 +17,7 @@ export default function Rewards() {
   const insets = useSafeAreaInsets();
   
   const [wasteType, setWasteType] = useState('');
-  const [customWaste, setCustomWaste] = useState(''); // 🟢 State para sa manual typing
+  const [customWaste, setCustomWaste] = useState(''); 
   const [quantity, setQuantity] = useState('');
   const [isClean, setIsClean] = useState(false);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false); 
@@ -27,7 +27,6 @@ export default function Rewards() {
   const [hasSearched, setHasSearched] = useState(false);
 
   const handleSearch = async () => {
-    // 🟢 Gamitin ang customWaste kung "Others" ang pinili, kundi wasteType
     const finalWaste = wasteType === 'Others' ? customWaste : wasteType;
 
     if (!finalWaste || !quantity) {
@@ -97,7 +96,9 @@ export default function Rewards() {
                     checklist: reward.checklist || '',
                     computedIncentive: incentiveText,
                     imageUrl: reward.image_url,
-                    isClaimed: isAlreadyClaimed
+                    isClaimed: isAlreadyClaimed,
+                    // 🟢 NAKASAMA NA YUNG SEARCHED WASTE DITO
+                    searchedWasteType: finalWaste 
                 });
             }
         }
@@ -112,7 +113,7 @@ export default function Rewards() {
   const selectOption = (option) => {
     setWasteType(option);
     setIsDropdownOpen(false);
-    if (option !== 'Others') setCustomWaste(''); // I-reset ang custom text
+    if (option !== 'Others') setCustomWaste(''); 
   };
 
   return (
@@ -141,7 +142,6 @@ export default function Rewards() {
                         
                         <Text style={styles.label}>Waste Type</Text>
                         
-                        {/* 🟢 DYNAMIC INPUT SECTION */}
                         <View style={{ zIndex: 100 }}>
                           {wasteType === 'Others' ? (
                             <View style={styles.customInputContainer}>
@@ -168,7 +168,6 @@ export default function Rewards() {
                             </TouchableOpacity>
                           )}
 
-                          {/* 🟢 OVERLAY DROPDOWN (Immediately below the box) */}
                           {isDropdownOpen && (
                             <View style={styles.dropdownOverlay}>
                               {WASTE_OPTIONS.map((option) => (
@@ -240,7 +239,6 @@ const styles = StyleSheet.create({
   label: { fontSize: 13, color: '#666', marginBottom: 6, fontWeight: '600', marginTop: 10 },
   input: { backgroundColor: '#F5F7FA', borderRadius: 10, padding: 14, marginBottom: 16, fontSize: 14, color: '#333', borderWidth: 1, borderColor: '#F0F0F0' },
   
-  // 🟢 NEW DROPDOWN TRIGGER
   dropdownTrigger: { 
     flexDirection: 'row', 
     justifyContent: 'space-between', 
@@ -255,10 +253,9 @@ const styles = StyleSheet.create({
   dropdownTriggerActive: { borderColor: '#007C00' },
   dropdownText: { fontSize: 14, color: '#333' },
 
-  // 🟢 NEW OVERLAY LIST
   dropdownOverlay: {
     position: 'absolute',
-    top: 50, // Right below the trigger
+    top: 50, 
     left: 0,
     right: 0,
     backgroundColor: 'white',
@@ -269,7 +266,7 @@ const styles = StyleSheet.create({
     shadowColor: '#000',
     shadowOpacity: 0.1,
     shadowRadius: 10,
-    zIndex: 999, // Super high z-index to float over other inputs
+    zIndex: 999, 
     paddingVertical: 5
   },
   optionItem: {
@@ -281,7 +278,6 @@ const styles = StyleSheet.create({
   },
   optionText: { fontSize: 14, color: '#555' },
 
-  // 🟢 OTHERS INPUT STYLES
   customInputContainer: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 16 },
   resetBtn: { padding: 5 },
 

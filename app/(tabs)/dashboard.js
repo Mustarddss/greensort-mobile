@@ -5,7 +5,6 @@ import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Image, KeyboardAvoidingView, Modal, Platform, RefreshControl, ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
-// 🟢 IMPORT LINEAR GRADIENT
 import { LinearGradient } from 'expo-linear-gradient';
 
 export default function Dashboard() {
@@ -23,7 +22,7 @@ export default function Dashboard() {
   const [isUploading, setIsUploading] = useState(false); 
   const [refreshing, setRefreshing] = useState(false); 
 
-  const [userData, setUserData] = useState({ name: 'Loading...', kgRecycled: 0, submissions: 0, upcycleProjects: 0, points: 45, avatar: null });
+  const [userData, setUserData] = useState({ name: 'Loading...', kgRecycled: 0, submissions: 0, upcycleProjects: 0, bankedPoints: 0, avatar: null });
   const [form, setForm] = useState({ type: 'For Sale', title: '', desc: '', category: '', price: '', lookingFor: '', location: '', imageUri: null });
   
   const [newComment, setNewComment] = useState('');
@@ -43,6 +42,10 @@ export default function Dashboard() {
 
   const [optionsModalVisible, setOptionsModalVisible] = useState(false); 
   const [selectedPostForOptions, setSelectedPostForOptions] = useState(null);
+
+  // 🟢 NEW STATES PARA SA BANKED KG DETAILS
+  const [isBankedModalVisible, setBankedModalVisible] = useState(false);
+  const [bankedDetails, setBankedDetails] = useState([]);
 
   const reportReasons = [
     "Spam or misleading",
@@ -67,15 +70,80 @@ export default function Dashboard() {
     const { data: { session } } = await supabase.auth.getSession();
     if (session?.user) {
       const fullName = session.user.user_metadata?.full_name || 'GreenSort Member';
+      const userEmail = session.user.email;
+
+      let totalKg = 0;
+      let totalSubmissions = 0;
+      let bankedKg = 0;
+      let bankedGroup = {}; // Object para i-group ang mga banked items
+
+      try {
+          const { data: logs, error } = await supabase
+              .from('surrender_logs')
+              .select('*')
+              .eq('resident_email', userEmail);
+
+          if (logs && !error) {
+              totalSubmissions = logs.length;
+              logs.forEach(log => {
+                  const weight = Number(log.weight_kg) || 0;
+                  totalKg += weight;
+                  
+                  // 🟢 LOGIC PARA I-GROUP ANG MGA BANKED ITEMS BY LOCATION AT WASTE TYPE
+                  if (log.reward_claimed === 'Banked') {
+                      bankedKg += weight;
+                      const cEmail = log.collector_email;
+                      const wType = log.waste_type || 'Others';
+                      
+                      if (!bankedGroup[cEmail]) bankedGroup[cEmail] = {};
+                      if (!bankedGroup[cEmail][wType]) bankedGroup[cEmail][wType] = 0;
+                      bankedGroup[cEmail][wType] += weight;
+                  }
+              });
+
+              // 🟢 KUNIN ANG PANGALAN NG CENTER/BARANGAY MULA SA COLLECTOR EMAIL
+              const finalBankedList = [];
+              for (const email of Object.keys(bankedGroup)) {
+                  const { data: center } = await supabase
+                      .from('dropoff_applications')
+                      .select('program_name, barangay')
+                      .eq('user_email', email)
+                      .single();
+                  
+                  const locName = center ? (center.program_name || `Brgy. ${center.barangay}`) : 'GreenSort Center';
+                  
+                  const materialsArr = Object.keys(bankedGroup[email]).map(type => ({
+                      type: type,
+                      kg: bankedGroup[email][type]
+                  }));
+
+                  finalBankedList.push({
+                      email: email, // KINUHA YUNG EMAIL PARA SA QR CODE LATER
+                      location: locName,
+                      materials: materialsArr
+                  });
+              }
+              setBankedDetails(finalBankedList);
+          }
+      } catch (err) {
+          console.log("Error fetching stats:", err);
+      }
+
       setUserData({
-        name: fullName, kgRecycled: 0, submissions: 0, upcycleProjects: 0, points: 45, 
+        name: fullName, 
+        kgRecycled: totalKg.toFixed(1),
+        submissions: totalSubmissions, 
+        upcycleProjects: 0, 
+        bankedPoints: bankedKg.toFixed(1), 
         avatar: session.user.user_metadata?.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(fullName)}&background=00C853&color=fff&bold=true`
       });
+
       const { count: notifCount } = await supabase.from('notifications').select('*', { count: 'exact', head: true }).eq('owner_name', fullName).eq('is_read', false);
       setUnreadNotifs(notifCount || 0);
       const { count: msgCount } = await supabase.from('messages').select('*', { count: 'exact', head: true }).eq('receiver_name', fullName).eq('is_read', false);
       setUnreadMessages(msgCount || 0);
     } else { router.replace('/login'); }
+    
     fetchPosts();
   };
 
@@ -173,11 +241,23 @@ export default function Dashboard() {
     setReportModalVisible(true);
   };
 
-  const submitReport = (reason) => {
-    Alert.alert("Report Submitted", `Thank you for reporting this post for: "${reason}". Our admins will review it shortly.`);
-    setReportModalVisible(false);
-    setPostToReport(null);
-    setReportStep(0);
+  const submitReport = async (reason) => {
+    try {
+      const { error } = await supabase.from('post_reports').insert([{ 
+        post_id: postToReport.id, 
+        reporter_email: userData.name, 
+        reason: reason, 
+        status: 'Pending' 
+      }]);
+      if (error) throw error;
+      Alert.alert("Report Submitted", `Thank you for reporting this post for: "${reason}". Our admins will review it shortly.`);
+    } catch (error) {
+      Alert.alert("Error", "Could not submit report: " + error.message);
+    } finally {
+      setReportModalVisible(false);
+      setPostToReport(null);
+      setReportStep(0);
+    }
   };
 
   const handleImagePick = async () => {
@@ -215,10 +295,6 @@ export default function Dashboard() {
     else { newLikedBy.push(userData.name); newLikes += 1; }
     setPosts(posts.map(p => p.id === post.id ? { ...p, likes: newLikes, liked_by: newLikedBy } : p));
     await supabase.from('posts').update({ likes: newLikes, liked_by: newLikedBy }).eq('id', post.id);
-    if (!hasLiked && post.user !== userData.name) {
-      const safeAvatar = userData.avatar || 'https://ui-avatars.com/api/?name=User&background=00C853&color=fff';
-      await supabase.from('notifications').insert([{ owner_name: post.user, actor_name: userData.name, actor_avatar: safeAvatar, action: 'liked', post_title: post.title }]);
-    }
   };
 
   const handleCommentLike = async (comment) => {
@@ -233,8 +309,6 @@ export default function Dashboard() {
 
   const handleContact = async (post) => {
     if (post.user === userData.name) return Alert.alert("Oops!", "You can't contact yourself.");
-    const safeAvatar = userData.avatar || 'https://ui-avatars.com/api/?name=User&background=00C853&color=fff';
-    await supabase.from('notifications').insert([{ owner_name: post.user, actor_name: userData.name, actor_avatar: safeAvatar, action: 'wants to contact you about', post_title: post.title }]);
     router.push({ pathname: '/chat', params: { chatUser: post.user, postTitle: post.title } });
   };
 
@@ -253,11 +327,6 @@ export default function Dashboard() {
     const commentData = { post_id: selectedPost.id, user_name: userData.name, avatar: userData.avatar, text: newComment, parent_id: replyingTo ? replyingTo.id : null, is_edited: false, is_deleted: false };
     await supabase.from('comments').insert([commentData]);
     await supabase.from('posts').update({ comments: (selectedPost.comments || 0) + 1 }).eq('id', selectedPost.id);
-    const targetUser = replyingTo ? replyingTo.name : selectedPost.user;
-    if (targetUser !== userData.name) {
-      const safeAvatar = userData.avatar || 'https://ui-avatars.com/api/?name=User&background=00C853&color=fff';
-      await supabase.from('notifications').insert([{ owner_name: targetUser, actor_name: userData.name, actor_avatar: safeAvatar, action: replyingTo ? 'replied to your comment on' : 'commented on', post_title: selectedPost.title }]);
-    }
     setNewComment(''); setReplyingTo(null); openPostDetails(selectedPost); fetchPosts(); 
   };
 
@@ -279,7 +348,6 @@ export default function Dashboard() {
     return (
       <View style={{ flex: 1, backgroundColor: '#007C00' }}>
         <StatusBar barStyle="light-content" backgroundColor="#007C00" translucent={true} />
-        
         <KeyboardAvoidingView style={{flex: 1, backgroundColor: '#F5F7FA'}} behavior={Platform.OS === "ios" ? "padding" : undefined}>
             <View style={[styles.subHeader, { paddingTop: Math.max(insets.top, 20) + 15, paddingBottom: 25 }]}>
                 <View style={styles.subHeaderRow}>
@@ -426,7 +494,6 @@ export default function Dashboard() {
                 </TouchableOpacity>
               </TouchableOpacity>
             </Modal>
-
         </KeyboardAvoidingView>
       </View>
     );
@@ -436,7 +503,6 @@ export default function Dashboard() {
       return (
         <View style={styles.container}>
           <StatusBar barStyle="light-content" backgroundColor="#007C00" translucent={true} />
-          
           <View style={[styles.subHeader, { paddingTop: Math.max(insets.top, 20) + 15, paddingBottom: 25 }]}>
               <View style={styles.subHeaderRow}>
                   <TouchableOpacity onPress={() => {setIsCreating(false); setEditingPostId(null);}} style={styles.backButton}>
@@ -502,19 +568,24 @@ export default function Dashboard() {
 
         <Text style={[styles.sectionTitle, { marginBottom: 10, marginTop: 5 }]}>Eco Impact</Text>
         
-        {/* 🟢 LINEAR GRADIENT FOR REWARD POINTS BANNER */}
-        <LinearGradient
-            colors={['#007C00', '#004d00']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.pointsBanner}
-        >
-            <View style={styles.pointsTitleWrap}>
-                <MaterialCommunityIcons name="star-four-points-circle" size={28} color="#FFD54F" />
-                <Text style={styles.pointsTitle}>Reward Points</Text>
-            </View>
-            <Text style={styles.pointsValue}>{userData.points} <Text style={{fontSize: 14, fontWeight: 'normal'}}>PTS</Text></Text>
-        </LinearGradient>
+        {/* 🟢 GINAWANG CLICKABLE ANG POINTS BANNER PARA BUMUKAS ANG BREAKDOWN MODAL */}
+        <TouchableOpacity activeOpacity={0.9} onPress={() => setBankedModalVisible(true)}>
+            <LinearGradient
+                colors={['#007C00', '#004d00']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.pointsBanner}
+            >
+                <View style={styles.pointsTitleWrap}>
+                    <MaterialCommunityIcons name="safe" size={28} color="#FFD54F" />
+                    <View>
+                        <Text style={styles.pointsTitle}>Banked KG (Points)</Text>
+                        <Text style={{color: 'rgba(255,255,255,0.7)', fontSize: 10, marginLeft: 8}}>Tap to view breakdown</Text>
+                    </View>
+                </View>
+                <Text style={styles.pointsValue}>{userData.bankedPoints} <Text style={{fontSize: 14, fontWeight: 'normal'}}>KG</Text></Text>
+            </LinearGradient>
+        </TouchableOpacity>
 
         <View style={styles.impactRow}>
             <ImpactCard value={userData.kgRecycled} unit="kg recycled" icon="chart-line-variant" color="#007C00" bgColor="#E8F5E9" />
@@ -568,6 +639,72 @@ export default function Dashboard() {
         )}
         <View style={{height: 100}} /> 
       </ScrollView>
+
+      {/* 🟢 NEW MODAL: BANKED POINTS BREAKDOWN */}
+      <Modal visible={isBankedModalVisible} animationType="slide" transparent={true} onRequestClose={() => setBankedModalVisible(false)}>
+        <View style={styles.modalOverlayDark}>
+          <View style={styles.bankedModalCard}>
+            <View style={styles.bankedModalHeader}>
+               <MaterialCommunityIcons name="safe" size={28} color="#FFD54F" />
+               <View style={{flex: 1, marginLeft: 10}}>
+                   <Text style={styles.bankedModalTitle}>My Banked KG</Text>
+               </View>
+               <TouchableOpacity onPress={() => setBankedModalVisible(false)}><Ionicons name="close-circle" size={28} color="#fff" /></TouchableOpacity>
+            </View>
+            
+            <ScrollView style={styles.bankedModalContent} showsVerticalScrollIndicator={false}>
+               <Text style={styles.bankedModalDesc}>Select an item to generate a QR Code and redeem your banked KG!</Text>
+               
+               {bankedDetails.length === 0 ? (
+                  <View style={{alignItems: 'center', marginTop: 30}}>
+                      <MaterialCommunityIcons name="leaf-off" size={50} color="#ddd" />
+                      <Text style={{textAlign: 'center', color: '#999', marginTop: 10}}>You don't have any banked items yet.</Text>
+                  </View>
+               ) : (
+                  bankedDetails.map((center, index) => (
+                     <View key={index} style={styles.bankedCenterCard}>
+                        <View style={styles.bankedCenterHeader}>
+                           <MaterialCommunityIcons name="store" size={18} color="#007C00" />
+                           <Text style={styles.bankedCenterName}>{center.location}</Text>
+                        </View>
+                        
+                        <View style={styles.bankedMaterialsList}>
+                           {/* 🟢 CLICKABLE NA ANG BAWAT MATERYALES */}
+                           {center.materials.map((mat, i) => (
+                               <TouchableOpacity 
+                                   key={i} 
+                                   style={styles.bankedMaterialRow}
+                                   activeOpacity={0.7}
+                                   onPress={() => {
+                                       setBankedModalVisible(false);
+                                       router.push({
+                                           pathname: '/qr-generator',
+                                           params: {
+                                               isBankedRedemption: 'true',
+                                               collectorEmail: center.email,
+                                               materialType: mat.type,
+                                               bankedKg: mat.kg,
+                                               rewardName: 'Redeem Banked Points'
+                                           }
+                                       });
+                                   }}
+                               >
+                                   <Text style={styles.bankedMaterialType}>{mat.type}</Text>
+                                   <View style={{flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#E8F5E9', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8}}>
+                                       <Text style={styles.bankedMaterialKg}>{mat.kg.toFixed(1)} kg</Text>
+                                       <MaterialCommunityIcons name="qrcode-scan" size={14} color="#007C00" />
+                                   </View>
+                               </TouchableOpacity>
+                           ))}
+                        </View>
+                     </View>
+                  ))
+               )}
+               <View style={{height: 20}}/>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
 
       {/* POST OPTIONS MODALS */}
       <Modal visible={optionsModalVisible} animationType="slide" transparent={true} onRequestClose={() => setOptionsModalVisible(false)}>
@@ -623,10 +760,9 @@ const styles = StyleSheet.create({
   backButton: { backgroundColor: 'rgba(255,255,255,0.2)', padding: 8, borderRadius: 12 },
   scrollView: { flex: 1 }, scrollContent: { paddingHorizontal: 20, paddingTop: 10 }, tipCard: { backgroundColor: '#FFF3E0', padding: 16, borderRadius: 16, marginBottom: 20, borderWidth: 1, borderColor: '#FFE0B2' }, tipHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 }, tipTitle: { fontSize: 14, fontWeight: 'bold', color: '#EF6C00', marginLeft: 8 }, tipText: { fontSize: 12, color: '#E65100', lineHeight: 18 }, 
   
-  // 🟢 NA-UPDATE ANG POINTS BANNER STYLES DAHIL GINAGAMITAN NA NG LINEAR GRADIENT
   pointsBanner: { borderRadius: 16, padding: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15, elevation: 3 }, 
-  
   pointsTitleWrap: { flexDirection: 'row', alignItems: 'center' }, pointsTitle: { color: 'white', fontSize: 16, fontWeight: '600', marginLeft: 8 }, pointsValue: { color: 'white', fontSize: 26, fontWeight: 'bold' },
+  
   impactRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 25, gap: 10 }, impactCard: { flex: 1, backgroundColor: 'white', paddingVertical: 18, borderRadius: 16, alignItems: 'center', elevation: 2 }, impactIconBg: { padding: 10, borderRadius: 12, marginBottom: 10 }, impactValue: { fontSize: 18, fontWeight: 'bold' }, impactUnit: { fontSize: 10, color: '#90A4AE', textAlign: 'center', marginTop: 2 }, sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, marginTop: 10 }, sectionTitle: { fontSize: 20, fontWeight: 'bold', color: '#263238' }, searchContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'white', borderRadius: 12, marginBottom: 15, paddingHorizontal: 10, borderWidth: 1, borderColor: '#eee' }, searchInput: { flex: 1, paddingVertical: 12, paddingHorizontal: 10, fontSize: 14, color: '#333' }, 
   topMessageBtn: { justifyContent: 'center', alignItems: 'center', position: 'relative' }, badgeDot: { position: 'absolute', top: -5, right: -5, backgroundColor: '#FF1744', borderRadius: 10, paddingHorizontal: 5, paddingVertical: 2, minWidth: 20, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'white' }, badgeDotText: { color: 'white', fontSize: 10, fontWeight: 'bold' },
   addPostBtn: { backgroundColor: '#007C00', width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center', elevation: 2 }, filterPill: { paddingHorizontal: 20, paddingVertical: 8, backgroundColor: 'white', borderRadius: 20, marginRight: 10, elevation: 1, borderWidth: 1, borderColor: '#eee' }, activePill: { backgroundColor: '#263238', borderColor: '#263238' }, filterText: { fontSize: 13, color: '#666', fontWeight: '600' }, activeFilterText: { color: 'white' }, 
@@ -635,5 +771,22 @@ const styles = StyleSheet.create({
   meBadge: { backgroundColor: '#007C00', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
   meBadgeText: { color: 'white', fontSize: 8, fontWeight: 'bold' },
   postHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 }, postAvatar: { width: 40, height: 40, borderRadius: 20 }, postUser: { fontWeight: 'bold', fontSize: 14, color: '#333' }, postTime: { fontSize: 11, color: '#999' }, typeBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10 }, postTitle: { fontSize: 16, fontWeight: 'bold', color: '#333', marginBottom: 5 }, postDesc: { fontSize: 13, color: '#666', marginBottom: 10 }, postImage: { width: '100%', aspectRatio: 16 / 9, borderRadius: 12, marginBottom: 15, resizeMode: 'cover', backgroundColor: '#f0f0f0' }, postFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, iconRow: { flexDirection: 'row', alignItems: 'center', gap: 5, padding: 5 }, iconText: { fontSize: 14, color: '#666' }, postPrice: { fontSize: 16, fontWeight: 'bold', color: '#007C00' }, contactBtn: { backgroundColor: '#007C00', paddingHorizontal: 15, paddingVertical: 8, borderRadius: 8 }, contactText: { color: 'white', fontWeight: 'bold', fontSize: 12 }, detailImage: { width: '100%', aspectRatio: 4 / 3, backgroundColor: '#eee' }, detailContent: { padding: 20 }, commentAvatar: { width: 36, height: 36, borderRadius: 18, marginRight: 10 }, replyAvatar: { width: 28, height: 28, borderRadius: 14, marginRight: 8 }, commentBubble: { flex: 1, backgroundColor: '#F5F7FA', padding: 12, borderRadius: 12 }, commentUser: { fontWeight: 'bold', fontSize: 13, marginBottom: 2 }, commentText: { fontSize: 13, color: '#444' }, commentTime: { fontSize: 10, color: '#999' }, footerInput: { padding: 15, backgroundColor: 'white', borderTopWidth: 1, borderTopColor: '#eee', flexDirection: 'row', alignItems: 'flex-end', gap: 10 }, statusBanner: { backgroundColor: '#E8F5E9', padding: 8, paddingHorizontal: 15, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, inputField: { flex: 1, backgroundColor: '#F5F5F5', borderRadius: 20, paddingHorizontal: 15, paddingVertical: 10, maxHeight: 100 }, sendBtn: { width: 40, height: 40, backgroundColor: '#007C00', borderRadius: 20, justifyContent: 'center', alignItems: 'center', marginBottom: 2 }, createContent: { padding: 20 }, label: { fontSize: 14, fontWeight: '700', color: '#333', marginBottom: 4, marginTop: 15 }, input: { backgroundColor: '#F5F7FA', borderRadius: 10, padding: 15, borderWidth: 1, borderColor: '#F0F0F0' }, inputIconWrap: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F5F7FA', borderRadius: 10, paddingHorizontal: 15, paddingVertical: 12, borderWidth: 1, borderColor: '#F0F0F0' }, typeRow: { flexDirection: 'row', gap: 10 }, typeBtn: { flex: 1, paddingVertical: 15, borderRadius: 12, borderWidth: 1, alignItems: 'center', borderColor: '#E0E0E0' }, typeBtnActive: { borderColor: '#007C00', backgroundColor: '#E8F5E9' }, typeBtnText: { fontSize: 12, fontWeight: '600', color: '#666' }, imageUploadBox: { width: '100%', aspectRatio: 16 / 9, borderWidth: 1, borderColor: '#ddd', borderStyle: 'dashed', borderRadius: 12, justifyContent: 'center', alignItems: 'center', backgroundColor: '#FAFAFA', marginTop: 15 }, submitBtn: { padding: 15, borderRadius: 12, backgroundColor: '#007C00', alignItems: 'center', marginTop: 30 },
-  darkModalSheet: { backgroundColor: '#1C1C1E', borderTopLeftRadius: 25, borderTopRightRadius: 25, paddingHorizontal: 20, paddingBottom: 35, shadowColor: '#000', shadowOffset: { width: 0, height: -2 }, shadowOpacity: 0.2, shadowRadius: 10, elevation: 15 }, darkMenuContainer: { backgroundColor: '#2C2C2E', borderRadius: 15, overflow: 'hidden', marginBottom: 15 }, darkMenuItem: { flexDirection: 'row', alignItems: 'center', padding: 18, borderBottomWidth: 1, borderBottomColor: '#3A3A3C' }, darkMenuText: { fontSize: 16, color: '#fff' }, darkCancelBtn: { padding: 18, backgroundColor: '#2C2C2E', borderRadius: 15, alignItems: 'center' }
+  darkModalSheet: { backgroundColor: '#1C1C1E', borderTopLeftRadius: 25, borderTopRightRadius: 25, paddingHorizontal: 20, paddingBottom: 35, shadowColor: '#000', shadowOffset: { width: 0, height: -2 }, shadowOpacity: 0.2, shadowRadius: 10, elevation: 15 }, darkMenuContainer: { backgroundColor: '#2C2C2E', borderRadius: 15, overflow: 'hidden', marginBottom: 15 }, darkMenuItem: { flexDirection: 'row', alignItems: 'center', padding: 18, borderBottomWidth: 1, borderBottomColor: '#3A3A3C' }, darkMenuText: { fontSize: 16, color: '#fff' }, darkCancelBtn: { padding: 18, backgroundColor: '#2C2C2E', borderRadius: 15, alignItems: 'center' },
+
+  // 🟢 STYLES PARA SA BANKED POINTS MODAL
+  modalOverlayDark: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 20 },
+  bankedModalCard: { width: '100%', maxHeight: '80%', backgroundColor: '#F4F6F8', borderRadius: 20, overflow: 'hidden', elevation: 10 },
+  bankedModalHeader: { backgroundColor: '#007C00', padding: 20, flexDirection: 'row', alignItems: 'center' },
+  bankedModalTitle: { color: 'white', fontSize: 18, fontWeight: 'bold' },
+  bankedModalContent: { padding: 20 },
+  bankedModalDesc: { fontSize: 13, color: '#666', marginBottom: 20, lineHeight: 18 },
+  bankedCenterCard: { backgroundColor: 'white', borderRadius: 12, padding: 15, marginBottom: 15, elevation: 2 },
+  bankedCenterHeader: { flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: '#eee', paddingBottom: 10, marginBottom: 10 },
+  bankedCenterName: { fontWeight: 'bold', color: '#333', fontSize: 14, marginLeft: 8 },
+  bankedMaterialsList: { paddingHorizontal: 5 },
+  
+  // 🟢 NEW TOUCHABLE STYLE FOR MATERIALS
+  bankedMaterialRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 0.5, borderBottomColor: '#f0f0f0' },
+  bankedMaterialType: { color: '#333', fontSize: 14, fontWeight: '600' },
+  bankedMaterialKg: { fontWeight: 'bold', color: '#007C00', fontSize: 14 }
 });

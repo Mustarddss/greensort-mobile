@@ -48,7 +48,7 @@ export default function LocationDetails() {
                     <View style={styles.rewardInfo}>
                         <Text style={styles.rewardTitle} numberOfLines={2}>{location.rewardUnit}</Text>
                         <View style={styles.requirementPill}>
-                            <Text style={styles.requirementText}>Required: {location.baseRate} {location.accepted[0]}</Text>
+                            <Text style={styles.requirementText}>Required: {location.baseRate}kg {location.accepted[0]}</Text>
                         </View>
                         <Text style={styles.acceptLabel}>Accepts:</Text>
                         <View style={styles.tagsRow}>
@@ -85,14 +85,14 @@ export default function LocationDetails() {
                 </View>
             )}
 
-            {/* 🟢 ACTION BUTTON LOGIC */}
+            {/* 🟢 ACTION BUTTON LOGIC - KASAMA NA ANG MATERIAL TYPE */}
             {location.isClaimed ? (
                 <View style={[styles.actionBtn, {backgroundColor: '#9E9E9E', elevation: 0}]}>
                     <MaterialCommunityIcons name="lock-outline" size={24} color="white" style={{marginRight: 8}} />
                     <Text style={styles.actionText}>Reward Already Claimed</Text>
                 </View>
             ) : (
-                <TouchableOpacity style={styles.actionBtn} onPress={() => router.push({ pathname: '/qr-generator', params: { rewardName: location.rewardUnit } })}>
+                <TouchableOpacity style={styles.actionBtn} onPress={() => router.push({ pathname: '/qr-generator', params: { rewardName: location.rewardUnit, materialType: location.searchedWasteType || location.accepted[0] } })}>
                     <MaterialCommunityIcons name="qrcode-scan" size={24} color="white" style={{marginRight: 8}} />
                     <Text style={styles.actionText}>Scan to Exchange</Text>
                 </TouchableOpacity>
@@ -135,8 +135,6 @@ const styles = StyleSheet.create({
   bulletTitle: { fontSize: 13, color: '#333', lineHeight: 20 },
   actionBtn: { backgroundColor: '#007C00', flexDirection: 'row', justifyContent: 'center', alignItems: 'center', padding: 16, borderRadius: 30, elevation: 5 },
   actionText: { color: 'white', fontWeight: 'bold', fontSize: 16 },
-
-  // STYLES FOR CLAIMED
   claimedOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(255,255,255,0.7)', zIndex: 10, justifyContent: 'center', alignItems: 'center', borderRadius: 15 },
   overlayText: { color: '#9E9E9E', fontWeight: '900', fontSize: 20, letterSpacing: 2, marginTop: 5 }
 });

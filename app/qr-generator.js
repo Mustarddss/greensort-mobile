@@ -1,16 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator } from 'react-native';
-import { useRouter, useLocalSearchParams } from 'expo-router'; // 🟢 ADDED PARAMS
+import { useRouter, useLocalSearchParams } from 'expo-router'; 
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import QRCode from 'react-native-qrcode-svg';
 import { supabase } from '../lib/supabase'; 
 
 export default function QRGenerator() {
   const router = useRouter();
-  const params = useLocalSearchParams(); // 🟢 KUKUNIN ANG PINASANG REWARD
+  const params = useLocalSearchParams(); 
   
   const [userData, setUserData] = useState(null);
   const [loading, setLoading] = useState(true);
+
+  // 🟢 KUNIN ANG MGA BAGONG PARAMS KUNG BANKED REDEMPTION ITO
+  const isBankedRedemption = params.isBankedRedemption === 'true';
+  const bankedKg = params.bankedKg || '0';
+  const collectorEmail = params.collectorEmail || '';
 
   useEffect(() => {
     const getUser = async () => {
@@ -19,15 +24,20 @@ export default function QRGenerator() {
         
         if (user) {
             const fullName = user.user_metadata?.full_name || 'GreenSort Resident';
-            const targetReward = params.rewardName || 'None'; // 🟢 KINUHA ANG REWARD NAME
+            const targetReward = params.rewardName || 'None'; 
+            const targetMaterial = params.materialType || 'Recyclables'; 
             
-            // 🟢 KASAMA NA ANG REWARD NAME SA QR DATA!
+            // 🟢 ISAMA ANG BANKED DETAILS SA QR JSON DATA
             const qrContent = JSON.stringify({
                 email: user.email,
                 name: fullName,
-                targetReward: targetReward, 
+                targetReward: isBankedRedemption ? "Redeem Banked Points" : targetReward, 
+                targetMaterial: targetMaterial, 
+                isBankedRedemption: isBankedRedemption, // Marker for Collector
+                bankedKg: bankedKg, // The amount of KG they have banked
+                collectorEmail: collectorEmail, // Specific collector they are redeeming from
                 timestamp: new Date().toISOString(),
-                type: "EXCHANGE_REQUEST"
+                type: isBankedRedemption ? "BANKED_REDEMPTION" : "EXCHANGE_REQUEST"
             });
             
             setUserData(qrContent);
@@ -41,7 +51,7 @@ export default function QRGenerator() {
       }
     };
     getUser();
-  }, [params.rewardName]);
+  }, [params.rewardName, params.materialType, isBankedRedemption]);
 
   return (
     <View style={{flex: 1, backgroundColor: '#FFF8E1'}}> 
@@ -51,7 +61,7 @@ export default function QRGenerator() {
             <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
                 <Ionicons name="arrow-back" size={24} color="white" />
             </TouchableOpacity>
-            <Text style={styles.headerTitle}>Rewards Drop-off Centers</Text>
+            <Text style={styles.headerTitle}>{isBankedRedemption ? 'Redeem Banked Points' : 'Rewards Drop-off'}</Text>
         </View>
 
         <View style={styles.cardContainer}>
@@ -64,10 +74,20 @@ export default function QRGenerator() {
                     )}
                 </View>
 
-                <Text style={styles.instructionText}>Please present this QR code to the assigned official.</Text>
-                <Text style={styles.subInstructionText}>Your recyclables will be weighed and verified before reward processing.</Text>
+                {/* 🟢 CUSTOM INSTRUCTIONS KAPAG BANKED REDEMPTION */}
+                {isBankedRedemption ? (
+                    <>
+                        <Text style={[styles.instructionText, {color: '#007C00'}]}>Present this QR code to the collector.</Text>
+                        <Text style={styles.subInstructionText}>You are claiming your banked <Text style={{fontWeight:'bold'}}>{bankedKg}kg</Text> of <Text style={{fontWeight:'bold'}}>{params.materialType}</Text>.</Text>
+                    </>
+                ) : (
+                    <>
+                        <Text style={styles.instructionText}>Please present this QR code to the assigned official.</Text>
+                        <Text style={styles.subInstructionText}>Your recyclables will be weighed and verified before reward processing.</Text>
+                    </>
+                )}
 
-                <View style={styles.scanIconContainer}>
+                <View style={[styles.scanIconContainer, isBankedRedemption && {backgroundColor: '#FF6D00'}]}>
                     <MaterialCommunityIcons name="qrcode-scan" size={26} color="white" />
                 </View>
             </View>
