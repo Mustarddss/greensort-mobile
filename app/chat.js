@@ -12,14 +12,20 @@ export default function ChatScreen() {
   const insets = useSafeAreaInsets();
   const flatListRef = useRef(null); 
 
+  const isBot = chatUser === 'GreenSort AI Assistant';
+
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState('');
   const [myName, setMyName] = useState('');
-  const [chatUserAvatar, setChatUserAvatar] = useState(`https://ui-avatars.com/api/?name=${encodeURIComponent(chatUser)}&background=E8F5E9&color=00C853&bold=true`);
+  const [chatUserAvatar, setChatUserAvatar] = useState(
+    isBot ? 'https://ui-avatars.com/api/?name=AI&background=007C00&color=fff&bold=true' 
+          : `https://ui-avatars.com/api/?name=${encodeURIComponent(chatUser)}&background=E8F5E9&color=00C853&bold=true`
+  );
 
-  const [isOnline, setIsOnline] = useState(false);
+  const [isOnline, setIsOnline] = useState(isBot ? true : false); 
   const [replyingTo, setReplyingTo] = useState(null); 
   const [isUploading, setIsUploading] = useState(false); 
+  const [isBotTyping, setIsBotTyping] = useState(false); 
 
   useEffect(() => { 
     let currentUser = '';
@@ -34,7 +40,6 @@ export default function ChatScreen() {
         
         await supabase.from('messages').update({ is_read: true }).eq('sender_name', chatUser).eq('receiver_name', currentUser);
 
-        // 🟢 FIX 1: Nilagyan ng double quotes ("") ang variables para basahin ng Supabase bilang text
         const { data, error } = await supabase.from('messages')
           .select('*')
           .or(`and(sender_name.eq."${currentUser}",receiver_name.eq."${chatUser}"),and(sender_name.eq."${chatUser}",receiver_name.eq."${currentUser}")`)
@@ -43,16 +48,15 @@ export default function ChatScreen() {
         if (data) setMessages(data);
         if (error) console.log("Error fetching messages:", error);
 
-        // 🟢 SILENT ONLINE CHECKER 🟢
-        const globalChan = supabase.channel('green_sort_global');
-        
-        const checkOnlineStatus = () => {
-            const state = globalChan.presenceState();
-            setIsOnline(Object.keys(state).includes(chatUser));
-        };
-
-        checkOnlineStatus(); 
-        statusInterval = setInterval(checkOnlineStatus, 2000); 
+        if (!isBot) {
+            const globalChan = supabase.channel('green_sort_global');
+            const checkOnlineStatus = () => {
+                const state = globalChan.presenceState();
+                setIsOnline(Object.keys(state).includes(chatUser));
+            };
+            checkOnlineStatus(); 
+            statusInterval = setInterval(checkOnlineStatus, 2000); 
+        }
       }
     };
 
@@ -61,7 +65,6 @@ export default function ChatScreen() {
     messageChannel = supabase.channel('public:messages')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
           
-          // 🟢 FIX 2: Siguraduhin na ang bagong message ay para lang sa inyong dalawa
           const isThisChat = 
             (payload.new.sender_name === currentUser && payload.new.receiver_name === chatUser) || 
             (payload.new.sender_name === chatUser && payload.new.receiver_name === currentUser);
@@ -97,6 +100,58 @@ export default function ChatScreen() {
     setNewMessage(''); 
     setReplyingTo(null); 
     await supabase.from('messages').insert([msg]);
+
+    // 🤖 AI CHATBOT LOGIC
+    if (isBot) {
+        setIsBotTyping(true);
+        flatListRef.current?.scrollToEnd({ animated: true });
+
+        const promptText = `You are GreenSort AI Assistant, a helpful virtual eco-bot for the GreenSort recycling app in the Philippines. 
+        The user says: "${textToSend}". 
+        
+        If the user asks where or how to recycle specific items (like "batteries", "laptops", "plastics"), provide a structured answer in two clear sections:
+
+        EXTERNAL DROP-OFFS:
+        Provide a quick Google Maps search link (e.g., https://www.google.com/maps/search/e-waste+recycling+near+me) or mention known places like SM Cyberzone or local junk shops.
+
+        GREENSORT CENTERS:
+        Remind them that they can directly surrender this item to registered local centers! Tell them to go to the "Exchange" or "Rewards Centers" tab in the GreenSort app to find partners near them to earn points/cash.
+
+        Keep it friendly, structured, and easy to read. Do NOT use markdown asterisks (**) for bolding, just use capital letters for the section titles.`;
+
+        try {
+            const response = await fetch('https://api.openai.com/v1/chat/completions', {
+                method: 'POST',
+                headers: { 
+                  'Content-Type': 'application/json', 
+                  // 🟢 UPDATED: Dito na natin tinawag yung .env file
+                  'Authorization': `Bearer ${process.env.EXPO_PUBLIC_OPENAI_API_KEY}` 
+                },
+                body: JSON.stringify({
+                    model: 'gpt-5.4', // 🟢 UPDATED: Pinalitan ng tamang model name
+                    messages: [{ role: 'user', content: promptText }],
+                    temperature: 0.7,
+                    max_completion_tokens: 300
+                })
+            });
+            const data = await response.json();
+            
+            if (data.choices && data.choices.length > 0) {
+                const botReply = data.choices[0].message.content;
+                
+                const botMsg = { 
+                    sender_name: chatUser, receiver_name: myName, text: botReply, is_read: false 
+                };
+                await supabase.from('messages').insert([botMsg]);
+            }
+        } catch (error) {
+            console.log("AI Chat Error:", error);
+            const errorMsg = { sender_name: chatUser, receiver_name: myName, text: "I'm sorry, I'm having a little trouble connecting to my brain right now. Please try asking again later! 🔌", is_read: false };
+            await supabase.from('messages').insert([errorMsg]);
+        } finally {
+            setIsBotTyping(false);
+        }
+    }
   };
 
   const handleImageSend = async (mode) => {
@@ -148,7 +203,10 @@ export default function ChatScreen() {
       <StatusBar barStyle="dark-content" backgroundColor="white" />
       <View style={[styles.header, { paddingTop: Math.max(insets.top, 20) + 15 }]}>
         <TouchableOpacity onPress={() => router.back()} style={{ marginRight: 15 }}><Ionicons name="arrow-back" size={24} color="#333" /></TouchableOpacity>
-        <Image source={{uri: chatUserAvatar}} style={{width: 36, height: 36, borderRadius: 18, marginRight: 10}} />
+        <View style={{position: 'relative'}}>
+            <Image source={{uri: chatUserAvatar}} style={{width: 36, height: 36, borderRadius: 18, marginRight: 10}} />
+            {isBot && <View style={{position: 'absolute', bottom: -2, right: 8, backgroundColor: 'white', borderRadius: 6, padding: 1}}><Ionicons name="sparkles" size={10} color="#007C00" /></View>}
+        </View>
         <View style={{flex: 1}}>
             <Text style={styles.headerTitle}>{chatUser}</Text>
             <Text style={{fontSize: 12, color: isOnline ? '#007C00' : '#999', fontWeight: isOnline ? 'bold' : 'normal'}}>{isOnline ? 'Active now' : 'Offline'}</Text>
@@ -161,8 +219,24 @@ export default function ChatScreen() {
         data={messages}
         keyExtractor={(item) => item.id.toString()}
         contentContainerStyle={{ padding: 15, paddingBottom: 20 }}
+        initialNumToRender={15}
+        maxToRenderPerBatch={10}
+        windowSize={5}
+        removeClippedSubviews={true}
         onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
         onLayout={() => flatListRef.current?.scrollToEnd({ animated: true })}
+        ListFooterComponent={() => 
+            isBotTyping ? (
+                <View style={[styles.messageRow, { justifyContent: 'flex-start', marginTop: 10 }]}>
+                    <View style={{width: 32, marginRight: 8, justifyContent: 'flex-end'}}>
+                        <Image source={{uri: chatUserAvatar}} style={{width: 32, height: 32, borderRadius: 16}} />
+                    </View>
+                    <View style={[styles.bubble, styles.theirBubble, {paddingHorizontal: 20, paddingVertical: 15}]}>
+                        <ActivityIndicator size="small" color="#007C00" />
+                    </View>
+                </View>
+            ) : null
+        }
         renderItem={({ item, index }) => {
           const isMe = item.sender_name === myName;
           const prevItem = index > 0 ? messages[index - 1] : null;
@@ -203,7 +277,7 @@ export default function ChatScreen() {
                         {item.text === '👍' ? (
                             <Text style={{fontSize: 45}}>👍</Text>
                         ) : item.text !== 'Sent an image' ? (
-                            <Text style={[styles.msgText, isMe ? { color: 'white' } : { color: '#333' }]}>{item.text}</Text>
+                            <Text style={[styles.msgText, isMe ? { color: 'white' } : { color: '#333' }]} selectable={true}>{item.text}</Text>
                         ) : null}
                     </TouchableOpacity>
                 </View>
@@ -224,22 +298,32 @@ export default function ChatScreen() {
           ) : null}
 
           <View style={styles.inputContainer}>
-            <TouchableOpacity onPress={() => handleImageSend('camera')} disabled={isUploading}>
-                <Ionicons name="camera" size={26} color={isUploading ? "#ccc" : "#007C00"} style={{marginRight: 12}} />
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => handleImageSend('gallery')} disabled={isUploading}>
-                <Ionicons name="image" size={26} color={isUploading ? "#ccc" : "#007C00"} style={{marginRight: 12}} />
-            </TouchableOpacity>
+            {!isBot && (
+                <>
+                    <TouchableOpacity onPress={() => handleImageSend('camera')} disabled={isUploading}>
+                        <Ionicons name="camera" size={26} color={isUploading ? "#ccc" : "#007C00"} style={{marginRight: 12}} />
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => handleImageSend('gallery')} disabled={isUploading}>
+                        <Ionicons name="image" size={26} color={isUploading ? "#ccc" : "#007C00"} style={{marginRight: 12}} />
+                    </TouchableOpacity>
+                </>
+            )}
             
-            <TextInput style={styles.input} placeholder="Aa" value={newMessage} onChangeText={setNewMessage} multiline />
+            <TextInput 
+                style={[styles.input, isBot && {marginLeft: 5}]} 
+                placeholder={isBot ? "Ask GreenSort AI..." : "Aa"} 
+                value={newMessage} 
+                onChangeText={setNewMessage} 
+                multiline 
+            />
             
             {newMessage.trim().length > 0 ? (
                 <TouchableOpacity onPress={() => handleSend(null)}>
                     <Ionicons name="send" size={24} color="#007C00" style={{marginLeft: 10}} />
                 </TouchableOpacity>
             ) : (
-                <TouchableOpacity onPress={() => handleSend('👍')}>
-                    <MaterialCommunityIcons name="thumb-up" size={28} color="#007C00" style={{marginLeft: 10}} />
+                <TouchableOpacity onPress={() => handleSend('👍')} disabled={isBot}>
+                    <MaterialCommunityIcons name="thumb-up" size={28} color={isBot ? "#ccc" : "#007C00"} style={{marginLeft: 10}} />
                 </TouchableOpacity>
             )}
           </View>
@@ -256,5 +340,5 @@ export default function ChatScreen() {
 }
 
 const styles = StyleSheet.create({
-  header: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'white', paddingBottom: 15, paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: '#eee', elevation: 2 }, headerTitle: { fontSize: 18, fontWeight: 'bold', color: '#333' }, messageRow: { flexDirection: 'row', width: '100%', alignItems: 'flex-end' }, bubble: { maxWidth: '75%', paddingVertical: 10, paddingHorizontal: 15, borderRadius: 20 }, myBubble: { backgroundColor: '#007C00', borderBottomRightRadius: 4 }, theirBubble: { backgroundColor: '#E4E6EB', borderBottomLeftRadius: 4, elevation: 1, borderWidth: 1, borderColor: '#eee' }, msgText: { fontSize: 15, lineHeight: 20 }, replyBanner: { flexDirection: 'row', backgroundColor: '#F5F7FA', padding: 10, paddingHorizontal: 15, borderLeftWidth: 4, borderLeftColor: '#007C00', alignItems: 'center' }, replyBoxRendered: { padding: 8, borderRadius: 8, marginBottom: 8, borderLeftWidth: 3, borderLeftColor: '#fff', opacity: 0.9 }, inputContainer: { flexDirection: 'row', alignItems: 'flex-end', padding: 10, backgroundColor: 'white', paddingBottom: Platform.OS === 'ios' ? 25 : 10 }, input: { flex: 1, backgroundColor: '#F0F2F5', borderRadius: 20, paddingHorizontal: 15, paddingTop: 10, paddingBottom: 10, fontSize: 16, maxHeight: 100 }
+  header: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'white', paddingBottom: 15, paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: '#eee', elevation: 2 }, headerTitle: { fontSize: 18, fontWeight: 'bold', color: '#333' }, messageRow: { flexDirection: 'row', width: '100%', alignItems: 'flex-end' }, bubble: { maxWidth: '80%', paddingVertical: 10, paddingHorizontal: 15, borderRadius: 20 }, myBubble: { backgroundColor: '#007C00', borderBottomRightRadius: 4 }, theirBubble: { backgroundColor: '#E4E6EB', borderBottomLeftRadius: 4, elevation: 1, borderWidth: 1, borderColor: '#eee' }, msgText: { fontSize: 15, lineHeight: 22 }, replyBanner: { flexDirection: 'row', backgroundColor: '#F5F7FA', padding: 10, paddingHorizontal: 15, borderLeftWidth: 4, borderLeftColor: '#007C00', alignItems: 'center' }, replyBoxRendered: { padding: 8, borderRadius: 8, marginBottom: 8, borderLeftWidth: 3, borderLeftColor: '#fff', opacity: 0.9 }, inputContainer: { flexDirection: 'row', alignItems: 'flex-end', padding: 10, backgroundColor: 'white', paddingBottom: Platform.OS === 'ios' ? 25 : 10 }, input: { flex: 1, backgroundColor: '#F0F2F5', borderRadius: 20, paddingHorizontal: 15, paddingTop: 10, paddingBottom: 10, fontSize: 16, maxHeight: 100 }
 });

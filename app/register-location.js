@@ -1,7 +1,7 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ActivityIndicator, Alert, Image, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 // 🟢 IMPORT SUPABASE AT LIBRARY
@@ -13,7 +13,8 @@ export default function RegisterLocation() {
     
     // --- FORM STATES ---
     const [programName, setProgramName] = useState('');
-    const [email, setEmail] = useState('');
+    // 🟢 Tinanggal natin sa user input ang email, kukunin na lang natin sa system
+    const [currentUserEmail, setCurrentUserEmail] = useState(''); 
     const [locationName, setLocationName] = useState('');
     const [contactNumber, setContactNumber] = useState('');
     
@@ -34,6 +35,20 @@ export default function RegisterLocation() {
     
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isSubmitted, setIsSubmitted] = useState(false); 
+
+    // 🟢 AUTO-FETCH CURRENT USER EMAIL
+    useEffect(() => {
+        const fetchUser = async () => {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user) {
+                setCurrentUserEmail(user.email);
+            } else {
+                Alert.alert("Error", "You must be logged in to apply.");
+                router.replace('/login');
+            }
+        };
+        fetchUser();
+    }, []);
 
     // --- DYNAMIC ADDRESS FILTERING ---
     const regionList = regions.map(r => ({ label: r.name, value: r.reg_code }));
@@ -79,7 +94,7 @@ export default function RegisterLocation() {
     // --- IMAGE PICKER ---
     const pickImage = async () => {
         let result = await ImagePicker.launchImageLibraryAsync({
-            mediaTypes: ['images'], // 🟢 INAYOS NA: Para mawala yung warning sa terminal
+            mediaTypes: ['images'], 
             allowsEditing: true,
             aspect: [4, 3],
             quality: 0.5,
@@ -91,7 +106,8 @@ export default function RegisterLocation() {
 
     // --- SUPABASE SUBMIT LOGIC ---
     const handleSubmit = async () => {
-        if(!programName || !email || !locationName || !contactNumber || !selectedRegion || !selectedProvince || !selectedCity || !selectedBarangay) {
+        // 🟢 Idinagdag sa validation yung currentUserEmail para sigurado
+        if(!programName || !currentUserEmail || !locationName || !contactNumber || !selectedRegion || !selectedProvince || !selectedCity || !selectedBarangay) {
             Alert.alert("Missing Fields", "Please fill in all location details.");
             return;
         }
@@ -105,7 +121,7 @@ export default function RegisterLocation() {
         }
 
         setIsSubmitting(true);
-        let uploadedPermitUrl = socialLink; // Default to social link if Long Term
+        let uploadedPermitUrl = socialLink; 
 
         // 1. Upload Image to Storage (kung Short Term at may permit file)
         if (duration.includes('Less') && permitImage) {
@@ -138,7 +154,7 @@ export default function RegisterLocation() {
 
         // 2. Save Data to Database
         const { error: dbError } = await supabase.from('dropoff_applications').insert([{
-            user_email: email,
+            user_email: currentUserEmail, // 🟢 Gagamitin na ang system-fetched email
             program_name: programName,
             applicant_name: locationName, 
             contact_number: contactNumber,
@@ -148,7 +164,7 @@ export default function RegisterLocation() {
             barangay: selectedBarangay,
             operation_duration: duration,
             permit_url: uploadedPermitUrl,
-            status: 'pending' // Default pending para hintayin ma-approve ng admin
+            status: 'pending' 
         }]);
 
         if (dbError) {
@@ -195,7 +211,9 @@ export default function RegisterLocation() {
                 <Text style={styles.sectionTitle}>Basic Information</Text>
                 
                 <InputGroup label="Program Name" placeholder="e.g. Trash-to-Cashback" val={programName} setVal={setProgramName} />
-                <InputGroup label="Email Address" placeholder="juan@example.com" val={email} setVal={setEmail} keyboard="email-address" />
+                
+                {/* 🟢 Inalis na natin ang Email InputGroup dito */}
+                
                 <InputGroup label="Exact Location of the Program" placeholder="Brgy. San Isidro Hall / My Store" val={locationName} setVal={setLocationName} />
                 <InputGroup label="Contact Number" placeholder="63+ 9123456789" val={contactNumber} setVal={setContactNumber} keyboard="phone-pad" />
 

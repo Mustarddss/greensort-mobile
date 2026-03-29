@@ -5,7 +5,6 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../lib/supabase';
 
-// 🟢 Shadow logic para magtugma sa ibang pages
 const getSafeShadow = () => Platform.select({ 
     ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4 }, 
     android: { elevation: 3 },
@@ -19,7 +18,6 @@ export default function Settings() {
   const [dropoffStatus, setDropoffStatus] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // 🟢 NAVIGATION FIX: Settings -> Profile (Walang animation)
   useEffect(() => {
     const backAction = () => {
       router.replace('/profile'); 
@@ -33,21 +31,42 @@ export default function Settings() {
     const checkStatus = async () => {
       try {
         const { data: { user } } = await supabase.auth.getUser();
+        
         if (user) {
+          const cleanEmail = user.email.trim();
+
           const { data, error } = await supabase
             .from('dropoff_applications')
-            .select('status')
-            .eq('user_email', user.email)
-            .order('created_at', { ascending: false }) 
-            .limit(1)
-            .single();
+            .select('*') 
+            .ilike('user_email', cleanEmail);
 
-          if (data) {
-            setDropoffStatus(data.status);
+          if (error) {
+            console.log("Error:", error);
+            setIsLoading(false);
+            return;
+          }
+
+          if (data && data.length > 0) {
+            const isApproved = data.some(app => {
+                const s = String(app.status || '').trim().toLowerCase();
+                return s === 'approved' || s === 'accepted' || s === 'active';
+            });
+
+            const isPending = data.some(app => {
+                const s = String(app.status || '').trim().toLowerCase();
+                return s === 'pending';
+            });
+
+            if (isApproved) setDropoffStatus('approved');
+            else if (isPending) setDropoffStatus('pending');
+            else setDropoffStatus(null);
+            
+          } else {
+            setDropoffStatus(null);
           }
         }
-      } catch (error) {
-        console.log("Error checking status:", error.message);
+      } catch (e) {
+        console.log("System Error:", e);
       } finally {
         setIsLoading(false);
       }
@@ -75,21 +94,21 @@ export default function Settings() {
       );
     }
 
-    if (dropoffStatus === 'pending') {
-      return (
-        <TouchableOpacity style={styles.menuItem} onPress={() => Alert.alert("Application Pending", "Your application is being reviewed.")}>
-            <View style={[styles.menuIcon, { backgroundColor: '#FFF3E0' }]}><MaterialCommunityIcons name="timer-sand" size={20} color="#FF9800" /></View>
-            <Text style={styles.menuText}>Application Pending ⏳</Text>
-            <Ionicons name="chevron-forward" size={20} color="#ccc" />
-        </TouchableOpacity>
-      );
-    }
-
     if (dropoffStatus === 'approved') {
       return (
         <TouchableOpacity style={styles.menuItem} onPress={() => router.push('/collector-dashboard')}>
             <View style={[styles.menuIcon, { backgroundColor: '#E8F5E9' }]}><MaterialCommunityIcons name="swap-horizontal" size={20} color="#007C00" /></View>
             <Text style={styles.menuText}>Switch to Drop-off Mode</Text>
+            <Ionicons name="chevron-forward" size={20} color="#ccc" />
+        </TouchableOpacity>
+      );
+    }
+
+    if (dropoffStatus === 'pending') {
+      return (
+        <TouchableOpacity style={styles.menuItem} onPress={() => Alert.alert("Application Pending", "Your application is being reviewed. We will notify you once approved.")}>
+            <View style={[styles.menuIcon, { backgroundColor: '#FFF3E0' }]}><MaterialCommunityIcons name="timer-sand" size={20} color="#FF9800" /></View>
+            <Text style={styles.menuText}>Application Pending ⏳</Text>
             <Ionicons name="chevron-forward" size={20} color="#ccc" />
         </TouchableOpacity>
       );
@@ -137,7 +156,6 @@ export default function Settings() {
 
         {renderDropoffButton()}
 
-        {/* 🟢 NEW SECTION: LEGAL & SECURITY */}
         <Text style={[styles.sectionTitle, { marginTop: 20 }]}>Legal & Security</Text>
 
         <TouchableOpacity style={styles.menuItem} onPress={() => router.push('/terms-conditions')}>
@@ -168,7 +186,7 @@ const styles = StyleSheet.create({
   headerTitle: { color: 'white', fontSize: 22, fontWeight: 'bold' },
   backButton: { backgroundColor: 'rgba(255,255,255,0.2)', padding: 8, borderRadius: 12 },
   content: { padding: 20, paddingTop: 30 }, 
-  sectionTitle: { fontSize: 13, fontWeight: 'bold', color: '#888', marginBottom: 15, textTransform: 'uppercase', letterSpacing: 1 }, 
+  sectionTitle: { fontSize: 11, fontWeight: 'bold', color: '#888', marginBottom: 15, textTransform: 'uppercase', letterSpacing: 1 }, 
   menuItem: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'white', padding: 18, borderRadius: 16, marginBottom: 12, ...getSafeShadow() }, 
   menuIcon: { width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center', marginRight: 15 }, 
   menuText: { flex: 1, fontSize: 16, color: '#333', fontWeight: '600' }, 

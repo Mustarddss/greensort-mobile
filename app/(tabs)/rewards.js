@@ -1,43 +1,61 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, ActivityIndicator, Alert, KeyboardAvoidingView, Platform, TouchableWithoutFeedback, Keyboard, StatusBar } from 'react-native';
 import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+// 🟢 UPDATED: Idinagdag ang useLocalSearchParams para makuha ang ipinasa ng Scanner
+import { useRouter, useLocalSearchParams } from 'expo-router'; 
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase'; 
+import * as Location from 'expo-location'; 
 
 const getSafeShadow = () => Platform.select({ 
     ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4 }, 
     android: { elevation: 3 } 
 });
 
-const WASTE_OPTIONS = ['Plastics', 'Glass', 'Paper', 'Metals', 'Others'];
+const OPENAI_API_KEY = process.env.EXPO_PUBLIC_OPENAI_API_KEY;
 
 export default function Rewards() {
   const router = useRouter();
+  const params = useLocalSearchParams(); // 🟢 Kukunin nito yung data galing sa Scan page
   const insets = useSafeAreaInsets();
   
-  const [wasteType, setWasteType] = useState('');
-  const [customWaste, setCustomWaste] = useState(''); 
-  const [quantity, setQuantity] = useState('');
+  // 🟢 UPDATED: Automatic na ilalagay yung na-scan, default quantity to 1
+  const [wasteType, setWasteType] = useState(params.wasteType || params.itemName || params.scannedWaste || '');
+  const [quantity, setQuantity] = useState('1'); 
   const [isClean, setIsClean] = useState(false);
-  const [isDropdownOpen, setIsDropdownOpen] = useState(false); 
   
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState([]); 
+  
+  const [aiResultText, setAiResultText] = useState(''); 
+  const [isAiLoading, setIsAiLoading] = useState(false);
+
   const [hasSearched, setHasSearched] = useState(false);
 
-  const handleSearch = async () => {
-    const finalWaste = wasteType === 'Others' ? customWaste : wasteType;
+  // 🟢 AUTO-SEARCH: Pagkabukas ng page, kung may wasteType, mag-sesearch agad!
+  useEffect(() => {
+      if (wasteType) {
+          handleSearch();
+      }
+  }, []);
 
-    if (!finalWaste || !quantity) {
-        Alert.alert("Missing Info", "Please select a waste type and enter quantity.");
+  const handleSearch = async () => {
+    const finalWaste = wasteType.trim();
+
+    if (!finalWaste) {
+        Alert.alert("Missing Info", "Please enter a waste type to search.");
         return;
     }
+    
     setLoading(true);
     setHasSearched(true);
+    setAiResultText(''); 
     Keyboard.dismiss();
 
     try {
+        // ==========================================
+        // 1. HANAPIN ANG REGISTERED USERS SA SUPABASE
+        // ==========================================
         const { data: { user } } = await supabase.auth.getUser();
         const { data: rewardsData, error: rewardsError } = await supabase
             .from('rewards_inventory')
@@ -53,7 +71,7 @@ export default function Rewards() {
             .eq('resident_email', user?.email);
 
         const computedResults = [];
-        const inputQty = parseFloat(quantity);
+        const inputQty = parseFloat(quantity) || 1; // 🟢 Default sa 1 kung blangko
 
         for (const reward of rewardsData) {
             const { data: centerData } = await supabase
@@ -97,23 +115,83 @@ export default function Rewards() {
                     computedIncentive: incentiveText,
                     imageUrl: reward.image_url,
                     isClaimed: isAlreadyClaimed,
-                    // 🟢 NAKASAMA NA YUNG SEARCHED WASTE DITO
                     searchedWasteType: finalWaste 
                 });
             }
         }
         setResults(computedResults);
+
+        // ==========================================
+        // 2. KUNIN ANG LOCATION NG USER PARA KAY AI
+        // ==========================================
+        setIsAiLoading(true);
+        let userLocation = "Cavite or Metro Manila"; 
+
+        try {
+            let { status } = await Location.requestForegroundPermissionsAsync();
+            if (status === 'granted') {
+                let location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+                let geocode = await Location.reverseGeocodeAsync({
+                    latitude: location.coords.latitude,
+                    longitude: location.coords.longitude
+                });
+                
+                if (geocode.length > 0) {
+                    const address = geocode[0];
+                    userLocation = [address.city || address.subregion, address.region].filter(Boolean).join(', ');
+                }
+            }
+        } catch (locError) {
+            console.log("Error getting location:", locError);
+        }
+
+        // ==========================================
+        // 3. TAWAGIN SI AI PARA SA EXTERNAL LOCATIONS
+        // ==========================================
+        const aiPrompt = `The user wants to recycle or dispose of "${finalWaste}". 
+        They are currently located in or near: ${userLocation}, Philippines.
+        
+        Provide a list of EXACT STORE NAMES, NGOs, OR SPECIFIC BUSINESSES near their location that accept this type of waste. 
+        DO NOT give generic answers like "local junk shops". Give real organization names (e.g., "SM Cares Trash to Cash", "The Plastic Flamingo", "IKEA Pasay", etc.).
+        
+        Format the response exactly like this:
+        Exact places to check near ${userLocation}:
+        - [Specific Store/NGO Name 1] - [Short description of what they accept]
+        - [Specific Store/NGO Name 2] - [Short description of what they accept]
+        - [Specific Store/NGO Name 3] - [Short description of what they accept]
+
+        Tip: [Add a short, helpful tip about preparing this specific waste.]
+        
+        Keep it brief and conversational. Do NOT use markdown asterisks (**) for bolding.`;
+
+        try {
+            const aiRes = await fetch('https://api.openai.com/v1/chat/completions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${OPENAI_API_KEY}` },
+                body: JSON.stringify({ 
+                    model: 'gpt-5.4', 
+                    messages: [{ role: 'user', content: aiPrompt }], 
+                    temperature: 0.5, 
+                    max_completion_tokens: 250 
+                })
+            });
+            const aiData = await aiRes.json();
+            
+            if (aiData.choices && aiData.choices.length > 0) {
+                setAiResultText(aiData.choices[0].message.content);
+            }
+        } catch (aiError) {
+            console.log("AI Search Error:", aiError);
+            setAiResultText("Sorry, GreenSort AI couldn't connect right now to search for recommendations. Please try again later.");
+        } finally {
+            setIsAiLoading(false);
+        }
+
     } catch (error) {
         Alert.alert("Search Error", error.message);
     } finally {
         setLoading(false);
     }
-  };
-
-  const selectOption = (option) => {
-    setWasteType(option);
-    setIsDropdownOpen(false);
-    if (option !== 'Others') setCustomWaste(''); 
   };
 
   return (
@@ -133,7 +211,7 @@ export default function Rewards() {
             </View>
         </View>
 
-        <TouchableWithoutFeedback onPress={() => { Keyboard.dismiss(); setIsDropdownOpen(false); }}>
+        <TouchableWithoutFeedback onPress={() => { Keyboard.dismiss(); }}>
             <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
                 <View style={styles.body}>
                     
@@ -142,50 +220,16 @@ export default function Rewards() {
                         
                         <Text style={styles.label}>Waste Type</Text>
                         
-                        <View style={{ zIndex: 100 }}>
-                          {wasteType === 'Others' ? (
-                            <View style={styles.customInputContainer}>
-                              <TextInput 
-                                style={[styles.input, { flex: 1, marginBottom: 0 }]} 
-                                placeholder="Type waste type (e.g. Battery)" 
-                                autoFocus 
-                                value={customWaste} 
-                                onChangeText={setCustomWaste} 
-                              />
-                              <TouchableOpacity style={styles.resetBtn} onPress={() => setWasteType('')}>
-                                <Ionicons name="close-circle" size={24} color="#999" />
-                              </TouchableOpacity>
-                            </View>
-                          ) : (
-                            <TouchableOpacity 
-                              style={[styles.dropdownTrigger, isDropdownOpen && styles.dropdownTriggerActive]} 
-                              onPress={() => setIsDropdownOpen(!isDropdownOpen)}
-                            >
-                              <Text style={[styles.dropdownText, !wasteType && {color: '#999'}]}>
-                                {wasteType || "Select waste type..."}
-                              </Text>
-                              <Ionicons name={isDropdownOpen ? "chevron-up" : "chevron-down"} size={20} color="#666" />
-                            </TouchableOpacity>
-                          )}
-
-                          {isDropdownOpen && (
-                            <View style={styles.dropdownOverlay}>
-                              {WASTE_OPTIONS.map((option) => (
-                                <TouchableOpacity 
-                                  key={option} 
-                                  style={styles.optionItem} 
-                                  onPress={() => selectOption(option)}
-                                >
-                                  <Text style={styles.optionText}>{option}</Text>
-                                  {wasteType === option && <Ionicons name="checkmark" size={18} color="#007C00" />}
-                                </TouchableOpacity>
-                              ))}
-                            </View>
-                          )}
-                        </View>
+                        {/* 🟢 UPDATED: Simpleng TextInput na lang imbes na Dropdown */}
+                        <TextInput 
+                            style={styles.input} 
+                            placeholder="Type waste type (e.g. Computer Mouse, Plastic)" 
+                            value={wasteType} 
+                            onChangeText={setWasteType} 
+                        />
                         
-                        <Text style={styles.label}>Quantity (kg)</Text>
-                        <TextInput style={styles.input} placeholder="0" keyboardType="numeric" value={quantity} onChangeText={setQuantity} />
+                        <Text style={styles.label}>Quantity (kg or pcs)</Text>
+                        <TextInput style={styles.input} placeholder="1" keyboardType="numeric" value={quantity} onChangeText={setQuantity} />
 
                         <TouchableOpacity style={[styles.checkboxContainer, isClean && styles.checkboxActive]} onPress={() => setIsClean(!isClean)} activeOpacity={0.8}>
                             <View style={[styles.checkbox, isClean && {backgroundColor: '#007C00', borderColor: '#007C00'}]}>
@@ -202,8 +246,8 @@ export default function Rewards() {
                         </TouchableOpacity>
                     </View>
 
-                    {hasSearched && <Text style={styles.sectionHeader}>Available Locations</Text>}
-                    {hasSearched && results.length === 0 && !loading && <Text style={styles.noResults}>No drop-off centers found.</Text>}
+                    {hasSearched && <Text style={[styles.sectionHeader, {color: '#007C00'}]}>AVAILABLE DROP OFF LOCATIONS</Text>}
+                    {hasSearched && results.length === 0 && !loading && <Text style={styles.noResults}>No registered app centers found for this waste.</Text>}
 
                     {results.map((loc) => (
                         <TouchableOpacity key={loc.id} style={styles.resultCard} onPress={() => router.push({ pathname: '/location-details', params: { data: JSON.stringify(loc) } })}>
@@ -218,6 +262,30 @@ export default function Rewards() {
                             </View>
                         </TouchableOpacity>
                     ))}
+
+                    {hasSearched && (
+                        <View style={{ marginTop: 20 }}>
+                            <Text style={[styles.sectionHeader, {color: '#007C00'}]}>RECOMMENDED LOCATIONS (AI RESEARCH)</Text>
+                            
+                            {isAiLoading ? (
+                                <View style={{padding: 20, alignItems: 'center'}}>
+                                    <ActivityIndicator size="large" color="#007C00" />
+                                    <Text style={{color: '#666', marginTop: 10, fontSize: 12}}>GreenSort AI is scanning locations near you...</Text>
+                                </View>
+                            ) : aiResultText ? (
+                                <View style={styles.aiCard}>
+                                    <View style={styles.aiHeader}>
+                                        <Ionicons name="sparkles" size={18} color="#007C00" />
+                                        <Text style={styles.aiLocName}>GreenSort AI Suggestions</Text>
+                                    </View>
+                                    <Text style={styles.aiDetails} selectable={true}>{aiResultText}</Text>
+                                </View>
+                            ) : (
+                                !loading && <Text style={styles.noResults}>AI could not find external locations at this moment.</Text>
+                            )}
+                        </View>
+                    )}
+
                 </View>
                 <View style={{height: 100}} /> 
             </ScrollView>
@@ -238,49 +306,6 @@ const styles = StyleSheet.create({
   cardTitle: { fontSize: 18, fontWeight: 'bold', color: '#333', marginBottom: 15 },
   label: { fontSize: 13, color: '#666', marginBottom: 6, fontWeight: '600', marginTop: 10 },
   input: { backgroundColor: '#F5F7FA', borderRadius: 10, padding: 14, marginBottom: 16, fontSize: 14, color: '#333', borderWidth: 1, borderColor: '#F0F0F0' },
-  
-  dropdownTrigger: { 
-    flexDirection: 'row', 
-    justifyContent: 'space-between', 
-    alignItems: 'center', 
-    backgroundColor: '#F5F7FA', 
-    borderRadius: 10, 
-    padding: 14, 
-    borderWidth: 1, 
-    borderColor: '#F0F0F0',
-    zIndex: 100
-  },
-  dropdownTriggerActive: { borderColor: '#007C00' },
-  dropdownText: { fontSize: 14, color: '#333' },
-
-  dropdownOverlay: {
-    position: 'absolute',
-    top: 50, 
-    left: 0,
-    right: 0,
-    backgroundColor: 'white',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#eee',
-    elevation: 5,
-    shadowColor: '#000',
-    shadowOpacity: 0.1,
-    shadowRadius: 10,
-    zIndex: 999, 
-    paddingVertical: 5
-  },
-  optionItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    padding: 15,
-    borderBottomWidth: 0.5,
-    borderBottomColor: '#f0f0f0'
-  },
-  optionText: { fontSize: 14, color: '#555' },
-
-  customInputContainer: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 16 },
-  resetBtn: { padding: 5 },
-
   checkboxContainer: { flexDirection: 'row', backgroundColor: '#e7ffe0', padding: 12, borderRadius: 10, borderWidth: 1, borderColor: '#d1ffb2', marginBottom: 20, marginTop: 10 },
   checkboxActive: { backgroundColor: '#b2ffbe', borderColor: '#4dff65' },
   checkbox: { width: 20, height: 20, borderRadius: 4, borderWidth: 2, borderColor: '#007C00', marginRight: 10, alignItems: 'center', justifyContent: 'center', marginTop: 2 },
@@ -288,8 +313,8 @@ const styles = StyleSheet.create({
   checkboxSub: { fontSize: 11, color: '#666', marginTop: 2, lineHeight: 14 },
   searchBtn: { backgroundColor: '#007C00', paddingVertical: 14, borderRadius: 25, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', elevation: 2 },
   searchBtnText: { fontWeight: 'bold', color: 'white', fontSize: 14 },
-  sectionHeader: { fontSize: 18, fontWeight: 'bold', color: '#263238', marginBottom: 15 },
-  noResults: { textAlign: 'center', color: '#999', marginTop: 20 },
+  sectionHeader: { fontSize: 15, fontWeight: '900', marginBottom: 15, letterSpacing: 0.5 },
+  noResults: { textAlign: 'center', color: '#999', marginTop: 10, marginBottom: 20, fontSize: 13 },
   resultCard: { backgroundColor: 'white', borderRadius: 15, padding: 18, marginBottom: 15, ...getSafeShadow() },
   locName: { fontSize: 17, fontWeight: 'bold', color: '#333' },
   tagContainer: { backgroundColor: '#F5F5F5', alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 4, marginTop: 4, marginBottom: 12 },
@@ -304,4 +329,8 @@ const styles = StyleSheet.create({
   incentiveValue: { fontSize: 15, fontWeight: 'bold', color: '#004D40', lineHeight: 22 },
   claimedBadge: { position: 'absolute', top: 15, right: 15, backgroundColor: '#9E9E9E', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 5, zIndex: 5 },
   claimedText: { color: 'white', fontSize: 10, fontWeight: 'bold', letterSpacing: 1 },
+  aiCard: { backgroundColor: '#F1F8E9', borderRadius: 15, padding: 18, marginBottom: 15, borderWidth: 1, borderColor: '#C8E6C9', ...getSafeShadow() },
+  aiHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
+  aiLocName: { fontSize: 16, fontWeight: 'bold', color: '#007C00', marginLeft: 8 },
+  aiDetails: { fontSize: 14, color: '#333', lineHeight: 22 }
 });

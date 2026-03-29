@@ -137,6 +137,28 @@ export default function MessagesList() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 30 }}
         showsVerticalScrollIndicator={false}
+        // 🟢 PINNED AI CHATBOT AT THE TOP OF THE LIST
+        ListHeaderComponent={() => (
+          <TouchableOpacity 
+            style={[styles.chatCard, { backgroundColor: '#E8F5E9', borderColor: '#007C00', borderWidth: 1, marginBottom: 15 }]} 
+            onPress={() => router.push({ pathname: '/chat', params: { chatUser: 'GreenSort AI Assistant', isBot: 'true' } })}
+          >
+            <View style={[styles.avatar, { backgroundColor: '#007C00', justifyContent: 'center', alignItems: 'center' }]}>
+                <Ionicons name="sparkles" size={28} color="white" />
+            </View>
+            <View style={{ flex: 1, justifyContent: 'center' }}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Text style={[styles.chatName, {color: '#007C00'}]}>🤖 GreenSort AI Assistant</Text>
+                    <View style={{backgroundColor: '#007C00', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 10}}>
+                        <Text style={{color: 'white', fontSize: 9, fontWeight: 'bold'}}>ONLINE</Text>
+                    </View>
+                </View>
+                <Text style={[styles.latestMessage, {color: '#2E7D32', marginTop: 4}]} numberOfLines={1}>
+                    Ask me anything about recycling!
+                </Text>
+            </View>
+          </TouchableOpacity>
+        )}
         renderItem={({ item }) => {
           const isUnread = item.unreadCount > 0;
           return (

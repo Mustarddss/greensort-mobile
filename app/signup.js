@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert, ActivityIndicator, Image, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert, ActivityIndicator, Image, KeyboardAvoidingView, Platform, Modal } from 'react-native';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar'; 
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 
 // 🟢 IMPORT SUPABASE
 import { supabase } from '../lib/supabase'; 
@@ -18,10 +19,19 @@ export default function Signup() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // 🟢 SUPABASE SIGNUP FUNCTION
+  const [showOtpModal, setShowOtpModal] = useState(false);
+  const [otpCode, setOtpCode] = useState('');
+
   const handleSignup = async () => {
     if (!fullName || !email || !phone || !address || !password || !confirmPassword) {
       Alert.alert('Missing Info', 'Please fill all text fields.');
+      return;
+    }
+
+    // 🟢 EMAIL FORMAT CHECKER
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email.trim())) {
+      Alert.alert('Invalid Email 🛑', 'Please enter a valid email address (e.g., juandelacruz@gmail.com).');
       return;
     }
 
@@ -37,9 +47,8 @@ export default function Signup() {
 
     setLoading(true);
 
-    // 🔗 CONNECT TO SUPABASE
     const { data, error } = await supabase.auth.signUp({
-      email: email,
+      email: email.trim(),
       password: password,
       options: {
         data: {
@@ -54,19 +63,55 @@ export default function Signup() {
 
     if (error) {
       Alert.alert('Signup Error', error.message);
-    } else {
-      
-      // 🟢 FIX: I-force logout agad natin para hindi siya mag-auto login papuntang Dashboard
-      if (data.session) {
-        await supabase.auth.signOut();
-      }
-
+      return;
+    } 
+    
+    // CHECK KUNG GAMIT NA ANG EMAIL
+    if (data?.user && data.user.identities && data.user.identities.length === 0) {
       Alert.alert(
-        'Account Created', 
-        'Your account has been created successfully! Please log in to continue.', 
-        [{ text: 'Go to Login', onPress: () => router.replace('/login') }]
+        'Email Already in Use 🛑', 
+        'Nagamit na ang email na ito sa GreenSort. Kung sa iyo ito, paki-try mag-login.'
       );
+      return;
     }
+
+    setShowOtpModal(true);
+  };
+
+  const handleVerifyOtp = async () => {
+    if (!otpCode || otpCode.length < 6) {
+        Alert.alert('Invalid Code', 'Please enter the verification code sent to your email.');
+        return;
+    }
+
+    setLoading(true);
+
+    const { data, error } = await supabase.auth.verifyOtp({
+        email: email.trim(),
+        token: otpCode,
+        type: 'signup' 
+    });
+
+    if (error) {
+        setLoading(false);
+        Alert.alert('Verification Failed ❌', error.message);
+        return;
+    } 
+
+    // 🟢 FIX 1: I-force logout AGAD-AGAD bago pa siya mapunta sa Dashboard
+    await supabase.auth.signOut();
+    
+    setLoading(false);
+    setShowOtpModal(false);
+
+    // 🟢 FIX 2: Delay para siguradong hindi mag-trigger ang auto-redirect
+    setTimeout(() => {
+        Alert.alert(
+            'Account Created! 🎉', 
+            'Your account is now created! You can log in your account now!', 
+            [{ text: 'Go', onPress: () => router.replace('/login') }]
+        );
+    }, 500); 
   };
   
   return (
@@ -92,13 +137,7 @@ export default function Signup() {
             <TextInput style={styles.input} placeholder="email@gmail.com" keyboardType="email-address" autoCapitalize="none" value={email} onChangeText={setEmail} />
 
             <Text style={styles.label}>Phone Number</Text>
-            <TextInput 
-                style={styles.input} 
-                placeholder="09123456789" 
-                keyboardType="phone-pad" 
-                value={phone} 
-                onChangeText={setPhone} 
-            />
+            <TextInput style={styles.input} placeholder="09123456789" keyboardType="phone-pad" value={phone} onChangeText={setPhone} />
 
             <Text style={styles.label}>Barangay Address</Text>
             <TextInput style={styles.input} placeholder="e.g. Brgy. Sampaloc I" value={address} onChangeText={setAddress} />
@@ -122,6 +161,39 @@ export default function Signup() {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      <Modal visible={showOtpModal} animationType="slide" transparent={true}>
+          <View style={styles.modalOverlay}>
+              <View style={styles.modalCard}>
+                  <View style={{alignItems: 'center', marginBottom: 20}}>
+                      <View style={styles.iconCircle}>
+                          <Ionicons name="mail-unread" size={40} color="#007C00" />
+                      </View>
+                      <Text style={styles.modalTitle}>Verify your Email</Text>
+                      <Text style={styles.modalSub}>We sent a verification code to <Text style={{fontWeight: 'bold', color: '#333'}}>{email}</Text></Text>
+                  </View>
+
+                  <TextInput 
+                      style={styles.otpInput} 
+                      placeholder="Enter verification code" 
+                      keyboardType="number-pad" 
+                      maxLength={8}
+                      value={otpCode}
+                      onChangeText={setOtpCode}
+                      textAlign="center"
+                  />
+
+                  <TouchableOpacity style={styles.button} onPress={handleVerifyOtp} disabled={loading}>
+                      {loading ? <ActivityIndicator color="white" /> : <Text style={styles.buttonText}>VERIFY CODE</Text>}
+                  </TouchableOpacity>
+
+                  <TouchableOpacity style={styles.cancelBtn} onPress={() => setShowOtpModal(false)} disabled={loading}>
+                      <Text style={styles.cancelBtnText}>Cancel</Text>
+                  </TouchableOpacity>
+              </View>
+          </View>
+      </Modal>
+
     </SafeAreaView>
   );
 }
@@ -140,4 +212,13 @@ const styles = StyleSheet.create({
   buttonText: { color: '#fff', fontSize: 16, fontWeight: 'bold', letterSpacing: 0.5 },
   footer: { flexDirection: 'row', justifyContent: 'center', marginTop: 15, marginBottom: 20 },
   link: { color: '#007C00', fontWeight: 'bold' },
+
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  modalCard: { backgroundColor: 'white', borderTopLeftRadius: 30, borderTopRightRadius: 30, padding: 30, elevation: 10, shadowColor: '#000', shadowOffset: {width: 0, height: -2}, shadowOpacity: 0.1, shadowRadius: 10 },
+  iconCircle: { width: 80, height: 80, borderRadius: 40, backgroundColor: '#E8F5E9', justifyContent: 'center', alignItems: 'center', marginBottom: 15 },
+  modalTitle: { fontSize: 22, fontWeight: 'bold', color: '#333', marginBottom: 5 },
+  modalSub: { fontSize: 14, color: '#666', textAlign: 'center', lineHeight: 20 },
+  otpInput: { backgroundColor: '#F5F5F5', paddingVertical: 15, borderRadius: 12, fontSize: 20, fontWeight: 'bold', color: '#007C00', borderWidth: 2, borderColor: '#E0E0E0', letterSpacing: 3 },
+  cancelBtn: { paddingVertical: 15, alignItems: 'center', marginTop: 5 },
+  cancelBtnText: { color: '#666', fontSize: 15, fontWeight: 'bold' }
 });
