@@ -106,9 +106,16 @@ export default function ChatScreen() {
         setIsBotTyping(true);
         flatListRef.current?.scrollToEnd({ animated: true });
 
-        const promptText = `You are GreenSort AI Assistant, a helpful virtual eco-bot for the GreenSort recycling app in the Philippines. 
-        The user says: "${textToSend}". 
+        const systemInstruction = `You are GreenSort AI Assistant, a helpful virtual eco-bot for the GreenSort recycling app in the Philippines. 
         
+        CRITICAL RULE 1 (Language Matching): You MUST respond in the same language the user uses. If they ask in English, reply in English. If they ask in Tagalog or Taglish, reply in Tagalog or Taglish.
+
+        CRITICAL RULE 2 (Scope): Your SOLE purpose is to assist users with recycling, waste management, upcycling, environmental tips, and how to use the GreenSort app. 
+        If the user asks about ANYTHING else (e.g., medical advice, coding, general knowledge, math, movies, etc.), you MUST NOT answer the question. 
+        Instead, politely decline based on their language:
+        - If English: "I'm sorry, but I'm only designed to answer questions about recycling, waste management, and using the GreenSort app. How can I help you sort your trash today?"
+        - If Tagalog/Taglish: "Pasensya na, pero naka-design lang ako para sagutin ang mga katanungan tungkol sa recycling, waste management, at paggamit ng GreenSort app. May maitutulong ba ako tungkol sa mga basurang gusto mong i-recycle?"
+
         If the user asks where or how to recycle specific items (like "batteries", "laptops", "plastics"), provide a structured answer in two clear sections:
 
         EXTERNAL DROP-OFFS:
@@ -124,13 +131,15 @@ export default function ChatScreen() {
                 method: 'POST',
                 headers: { 
                   'Content-Type': 'application/json', 
-                  // 🟢 UPDATED: Dito na natin tinawag yung .env file
                   'Authorization': `Bearer ${process.env.EXPO_PUBLIC_OPENAI_API_KEY}` 
                 },
                 body: JSON.stringify({
-                    model: 'gpt-5.4', // 🟢 UPDATED: Pinalitan ng tamang model name
-                    messages: [{ role: 'user', content: promptText }],
-                    temperature: 0.7,
+                    model: 'gpt-5.4',
+                    messages: [
+                        { role: 'system', content: systemInstruction },
+                        { role: 'user', content: textToSend }
+                    ],
+                    temperature: 0.2,
                     max_completion_tokens: 300
                 })
             });
@@ -340,5 +349,15 @@ export default function ChatScreen() {
 }
 
 const styles = StyleSheet.create({
-  header: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'white', paddingBottom: 15, paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: '#eee', elevation: 2 }, headerTitle: { fontSize: 18, fontWeight: 'bold', color: '#333' }, messageRow: { flexDirection: 'row', width: '100%', alignItems: 'flex-end' }, bubble: { maxWidth: '80%', paddingVertical: 10, paddingHorizontal: 15, borderRadius: 20 }, myBubble: { backgroundColor: '#007C00', borderBottomRightRadius: 4 }, theirBubble: { backgroundColor: '#E4E6EB', borderBottomLeftRadius: 4, elevation: 1, borderWidth: 1, borderColor: '#eee' }, msgText: { fontSize: 15, lineHeight: 22 }, replyBanner: { flexDirection: 'row', backgroundColor: '#F5F7FA', padding: 10, paddingHorizontal: 15, borderLeftWidth: 4, borderLeftColor: '#007C00', alignItems: 'center' }, replyBoxRendered: { padding: 8, borderRadius: 8, marginBottom: 8, borderLeftWidth: 3, borderLeftColor: '#fff', opacity: 0.9 }, inputContainer: { flexDirection: 'row', alignItems: 'flex-end', padding: 10, backgroundColor: 'white', paddingBottom: Platform.OS === 'ios' ? 25 : 10 }, input: { flex: 1, backgroundColor: '#F0F2F5', borderRadius: 20, paddingHorizontal: 15, paddingTop: 10, paddingBottom: 10, fontSize: 16, maxHeight: 100 }
+  header: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'white', paddingBottom: 15, paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: '#eee', elevation: 2 }, 
+  headerTitle: { fontSize: 18, fontWeight: 'bold', color: '#333' }, 
+  messageRow: { flexDirection: 'row', width: '100%', alignItems: 'flex-end' }, 
+  bubble: { maxWidth: '80%', paddingVertical: 10, paddingHorizontal: 15, borderRadius: 20 }, 
+  myBubble: { backgroundColor: '#007C00', borderBottomRightRadius: 4 }, 
+  theirBubble: { backgroundColor: '#E4E6EB', borderBottomLeftRadius: 4, elevation: 1, borderWidth: 1, borderColor: '#eee' }, 
+  msgText: { fontSize: 15, lineHeight: 22 }, 
+  replyBanner: { flexDirection: 'row', backgroundColor: '#F5F7FA', padding: 10, paddingHorizontal: 15, borderLeftWidth: 4, borderLeftColor: '#007C00', alignItems: 'center' }, 
+  replyBoxRendered: { padding: 8, borderRadius: 8, marginBottom: 8, borderLeftWidth: 3, borderLeftColor: '#fff', opacity: 0.9 }, 
+  inputContainer: { flexDirection: 'row', alignItems: 'flex-end', padding: 10, backgroundColor: 'white', paddingBottom: Platform.OS === 'ios' ? 25 : 10 }, 
+  input: { flex: 1, backgroundColor: '#F0F2F5', borderRadius: 20, paddingHorizontal: 15, paddingTop: 10, paddingBottom: 10, fontSize: 16, maxHeight: 100 }
 });

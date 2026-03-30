@@ -15,7 +15,20 @@ export default function Notifications() {
 
   const [selectedAdminNotif, setSelectedAdminNotif] = useState(null);
 
-  useEffect(() => { fetchNotifications(); }, []);
+  // 🟢 REAL-TIME LISTENER PARA AUTO UPDATE ANG LIST KAHIT WALA NG REFRESH
+  useEffect(() => { 
+      fetchNotifications(); 
+
+      const notifChannel = supabase.channel('realtime-notifs')
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications' }, () => {
+              fetchNotifications();
+          })
+          .subscribe();
+
+      return () => {
+          supabase.removeChannel(notifChannel);
+      };
+  }, []);
 
   const fetchNotifications = async () => {
     const { data: { session } } = await supabase.auth.getSession();
@@ -45,6 +58,16 @@ export default function Notifications() {
   };
 
   const getNotificationDetails = (item) => {
+    
+    // 🟢 BAGONG FIX: UI para sa may-ari ng post kapag na-report yung post niya
+    if (item.action === 'reported') {
+        return { 
+            title: 'Your Post has been Reported', 
+            body: `Your post "${item.post_title}" has been reported by a community member and is currently under review by our admins.`,
+            iconName: 'alert-circle', iconColor: '#F57C00', bgColor: '#FFF3E0', isAdmin: true
+        };
+    }
+
     if (item.action.includes('approved your report')) {
       const noteParts = item.action.split('Note: ');
       return { 
@@ -74,7 +97,6 @@ export default function Notifications() {
         iconName: 'chat', iconColor: '#00C853', bgColor: '#E8F5E9', isAdmin: false
     };
   };
-
   const formatTime = (dateString) => {
     const diffMins = Math.floor((new Date() - new Date(dateString)) / 60000);
     if (diffMins < 1) return 'now'; if (diffMins < 60) return `${diffMins}m ago`;
@@ -88,7 +110,6 @@ export default function Notifications() {
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#007C00" translucent={true} />
       
-      {/* 🟢 HEADER ADJUSTED TO MATCH DASHBOARD EXACT HEIGHT */}
       <View style={[styles.header, { paddingTop: Math.max(insets.top, 20) + 15 }]}>
           <View style={styles.headerRow}>
               <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
@@ -96,7 +117,6 @@ export default function Notifications() {
               </TouchableOpacity>
               <View style={{alignItems: 'center'}}>
                   <Text style={styles.headerTitle}>Notifications</Text>
-                  {/* 🟢 IDINAGDAG NA SUBTITLE PARA PUMANTAY SA 2-LINES NG DASHBOARD */}
                   <Text style={styles.headerSubtitle}>Recent updates & alerts</Text>
               </View>
               <View style={{ width: 40 }} />
@@ -151,6 +171,9 @@ export default function Notifications() {
                     } 
                     else if (item.action.includes('contact')) {
                         router.push({ pathname: '/chat', params: { chatUser: item.actor_name } }); 
+                    } 
+                    else {
+                        router.push({ pathname: '/(tabs)/dashboard', params: { openPostTitle: item.post_title } });
                     }
                 }}
             >
@@ -213,11 +236,10 @@ export default function Notifications() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F5F7FA' }, 
   
-  // 🟢 ADJUSTED PADDING PARA TUGMA SA DASHBOARD HEIGHT
   header: { backgroundColor: '#007C00', paddingBottom: 25, paddingHorizontal: 25, borderBottomLeftRadius: 25, borderBottomRightRadius: 25, elevation: 4, zIndex: 10 },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', width: '100%' },
   headerTitle: { color: 'white', fontSize: 22, fontWeight: 'bold' },
-  headerSubtitle: { color: 'rgba(255,255,255,0.9)', fontSize: 12, marginTop: 4 }, // Idinagdag para may 2nd line
+  headerSubtitle: { color: 'rgba(255,255,255,0.9)', fontSize: 12, marginTop: 4 }, 
   backButton: { backgroundColor: 'rgba(255,255,255,0.2)', padding: 8, borderRadius: 12 },
 
   tabsContainer: { flexDirection: 'row', paddingHorizontal: 20, marginTop: 20, marginBottom: 15, justifyContent: 'space-between', alignItems: 'center' }, 

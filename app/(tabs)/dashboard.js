@@ -1,6 +1,6 @@
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import { useRouter, useFocusEffect } from 'expo-router'; 
+import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router'; 
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Image, KeyboardAvoidingView, Modal, Platform, RefreshControl, ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -11,6 +11,7 @@ import * as Location from 'expo-location';
 
 export default function Dashboard() {
   const router = useRouter();
+  const params = useLocalSearchParams(); 
   const insets = useSafeAreaInsets();
   
   const [posts, setPosts] = useState([]); 
@@ -27,9 +28,7 @@ export default function Dashboard() {
   const [isModerating, setIsModerating] = useState(false);
 
   const [userData, setUserData] = useState({ name: 'Loading...', kgRecycled: 0, submissions: 0, upcycleProjects: 0, bankedPoints: 0, avatar: null });
-  
   const [form, setForm] = useState({ type: 'For Sale', title: '', desc: '', category: '', price: '', lookingFor: '', location: '', latitude: null, longitude: null, imageUri: null });
-  
   const [newComment, setNewComment] = useState('');
   const [replyingTo, setReplyingTo] = useState(null);
   const [editingCommentId, setEditingCommentId] = useState(null); 
@@ -49,24 +48,32 @@ export default function Dashboard() {
 
   const [isBankedModalVisible, setBankedModalVisible] = useState(false);
   const [bankedDetails, setBankedDetails] = useState([]);
+  const [selectedReportReason, setSelectedReportReason] = useState(null); 
 
   const reportReasons = [
-    "Spam or misleading",
-    "Harassment or bullying",
-    "Scam or fraud",
-    "Inappropriate content",
-    "Hate speech or symbols"
+    { title: "Spam or misleading", desc: "Repeated posts, fake information, or misleading titles." },
+    { title: "Scam or fraud", desc: "Attempting to deceive others for money or personal information." },
+    { title: "Inappropriate content", desc: "Offensive language, nudity, or disturbing imagery." },
+    { title: "Not related to recycling/eco", desc: "Posts that have nothing to do with recycling, upcycling, or environmental efforts." },
+    { title: "Hazardous or dangerous materials", desc: "Trading or selling toxic chemicals, medical waste, or illegal items." },
+    { title: "Fake or unrealistic price/trade", desc: "Trolling with absurd prices or fake trade requests." },
+    { title: "Harassment or bullying", desc: "Targeting, insulting, or threatening other members of the community." }
   ];
 
+  // 🟢 REAL-TIME LISTENER PARA SA MESSAGES AT NOTIFICATIONS (Para auto-update ang red dot badge)
   useEffect(() => { 
-    const msgChannel = supabase.channel('dashboard-unread-msgs').on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, () => { fetchUserSessionAndData(); }).subscribe();
+    const msgChannel = supabase.channel('dashboard-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, () => { fetchUserSessionAndData(); })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications' }, () => { fetchUserSessionAndData(); })
+      .subscribe();
+      
     return () => { supabase.removeChannel(msgChannel); };
   }, []);
 
   useFocusEffect(
     useCallback(() => {
       fetchUserSessionAndData();
-    }, [])
+    }, [params.openPostTitle])
   );
 
   const fetchUserSessionAndData = async () => {
@@ -81,7 +88,6 @@ export default function Dashboard() {
 
       try {
           const { data: logs, error } = await supabase.from('surrender_logs').select('*').eq('resident_email', userEmail);
-              
           if (logs && !error) {
               totalSubmissions = logs.length;
               logs.forEach(log => {
@@ -96,7 +102,6 @@ export default function Dashboard() {
                       bankedGroup[cEmail][wType] += weight;
                   }
               });
-
               const finalBankedList = [];
               for (const email of Object.keys(bankedGroup)) {
                   const { data: center } = await supabase.from('dropoff_applications').select('program_name, barangay').eq('user_email', email).single();
@@ -119,10 +124,8 @@ export default function Dashboard() {
 
       const { count: notifCount } = await supabase.from('notifications').select('*', { count: 'exact', head: true }).eq('owner_name', fullName).eq('is_read', false);
       setUnreadNotifs(notifCount || 0);
-
       const { count: msgCount } = await supabase.from('messages').select('*', { count: 'exact', head: true }).eq('receiver_name', fullName).eq('is_read', false);
       setUnreadMessages(msgCount || 0);
-
     } else { router.replace('/login'); }
     
     fetchPosts();
@@ -134,13 +137,21 @@ export default function Dashboard() {
 
     const { data } = await supabase.from('posts').select('*').order('created_at', { ascending: false });
     if (data) {
-        // Owner only sees their flagged posts; others see active posts
         const activePosts = data.filter(post => 
             post.status !== 'archived' && 
             post.status !== 'sold' && 
             (post.status !== 'flagged' || post.user === currentUserName)
         );
         setPosts(activePosts);
+        
+        if (params.openPostTitle) {
+            const targetPost = activePosts.find(p => p.title === params.openPostTitle);
+            if (targetPost) {
+                openPostDetails(targetPost);
+                // 🟢 AUTO-CLEAR PARAMETER PARA HINDI UMULIT PAG NAG-REFRESH
+                router.setParams({ openPostTitle: '' });
+            }
+        }
     }
   };
 
@@ -207,7 +218,6 @@ export default function Dashboard() {
     } catch (error) { console.log("Reverse geocoding error:", error); }
   };
 
-  // 🤖 AI AUTO MODERATION SA POST SUBMIT
   const handlePostSubmit = async () => {
     if (!form.imageUri) return Alert.alert("Photo Required", "Please upload a photo for your post.");
     if (!form.title || !form.desc || !form.location) return Alert.alert("Wait!", "Please fill in all general details (Title, Desc, Location).");
@@ -216,11 +226,11 @@ export default function Dashboard() {
     if (form.type === 'Trade' && (!form.lookingFor || form.lookingFor.trim() === '')) return Alert.alert("Wait!", "Please specify what you are looking for to trade.");
     
     setIsModerating(true);
-    
     let aiStatus = 'active';
     let aiReason = '';
 
-    const moderationPrompt = `You are an AI moderator for an eco-friendly recycling community app. Analyze this user post:
+    const moderationPrompt = `You are an AI moderator for an eco-friendly recycling community app.
+    Analyze this user post:
     Title: "${form.title}"
     Description: "${form.desc}"
     Type: "${form.type}"
@@ -230,7 +240,6 @@ export default function Dashboard() {
     1. Contains offensive, toxic, or inappropriate language.
     2. Is a scam or spam (e.g., selling a common plastic bottle for an unrealistic price like ₱500).
     3. Is completely unrelated to recycling, upcycling, eco-friendly living, or trading pre-loved/waste items.
-
     Respond strictly in pure JSON format:
     {
       "isApproved": true or false,
@@ -242,11 +251,10 @@ export default function Dashboard() {
             method: 'POST',
             headers: { 
                 'Content-Type': 'application/json', 
-                // 🟢 UPDATED: Tinawag na ang .env variable
                 'Authorization': `Bearer ${process.env.EXPO_PUBLIC_OPENAI_API_KEY}` 
             },
             body: JSON.stringify({ 
-                model: 'gpt-5.4', // 🟢 UPDATED: Pinalitan ng tamang model name
+                model: 'gpt-5.4', 
                 messages: [{ role: 'user', content: moderationPrompt }], 
                 temperature: 0.5, 
                 max_completion_tokens: 150 
@@ -265,12 +273,13 @@ export default function Dashboard() {
             }
         }
     } catch (e) {
-        console.log("Moderation Error:", e); 
+        console.log("Moderation Error:", e);
     }
 
     setIsModerating(false);
     setIsUploading(true);
-    let uploadedImageUrl = form.imageUri; 
+    let uploadedImageUrl = form.imageUri;
+
     if (form.imageUri && !form.imageUri.startsWith('http')) {
         try {
             const formData = new FormData();
@@ -281,26 +290,25 @@ export default function Dashboard() {
     }
     
     const postData = { user: userData.name, avatar: userData.avatar, type: form.type, title: form.title, desc: form.desc, price: form.type === 'Free' ? 'Free' : form.type === 'Trade' ? `Trade: ${form.lookingFor}` : `₱${form.price}`, location: form.location, latitude: form.latitude, longitude: form.longitude, image: uploadedImageUrl, status: aiStatus, ai_reason: aiReason };
-    
     let dbError = null;
 
     if (editingPostId) { 
-        const { error } = await supabase.from('posts').update(postData).eq('id', editingPostId); 
+        const { error } = await supabase.from('posts').update(postData).eq('id', editingPostId);
         dbError = error;
     } 
     else { 
-        const { error } = await supabase.from('posts').insert([{ ...postData, likes: 0, comments: 0, liked_by: [] }]); 
+        const { error } = await supabase.from('posts').insert([{ ...postData, likes: 0, comments: 0, liked_by: [] }]);
         dbError = error;
     }
     
-    setIsUploading(false); 
-
+    setIsUploading(false);
     if (dbError) {
         Alert.alert("Database Error 🛑", dbError.message);
         return; 
     }
 
-    setEditingPostId(null); setIsCreating(false);
+    setEditingPostId(null);
+    setIsCreating(false);
     setForm({ type: 'For Sale', title: '', desc: '', category: '', price: '', lookingFor: '', location: '', latitude: null, longitude: null, imageUri: null });
     fetchPosts(); 
 
@@ -332,8 +340,24 @@ export default function Dashboard() {
   const handleLike = async (post) => {
     const hasLiked = post.liked_by && post.liked_by.includes(userData.name);
     let newLikedBy = post.liked_by ? [...post.liked_by] : []; let newLikes = post.likes || 0;
-    if (hasLiked) { newLikedBy = newLikedBy.filter(name => name !== userData.name); newLikes = Math.max(0, newLikes - 1); } 
-    else { newLikedBy.push(userData.name); newLikes += 1; }
+    
+    if (hasLiked) { 
+        newLikedBy = newLikedBy.filter(name => name !== userData.name); newLikes = Math.max(0, newLikes - 1);
+    } 
+    else { 
+        newLikedBy.push(userData.name); newLikes += 1;
+        
+        if (post.user !== userData.name) {
+            await supabase.from('notifications').insert([{
+                owner_name: post.user,
+                actor_name: userData.name,
+                actor_avatar: userData.avatar,
+                action: 'liked',
+                post_title: post.title,
+                is_read: false
+            }]);
+        }
+    }
     
     setPosts(posts.map(p => p.id === post.id ? { ...p, likes: newLikes, liked_by: newLikedBy } : p));
     await supabase.from('posts').update({ likes: newLikes, liked_by: newLikedBy }).eq('id', post.id);
@@ -343,6 +367,7 @@ export default function Dashboard() {
     if (comment.is_deleted) return;
     const hasLiked = comment.liked_by && comment.liked_by.includes(userData.name);
     let newLikedBy = comment.liked_by ? [...comment.liked_by] : []; let newLikes = comment.likes || 0;
+    
     if (hasLiked) { newLikedBy = newLikedBy.filter(name => name !== userData.name); newLikes = Math.max(0, newLikes - 1); } 
     else { newLikedBy.push(userData.name); newLikes += 1; }
     
@@ -366,14 +391,39 @@ export default function Dashboard() {
 
   const handleAddComment = async () => {
     if (!newComment.trim()) return;
+    
     if (editingCommentId) {
         await supabase.from('comments').update({ text: newComment, is_edited: true }).eq('id', editingCommentId);
         setNewComment(''); setEditingCommentId(null);
         openPostDetails(selectedPost); return;
     }
+
     const commentData = { post_id: selectedPost.id, user_name: userData.name, avatar: userData.avatar, text: newComment, parent_id: replyingTo ? replyingTo.id : null, is_edited: false, is_deleted: false };
     await supabase.from('comments').insert([commentData]);
     await supabase.from('posts').update({ comments: (selectedPost.comments || 0) + 1 }).eq('id', selectedPost.id);
+    
+    if (selectedPost.user !== userData.name && !replyingTo) {
+        await supabase.from('notifications').insert([{
+            owner_name: selectedPost.user,
+            actor_name: userData.name,
+            actor_avatar: userData.avatar,
+            action: 'commented on',
+            post_title: selectedPost.title,
+            is_read: false
+        }]);
+    }
+
+    if (replyingTo && replyingTo.name !== userData.name) {
+        await supabase.from('notifications').insert([{
+            owner_name: replyingTo.name,
+            actor_name: userData.name,
+            actor_avatar: userData.avatar,
+            action: 'replied to your comment on',
+            post_title: selectedPost.title,
+            is_read: false
+        }]);
+    }
+
     setNewComment(''); setReplyingTo(null); openPostDetails(selectedPost); fetchPosts(); 
   };
 
@@ -387,13 +437,32 @@ export default function Dashboard() {
     try {
       const { error } = await supabase.from('post_reports').insert([{ post_id: postToReport.id, reporter_email: userData.name, reason: reason, status: 'Pending' }]);
       if (error) throw error;
+
+      // 🟢 BAGONG FIX: Mag-se-send ng warning notification sa may-ari ng post na na-report siya
+      if (postToReport.user !== userData.name) {
+          await supabase.from('notifications').insert([{
+              owner_name: postToReport.user,
+              actor_name: 'GreenSort Admin', // Admin ang nakapangalan para anonymous yung nag-report
+              actor_avatar: 'https://cdn-icons-png.flaticon.com/512/1892/1892747.png',
+              action: 'reported',
+              post_title: postToReport.title,
+              is_read: false
+          }]);
+      }
+
       Alert.alert("Report Submitted", `Thank you for reporting this post for: "${reason}". Our admins will review it shortly.`);
-    } catch (error) { Alert.alert("Error", "Could not submit report: " + error.message);
-    } finally { setReportModalVisible(false); setPostToReport(null); setReportStep(0); }
+    } catch (error) { 
+      Alert.alert("Error", "Could not submit report: " + error.message);
+    } finally { 
+      setReportModalVisible(false); 
+      setPostToReport(null); 
+      setReportStep(0); 
+    }
   };
 
   const handleCommentOptions = (comment) => { setSelectedCommentForOptions(comment); setCommentOptionsModalVisible(true); };
   const handleEditCommentAction = () => { setCommentOptionsModalVisible(false); setEditingCommentId(selectedCommentForOptions.id); setNewComment(selectedCommentForOptions.text); setReplyingTo(null); };
+  
   const handleDeleteCommentAction = async () => {
     setCommentOptionsModalVisible(false);
     Alert.alert("Delete Comment", "Are you sure you want to delete this?", [
@@ -401,6 +470,7 @@ export default function Dashboard() {
         { text: "Delete", style: 'destructive', onPress: async () => { await supabase.from('comments').update({ text: '[This comment has been deleted]', is_deleted: true }).eq('id', selectedCommentForOptions.id); openPostDetails(selectedPost); }}
     ]);
   };
+  
   const handleReportCommentAction = () => { setCommentOptionsModalVisible(false); setCommentReportStep(0); setCommentReportModalVisible(true); };
   const submitCommentReport = (reason) => { Alert.alert("Report Submitted", `Thank you for reporting this comment for: "${reason}". Our admins will review it.`); setCommentReportModalVisible(false); setCommentReportStep(0); };
 
@@ -423,25 +493,23 @@ export default function Dashboard() {
     const getReplies = (parentId) => postComments.filter(c => c.parent_id === parentId);
     
     return (
-      <View style={{ flex: 1, backgroundColor: '#007C00' }}>
+      <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
         <StatusBar barStyle="light-content" backgroundColor="#007C00" translucent={true} />
         
-        <KeyboardAvoidingView style={{flex: 1, backgroundColor: '#FFFFFF'}} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-            
-            <View style={[styles.subHeader, { paddingTop: Math.max(insets.top, 20) + 15, paddingBottom: 15, borderBottomLeftRadius: 0, borderBottomRightRadius: 0 }]}>
-                <View style={styles.subHeaderRow}>
-                    <TouchableOpacity onPress={() => {setSelectedPost(null); setReplyingTo(null); setEditingCommentId(null); setNewComment('');}} style={styles.backButton}>
-                        <Ionicons name="arrow-back" size={24} color="white" />
-                    </TouchableOpacity>
-                    <View style={{alignItems: 'center'}}>
-                        <Text style={styles.subHeaderTitle}>Community Post</Text>
-                    </View>
-                    <View style={{ width: 40 }} />
+        <View style={[styles.subHeader, { paddingTop: Math.max(insets.top, 20) + 15, paddingBottom: 15, borderBottomLeftRadius: 0, borderBottomRightRadius: 0, zIndex: 10 }]}>
+            <View style={styles.subHeaderRow}>
+                <TouchableOpacity onPress={() => {setSelectedPost(null); setReplyingTo(null); setEditingCommentId(null); setNewComment(''); router.setParams({ openPostTitle: null });}} style={styles.backButton}>
+                    <Ionicons name="arrow-back" size={24} color="white" />
+                </TouchableOpacity>
+                <View style={{alignItems: 'center'}}>
+                    <Text style={styles.subHeaderTitle}>Community Post</Text>
                 </View>
+                <View style={{ width: 40 }} />
             </View>
+        </View>
 
-            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{paddingBottom: 40}}>
-                
+        <KeyboardAvoidingView style={{flex: 1}} behavior={Platform.OS === "ios" ? "padding" : "height"} keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}>
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{paddingBottom: 20}} keyboardShouldPersistTaps="handled">
                 <View style={{position: 'relative'}}>
                     <Image source={{ uri: selectedPost.image }} style={{width: '100%', height: 350, resizeMode: 'cover', backgroundColor: '#eee'}} />
                     <View style={{position: 'absolute', top: 15, left: 15, backgroundColor: '#007AFF', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, elevation: 3}}>
@@ -450,7 +518,6 @@ export default function Dashboard() {
                 </View>
 
                 <View style={{padding: 20}}>
-                    
                     <View style={{flexDirection: 'row', alignItems: 'center', marginBottom: 20}}>
                         <Image source={{ uri: selectedPost.avatar }} style={{width: 50, height: 50, borderRadius: 25, marginRight: 15, backgroundColor: '#f0f0f0'}} />
                         <View style={{flex: 1}}>
@@ -467,13 +534,25 @@ export default function Dashboard() {
 
                     <Text style={{fontSize: 24, fontWeight: 'bold', color: '#1C1C1E', marginBottom: 15, lineHeight: 32}}>{selectedPost.title}</Text>
 
-                    <View style={{flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center'}}>
-                        <Text style={{fontSize: 32, fontWeight: 'bold', color: '#00A86B'}}>{selectedPost.price}</Text>
-                        <TouchableOpacity onPress={() => handleLike(selectedPost)}>
-                            <Ionicons name={selectedPost.liked_by?.includes(userData.name) ? "heart" : "heart-outline"} size={30} color={selectedPost.liked_by?.includes(userData.name) ? "#FF1744" : "#555"} />
-                        </TouchableOpacity>
+                    <View style={{flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 25}}>
+                        <View>
+                            <Text style={{fontSize: 32, fontWeight: 'bold', color: '#00A86B'}}>{selectedPost.price}</Text>
+                            <Text style={{fontSize: 14, color: '#8E8E93', marginTop: 2}}>{selectedPost.likes || 0} people liked this</Text>
+                        </View>
+
+                        <View style={{flexDirection: 'row', alignItems: 'center', gap: 15}}>
+                            {selectedPost.user !== userData.name && (
+                                <TouchableOpacity style={{backgroundColor: '#007C00', paddingHorizontal: 20, paddingVertical: 12, borderRadius: 25, flexDirection: 'row', alignItems: 'center', elevation: 2}} onPress={() => handleContact(selectedPost)}>
+                                    <Ionicons name="chatbubble-ellipses" size={18} color="white" style={{marginRight: 8}} />
+                                    <Text style={{color: 'white', fontWeight: 'bold', fontSize: 14}}>Contact</Text>
+                                </TouchableOpacity>
+                            )}
+
+                            <TouchableOpacity onPress={() => handleLike(selectedPost)}>
+                                <Ionicons name={selectedPost.liked_by?.includes(userData.name) ? "heart" : "heart-outline"} size={34} color={selectedPost.liked_by?.includes(userData.name) ? "#FF1744" : "#8E8E93"} />
+                            </TouchableOpacity>
+                        </View>
                     </View>
-                    <Text style={{fontSize: 14, color: '#8E8E93', marginTop: 5, marginBottom: 25}}>{selectedPost.likes || 0} people liked this</Text>
 
                     <Text style={{fontSize: 18, fontWeight: 'bold', color: '#1C1C1E', marginBottom: 10}}>Description</Text>
                     <Text style={{fontSize: 15, color: '#3C3C43', lineHeight: 24, marginBottom: 30}}>{selectedPost.desc}</Text>
@@ -492,20 +571,9 @@ export default function Dashboard() {
                             <View style={{flex: 1}}>
                                 <Text style={{fontSize: 13, color: '#8E8E93', marginBottom: 4}}>Location</Text>
                                 <Text style={{fontSize: 16, fontWeight: '600', color: '#1C1C1E', marginBottom: 15}}>{selectedPost.location}</Text>
-                                
                                 {(selectedPost.latitude && selectedPost.longitude) ? (
                                     <View style={{width: '100%', height: 160, borderRadius: 16, overflow: 'hidden', borderWidth: 1, borderColor: '#E5E5EA'}}>
-                                        <MapView
-                                            style={{width: '100%', height: '100%'}}
-                                            initialRegion={{
-                                                latitude: selectedPost.latitude,
-                                                longitude: selectedPost.longitude,
-                                                latitudeDelta: 0.01,
-                                                longitudeDelta: 0.01,
-                                            }}
-                                            scrollEnabled={false}
-                                            zoomEnabled={false}
-                                        >
+                                        <MapView style={{width: '100%', height: '100%'}} initialRegion={{latitude: selectedPost.latitude, longitude: selectedPost.longitude, latitudeDelta: 0.01, longitudeDelta: 0.01}} scrollEnabled={false} zoomEnabled={false}>
                                             <Marker coordinate={{latitude: selectedPost.latitude, longitude: selectedPost.longitude}} />
                                         </MapView>
                                     </View>
@@ -526,7 +594,7 @@ export default function Dashboard() {
                     {mainComments.map((comment) => (
                         <View key={comment.id} style={{marginBottom: 20}}>
                             <View style={{flexDirection: 'row'}}>
-                              <Image source={{ uri: comment.avatar }} style={{width: 40, height: 40, borderRadius: 20, marginRight: 12, backgroundColor: '#f0f0f0', opacity: comment.is_deleted ? 0.5 : 1}} />
+                                <Image source={{ uri: comment.avatar }} style={{width: 40, height: 40, borderRadius: 20, marginRight: 12, backgroundColor: '#f0f0f0', opacity: comment.is_deleted ? 0.5 : 1}} />
                                 <View style={{flex: 1}}>
                                   <View style={{backgroundColor: comment.is_deleted ? '#e0e0e0' : '#F2F2F7', padding: 12, borderRadius: 16, borderTopLeftRadius: 4}}>
                                       <View style={{flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4}}>
@@ -590,47 +658,58 @@ export default function Dashboard() {
                 </View>
             </ScrollView>
             
-            <View style={{backgroundColor: 'white', borderTopWidth: 1, borderTopColor: '#E5E5EA'}}>
+            <View style={{backgroundColor: 'white', borderTopWidth: 1, borderTopColor: '#E5E5EA', paddingBottom: Platform.OS === 'ios' ? 20 : 0}}>
                 {replyingTo ? (<View style={styles.statusBanner}><Text style={{fontSize: 12, color: '#007C00'}}>Replying to <Text style={{fontWeight: 'bold'}}>@{replyingTo.name}</Text></Text><TouchableOpacity onPress={() => setReplyingTo(null)}><MaterialCommunityIcons name="close" size={16} color="#666" /></TouchableOpacity></View>) : null}
                 {editingCommentId ? (<View style={[styles.statusBanner, {backgroundColor: '#FFF3E0'}]}><Text style={{fontSize: 12, color: '#EF6C00'}}>Editing comment...</Text><TouchableOpacity onPress={() => {setEditingCommentId(null); setNewComment('');}}><MaterialCommunityIcons name="close" size={16} color="#666" /></TouchableOpacity></View>) : null}
-                <View style={[styles.footerInput, {borderTopWidth: 0}]}><TextInput placeholder={editingCommentId ? "Edit your comment..." : replyingTo ? "Write a reply..." : "Write a comment..."} style={styles.inputField} value={newComment} onChangeText={setNewComment} /><TouchableOpacity style={styles.sendBtn} onPress={handleAddComment}><Ionicons name={editingCommentId ? "checkmark" : "send"} size={20} color="white" /></TouchableOpacity></View>
+                <View style={[styles.footerInput, {borderTopWidth: 0}]}>
+                    <TextInput 
+                        placeholder={editingCommentId ? "Edit your comment..." : replyingTo ? "Write a reply..." : "Write a comment..."} 
+                        style={styles.inputField} 
+                        value={newComment} 
+                        onChangeText={setNewComment} 
+                        multiline={true}
+                    />
+                    <TouchableOpacity style={styles.sendBtn} onPress={handleAddComment}>
+                        <Ionicons name={editingCommentId ? "checkmark" : "send"} size={20} color="white" />
+                    </TouchableOpacity>
+                </View>
             </View>
-
-            <Modal visible={commentOptionsModalVisible} animationType="slide" transparent={true} onRequestClose={() => setCommentOptionsModalVisible(false)}>
-              <TouchableOpacity style={{flex: 1, backgroundColor: 'transparent', justifyContent: 'flex-end'}} activeOpacity={1} onPress={() => setCommentOptionsModalVisible(false)}>
-                <TouchableOpacity activeOpacity={1} style={styles.darkModalSheet}>
-                  <View style={{width: 40, height: 5, backgroundColor: '#555', borderRadius: 5, alignSelf: 'center', marginTop: 15, marginBottom: 20}} />
-                  <View style={styles.darkMenuContainer}>
-                      {selectedCommentForOptions?.user_name === userData.name ? (
-                          <>
-                              <TouchableOpacity style={styles.darkMenuItem} onPress={handleEditCommentAction}><Ionicons name="pencil" size={22} color="#fff" style={{marginRight: 15}} /><Text style={styles.darkMenuText}>Edit Comment</Text></TouchableOpacity>
-                              <TouchableOpacity style={[styles.darkMenuItem, { borderBottomWidth: 0 }]} onPress={handleDeleteCommentAction}><Ionicons name="trash-outline" size={22} color="#FF3B30" style={{marginRight: 15}} /><Text style={[styles.darkMenuText, { color: '#FF3B30', fontWeight: 'bold' }]}>Delete Comment</Text></TouchableOpacity>
-                          </>
-                      ) : (
-                          <TouchableOpacity style={[styles.darkMenuItem, { borderBottomWidth: 0 }]} onPress={handleReportCommentAction}><Ionicons name="warning-outline" size={22} color="#FF3B30" style={{marginRight: 15}} /><Text style={[styles.darkMenuText, { color: '#FF3B30', fontWeight: 'bold' }]}>Report Comment</Text></TouchableOpacity>
-                      )}
-                  </View>
-                  <TouchableOpacity style={styles.darkCancelBtn} onPress={() => setCommentOptionsModalVisible(false)}><Text style={{color: '#fff', fontWeight: 'bold'}}>Cancel</Text></TouchableOpacity>
-                </TouchableOpacity>
-              </TouchableOpacity>
-            </Modal>
-
-            <Modal visible={commentReportModalVisible} animationType="slide" transparent={true} onRequestClose={() => setCommentReportModalVisible(false)}>
-              <TouchableOpacity style={{flex: 1, backgroundColor: 'transparent', justifyContent: 'flex-end'}} activeOpacity={1} onPress={() => setCommentReportModalVisible(false)}>
-                <TouchableOpacity activeOpacity={1} style={styles.darkModalSheet}>
-                  <View style={{width: 40, height: 5, backgroundColor: '#555', borderRadius: 5, alignSelf: 'center', marginTop: 15, marginBottom: 20}} />
-                  {commentReportStep === 0 ? (
-                    <View style={styles.darkMenuContainer}><TouchableOpacity style={{flexDirection: 'row', alignItems: 'center', padding: 18}} onPress={() => setCommentReportStep(1)}><Ionicons name="warning-outline" size={22} color="#FF3B30" style={{marginRight: 15}} /><Text style={{fontSize: 16, color: '#FF3B30', fontWeight: 'bold'}}>Report this comment</Text></TouchableOpacity></View>
-                  ) : (
-                    <View style={{marginBottom: 15}}><Text style={{fontSize: 18, fontWeight: 'bold', color: '#fff', marginBottom: 15, textAlign: 'center'}}>Why report this comment?</Text>
-                        {reportReasons.map((reason, index) => (<TouchableOpacity key={index} style={styles.darkMenuItem} onPress={() => submitReport(reason)}><Text style={styles.darkMenuText}>{reason}</Text><Ionicons name="chevron-forward" size={20} color="#555" /></TouchableOpacity>))}
-                        <TouchableOpacity style={[styles.darkCancelBtn, {marginTop: 15}]} onPress={() => setCommentReportStep(0)}><Text style={{color: '#fff', fontWeight: 'bold'}}>Back</Text></TouchableOpacity>
-                    </View>
-                  )}
-                </TouchableOpacity>
-              </TouchableOpacity>
-            </Modal>
         </KeyboardAvoidingView>
+
+        <Modal visible={commentOptionsModalVisible} animationType="slide" transparent={true} onRequestClose={() => setCommentOptionsModalVisible(false)}>
+          <TouchableOpacity style={{flex: 1, backgroundColor: 'transparent', justifyContent: 'flex-end'}} activeOpacity={1} onPress={() => setCommentOptionsModalVisible(false)}>
+            <TouchableOpacity activeOpacity={1} style={styles.darkModalSheet}>
+              <View style={{width: 40, height: 5, backgroundColor: '#555', borderRadius: 5, alignSelf: 'center', marginTop: 15, marginBottom: 20}} />
+              <View style={styles.darkMenuContainer}>
+                  {selectedCommentForOptions?.user_name === userData.name ? (
+                      <>
+                          <TouchableOpacity style={styles.darkMenuItem} onPress={handleEditCommentAction}><Ionicons name="pencil" size={22} color="#fff" style={{marginRight: 15}} /><Text style={styles.darkMenuText}>Edit Comment</Text></TouchableOpacity>
+                          <TouchableOpacity style={[styles.darkMenuItem, { borderBottomWidth: 0 }]} onPress={handleDeleteCommentAction}><Ionicons name="trash-outline" size={22} color="#FF3B30" style={{marginRight: 15}} /><Text style={[styles.darkMenuText, { color: '#FF3B30', fontWeight: 'bold' }]}>Delete Comment</Text></TouchableOpacity>
+                      </>
+                  ) : (
+                      <TouchableOpacity style={[styles.darkMenuItem, { borderBottomWidth: 0 }]} onPress={handleReportCommentAction}><Ionicons name="warning-outline" size={22} color="#FF3B30" style={{marginRight: 15}} /><Text style={[styles.darkMenuText, { color: '#FF3B30', fontWeight: 'bold' }]}>Report Comment</Text></TouchableOpacity>
+                  )}
+              </View>
+              <TouchableOpacity style={styles.darkCancelBtn} onPress={() => setCommentOptionsModalVisible(false)}><Text style={{color: '#fff', fontWeight: 'bold'}}>Cancel</Text></TouchableOpacity>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </Modal>
+
+        <Modal visible={commentReportModalVisible} animationType="slide" transparent={true} onRequestClose={() => setCommentReportModalVisible(false)}>
+          <TouchableOpacity style={{flex: 1, backgroundColor: 'transparent', justifyContent: 'flex-end'}} activeOpacity={1} onPress={() => setCommentReportModalVisible(false)}>
+            <TouchableOpacity activeOpacity={1} style={styles.darkModalSheet}>
+              <View style={{width: 40, height: 5, backgroundColor: '#555', borderRadius: 5, alignSelf: 'center', marginTop: 15, marginBottom: 20}} />
+              {commentReportStep === 0 ? (
+                <View style={styles.darkMenuContainer}><TouchableOpacity style={{flexDirection: 'row', alignItems: 'center', padding: 18}} onPress={() => setCommentReportStep(1)}><Ionicons name="warning-outline" size={22} color="#FF3B30" style={{marginRight: 15}} /><Text style={{fontSize: 16, color: '#FF3B30', fontWeight: 'bold'}}>Report this comment</Text></TouchableOpacity></View>
+              ) : (
+                <View style={{marginBottom: 15}}><Text style={{fontSize: 18, fontWeight: 'bold', color: '#fff', marginBottom: 15, textAlign: 'center'}}>Why report this comment?</Text>
+                    {reportReasons.map((reason, index) => (<TouchableOpacity key={index} style={styles.darkMenuItem} onPress={() => submitCommentReport(reason)}><Text style={styles.darkMenuText}>{reason}</Text><Ionicons name="chevron-forward" size={20} color="#555" /></TouchableOpacity>))}
+                    <TouchableOpacity style={[styles.darkCancelBtn, {marginTop: 15}]} onPress={() => setCommentReportStep(0)}><Text style={{color: '#fff', fontWeight: 'bold'}}>Back</Text></TouchableOpacity>
+                </View>
+              )}
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </Modal>
       </View>
     );
   }
@@ -671,17 +750,10 @@ export default function Dashboard() {
               <View style={styles.mapBox}>
                   <MapView
                       style={styles.map}
-                      initialRegion={{
-                          latitude: 14.3262,
-                          longitude: 120.9386,
-                          latitudeDelta: 0.05,
-                          longitudeDelta: 0.05,
-                      }}
+                      initialRegion={{ latitude: 14.3262, longitude: 120.9386, latitudeDelta: 0.05, longitudeDelta: 0.05 }}
                       onPress={handleMapPress}
                   >
-                      {(form.latitude && form.longitude) ? (
-                          <Marker coordinate={{latitude: form.latitude, longitude: form.longitude}} title={form.location || "Meet-up Spot"} />
-                      ) : null}
+                      {(form.latitude && form.longitude) ? (<Marker coordinate={{latitude: form.latitude, longitude: form.longitude}} title={form.location || "Meet-up Spot"} />) : null}
                   </MapView>
               </View>
 
@@ -754,13 +826,7 @@ export default function Dashboard() {
         
         <View style={styles.searchContainer}>
             <Ionicons name="search" size={20} color="#3f3e3e" style={{marginLeft: 10}} />
-            <TextInput 
-                style={styles.searchInput} 
-                placeholder="Search posts..." 
-                placeholderTextColor="#999" 
-                value={searchQuery} 
-                onChangeText={setSearchQuery} 
-            />
+            <TextInput style={styles.searchInput} placeholder="Search posts..." placeholderTextColor="#999" value={searchQuery} onChangeText={setSearchQuery} />
         </View>
 
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{marginBottom: 15}}>{['All', 'For Sale', 'Trade', 'Free'].map((filter) => (<TouchableOpacity key={filter} style={[styles.filterPill, activeFilter === filter && styles.activePill]} onPress={() => setActiveFilter(filter)}><Text style={[styles.filterText, activeFilter === filter && styles.activeFilterText]}>{filter}</Text></TouchableOpacity>))}</ScrollView>
@@ -865,10 +931,45 @@ export default function Dashboard() {
         <TouchableOpacity style={{flex: 1, backgroundColor: 'transparent', justifyContent: 'flex-end'}} activeOpacity={1} onPress={() => setReportModalVisible(false)}>
           <TouchableOpacity activeOpacity={1} style={styles.darkModalSheet}>
             <View style={{width: 40, height: 5, backgroundColor: '#555', borderRadius: 5, alignSelf: 'center', marginTop: 15, marginBottom: 20}} />
-            {reportStep === 0 ? (
-              <View style={styles.darkMenuContainer}><TouchableOpacity style={{flexDirection: 'row', alignItems: 'center', padding: 18}} onPress={() => setReportStep(1)}><Ionicons name="warning-outline" size={22} color="#FF3B30" style={{marginRight: 15}} /><Text style={{fontSize: 16, color: '#FF3B30', fontWeight: 'bold'}}>Report</Text></TouchableOpacity></View>
-            ) : (
-              <View style={{marginBottom: 15}}><Text style={{fontSize: 18, fontWeight: 'bold', color: '#fff', marginBottom: 15, textAlign: 'center'}}>Why report this post?</Text>{reportReasons.map((reason, index) => (<TouchableOpacity key={index} style={styles.darkMenuItem} onPress={() => submitReport(reason)}><Text style={styles.darkMenuText}>{reason}</Text><Ionicons name="chevron-forward" size={20} color="#555" /></TouchableOpacity>))}<TouchableOpacity style={[styles.darkCancelBtn, {marginTop: 15}]} onPress={() => setReportStep(0)}><Text style={{color: '#fff', fontWeight: 'bold'}}>Back</Text></TouchableOpacity></View>
+            
+            {reportStep === 0 && (
+              <View style={styles.darkMenuContainer}>
+                <TouchableOpacity style={{flexDirection: 'row', alignItems: 'center', padding: 18}} onPress={() => setReportStep(1)}>
+                  <Ionicons name="warning-outline" size={22} color="#FF3B30" style={{marginRight: 15}} />
+                  <Text style={{fontSize: 16, color: '#FF3B30', fontWeight: 'bold'}}>Report this post</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+            
+            {reportStep === 1 && (
+              <View style={{marginBottom: 15}}>
+                <Text style={{fontSize: 18, fontWeight: 'bold', color: '#fff', marginBottom: 15, textAlign: 'center'}}>Why report this post?</Text>
+                {reportReasons.map((item, index) => (
+                  <TouchableOpacity key={index} style={styles.darkMenuItem} onPress={() => { setSelectedReportReason(item); setReportStep(2); }}>
+                    <Text style={styles.darkMenuText}>{item.title}</Text>
+                    <Ionicons name="chevron-forward" size={20} color="#555" />
+                  </TouchableOpacity>
+                ))}
+                <TouchableOpacity style={[styles.darkCancelBtn, {marginTop: 15}]} onPress={() => setReportStep(0)}>
+                  <Text style={{color: '#fff', fontWeight: 'bold'}}>Back</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {reportStep === 2 && selectedReportReason && (
+              <View style={{marginBottom: 15}}>
+                <Text style={{fontSize: 18, fontWeight: 'bold', color: '#fff', marginBottom: 15, textAlign: 'center'}}>Confirm Report</Text>
+                <View style={{backgroundColor: '#2C2C2E', padding: 20, borderRadius: 15, marginBottom: 20}}>
+                    <Text style={{color: '#fff', fontSize: 16, fontWeight: 'bold', marginBottom: 8}}>{selectedReportReason.title}</Text>
+                    <Text style={{color: '#aaa', fontSize: 14, lineHeight: 22}}>{selectedReportReason.desc}</Text>
+                </View>
+                <TouchableOpacity style={{backgroundColor: '#FF3B30', padding: 18, borderRadius: 15, alignItems: 'center'}} onPress={() => submitReport(selectedReportReason.title)}>
+                  <Text style={{color: 'white', fontWeight: 'bold', fontSize: 16}}>Submit Report</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.darkCancelBtn, {marginTop: 10}]} onPress={() => setReportStep(1)}>
+                  <Text style={{color: '#fff', fontWeight: 'bold'}}>Back</Text>
+                </TouchableOpacity>
+              </View>
             )}
           </TouchableOpacity>
         </TouchableOpacity>

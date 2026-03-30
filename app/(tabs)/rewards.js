@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, ActivityIndicator, Alert, KeyboardAvoidingView, Platform, TouchableWithoutFeedback, Keyboard, StatusBar } from 'react-native';
 import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
-// 🟢 UPDATED: Idinagdag ang useLocalSearchParams para makuha ang ipinasa ng Scanner
 import { useRouter, useLocalSearchParams } from 'expo-router'; 
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase'; 
-import * as Location from 'expo-location'; 
+import * as Location from 'expo-location';
+import MapView, { Marker } from 'react-native-maps';
 
 const getSafeShadow = () => Platform.select({ 
     ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4 }, 
@@ -16,34 +16,54 @@ const OPENAI_API_KEY = process.env.EXPO_PUBLIC_OPENAI_API_KEY;
 
 export default function Rewards() {
   const router = useRouter();
-  const params = useLocalSearchParams(); // 🟢 Kukunin nito yung data galing sa Scan page
+  const params = useLocalSearchParams();
   const insets = useSafeAreaInsets();
   
-  // 🟢 UPDATED: Automatic na ilalagay yung na-scan, default quantity to 1
   const [wasteType, setWasteType] = useState(params.wasteType || params.itemName || params.scannedWaste || '');
-  const [quantity, setQuantity] = useState('1'); 
+  const [quantity, setQuantity] = useState('1');
   const [isClean, setIsClean] = useState(false);
   
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState([]); 
   
-  const [aiResultText, setAiResultText] = useState(''); 
+  const [aiResultText, setAiResultText] = useState('');
   const [isAiLoading, setIsAiLoading] = useState(false);
-
   const [hasSearched, setHasSearched] = useState(false);
 
-  // 🟢 AUTO-SEARCH: Pagkabukas ng page, kung may wasteType, mag-sesearch agad!
+  // 🟢 UPDATED FIX 1: Auto-update ang input field kapag may pinasa galing Scan page
   useEffect(() => {
-      if (wasteType) {
-          handleSearch();
+      if (params.wasteType || params.itemName || params.scannedWaste) {
+          setWasteType(params.wasteType || params.itemName || params.scannedWaste || '');
       }
-  }, []);
+  }, [params.wasteType, params.itemName, params.scannedWaste]);
+
+  const handleToggleClean = () => {
+      const newValue = !isClean;
+      setIsClean(newValue);
+      if (!newValue) {
+          setHasSearched(false);
+          setResults([]);
+          setAiResultText('');
+      }
+  };
 
   const handleSearch = async () => {
+    if (!isClean) {
+        return Alert.alert("Wait!", "Please confirm that your waste is clean and dry before searching.");
+    }
+
     const finalWaste = wasteType.trim();
 
     if (!finalWaste) {
         Alert.alert("Missing Info", "Please enter a waste type to search.");
+        return;
+    }
+
+    // 🟢 UPDATED FIX 2: Hard stopper para hindi na mag-AI search kapag "No Detectable Waste Item"
+    if (finalWaste.toLowerCase().includes("no detectable waste") || finalWaste.toLowerCase() === "none") {
+        setHasSearched(true);
+        setResults([]);
+        setAiResultText("Please enter a valid waste item or recyclable material so I can find the right drop-off centers for you.");
         return;
     }
     
@@ -53,15 +73,13 @@ export default function Rewards() {
     Keyboard.dismiss();
 
     try {
-        // ==========================================
-        // 1. HANAPIN ANG REGISTERED USERS SA SUPABASE
-        // ==========================================
         const { data: { user } } = await supabase.auth.getUser();
+
         const { data: rewardsData, error: rewardsError } = await supabase
             .from('rewards_inventory')
             .select('*')
             .eq('is_available', true)
-            .ilike('condition', `%${finalWaste}%`); 
+            .ilike('condition', `%${finalWaste}%`);
 
         if (rewardsError) throw rewardsError;
 
@@ -71,12 +89,12 @@ export default function Rewards() {
             .eq('resident_email', user?.email);
 
         const computedResults = [];
-        const inputQty = parseFloat(quantity) || 1; // 🟢 Default sa 1 kung blangko
+        const inputQty = parseFloat(quantity) || 1;
 
         for (const reward of rewardsData) {
             const { data: centerData } = await supabase
                 .from('dropoff_applications')
-                .select('program_name, exact_location, barangay, city, operating_days, operating_hours, contact_number')
+                .select('*') 
                 .eq('user_email', reward.user_email)
                 .single();
 
@@ -115,15 +133,14 @@ export default function Rewards() {
                     computedIncentive: incentiveText,
                     imageUrl: reward.image_url,
                     isClaimed: isAlreadyClaimed,
-                    searchedWasteType: finalWaste 
+                    searchedWasteType: finalWaste,
+                    latitude: centerData.latitude,
+                    longitude: centerData.longitude
                 });
             }
         }
         setResults(computedResults);
 
-        // ==========================================
-        // 2. KUNIN ANG LOCATION NG USER PARA KAY AI
-        // ==========================================
         setIsAiLoading(true);
         let userLocation = "Cavite or Metro Manila"; 
 
@@ -135,7 +152,6 @@ export default function Rewards() {
                     latitude: location.coords.latitude,
                     longitude: location.coords.longitude
                 });
-                
                 if (geocode.length > 0) {
                     const address = geocode[0];
                     userLocation = [address.city || address.subregion, address.region].filter(Boolean).join(', ');
@@ -145,13 +161,14 @@ export default function Rewards() {
             console.log("Error getting location:", locError);
         }
 
-        // ==========================================
-        // 3. TAWAGIN SI AI PARA SA EXTERNAL LOCATIONS
-        // ==========================================
-        const aiPrompt = `The user wants to recycle or dispose of "${finalWaste}". 
+        // 🟢 UPDATED FIX 3: Mas mahigpit na AI Prompt
+        const aiPrompt = `The user wants to recycle or dispose of the following item: "${finalWaste}".
         They are currently located in or near: ${userLocation}, Philippines.
         
-        Provide a list of EXACT STORE NAMES, NGOs, OR SPECIFIC BUSINESSES near their location that accept this type of waste. 
+        CRITICAL RULE 1: First, determine if "${finalWaste}" is an actual physical waste item, recyclable material, or e-waste. 
+        If it is NOT a valid waste item (e.g., a person, an abstract concept, random letters, or gibberish), DO NOT provide locations. Instead, reply EXACTLY with this sentence and nothing else: "Please enter a valid waste item or recyclable material so I can find the right drop-off centers for you."
+
+        CRITICAL RULE 2: If it IS a valid waste item, provide a list of EXACT STORE NAMES, NGOs, OR SPECIFIC BUSINESSES near their location that accept this type of waste.
         DO NOT give generic answers like "local junk shops". Give real organization names (e.g., "SM Cares Trash to Cash", "The Plastic Flamingo", "IKEA Pasay", etc.).
         
         Format the response exactly like this:
@@ -161,8 +178,9 @@ export default function Rewards() {
         - [Specific Store/NGO Name 3] - [Short description of what they accept]
 
         Tip: [Add a short, helpful tip about preparing this specific waste.]
-        
-        Keep it brief and conversational. Do NOT use markdown asterisks (**) for bolding.`;
+         
+        Keep it brief and conversational.
+        Do NOT use markdown asterisks (**) for bolding.`;
 
         try {
             const aiRes = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -176,7 +194,6 @@ export default function Rewards() {
                 })
             });
             const aiData = await aiRes.json();
-            
             if (aiData.choices && aiData.choices.length > 0) {
                 setAiResultText(aiData.choices[0].message.content);
             }
@@ -219,8 +236,6 @@ export default function Rewards() {
                         <Text style={styles.cardTitle}>Search Locations</Text>
                         
                         <Text style={styles.label}>Waste Type</Text>
-                        
-                        {/* 🟢 UPDATED: Simpleng TextInput na lang imbes na Dropdown */}
                         <TextInput 
                             style={styles.input} 
                             placeholder="Type waste type (e.g. Computer Mouse, Plastic)" 
@@ -231,7 +246,7 @@ export default function Rewards() {
                         <Text style={styles.label}>Quantity (kg or pcs)</Text>
                         <TextInput style={styles.input} placeholder="1" keyboardType="numeric" value={quantity} onChangeText={setQuantity} />
 
-                        <TouchableOpacity style={[styles.checkboxContainer, isClean && styles.checkboxActive]} onPress={() => setIsClean(!isClean)} activeOpacity={0.8}>
+                        <TouchableOpacity style={[styles.checkboxContainer, isClean && styles.checkboxActive]} onPress={handleToggleClean} activeOpacity={0.8}>
                             <View style={[styles.checkbox, isClean && {backgroundColor: '#007C00', borderColor: '#007C00'}]}>
                                 {isClean && <Ionicons name="checkmark" size={14} color="white" />}
                             </View>
@@ -241,19 +256,52 @@ export default function Rewards() {
                             </View>
                         </TouchableOpacity>
 
-                        <TouchableOpacity style={styles.searchBtn} onPress={handleSearch} disabled={loading}>
+                        {!isClean && (
+                            <Text style={{color: '#FF3B30', fontSize: 12, textAlign: 'center', marginBottom: 10, fontWeight: '600'}}>
+                                * You must confirm your waste is clean to search.
+                            </Text>
+                        )}
+
+                        <TouchableOpacity 
+                            style={[styles.searchBtn, { backgroundColor: isClean ? '#007C00' : '#ccc' }]} 
+                            onPress={handleSearch} 
+                            disabled={loading || !isClean}
+                        >
                             {loading ? <ActivityIndicator color="white" /> : <><Ionicons name="search" size={18} color="white" style={{marginRight: 8}} /><Text style={styles.searchBtnText}>Search Centers</Text></>}
                         </TouchableOpacity>
                     </View>
 
                     {hasSearched && <Text style={[styles.sectionHeader, {color: '#007C00'}]}>AVAILABLE DROP OFF LOCATIONS</Text>}
+                
                     {hasSearched && results.length === 0 && !loading && <Text style={styles.noResults}>No registered app centers found for this waste.</Text>}
 
                     {results.map((loc) => (
                         <TouchableOpacity key={loc.id} style={styles.resultCard} onPress={() => router.push({ pathname: '/location-details', params: { data: JSON.stringify(loc) } })}>
                             {loc.isClaimed && <View style={styles.claimedBadge}><Text style={styles.claimedText}>ALREADY CLAIMED</Text></View>}
+                            
                             <Text style={styles.locName}>{loc.name}</Text>
                             <View style={styles.tagContainer}><Text style={styles.tagText}>{loc.type}</Text></View>
+                            
+                            {(loc.latitude && loc.longitude) ? (
+                                <View style={styles.mapContainer}>
+                                    <MapView
+                                        style={styles.map}
+                                        initialRegion={{
+                                            latitude: loc.latitude,
+                                            longitude: loc.longitude,
+                                            latitudeDelta: 0.005, 
+                                            longitudeDelta: 0.005,
+                                        }}
+                                        scrollEnabled={false} 
+                                        zoomEnabled={false}
+                                        pitchEnabled={false}
+                                        rotateEnabled={false}
+                                    >
+                                        <Marker coordinate={{ latitude: loc.latitude, longitude: loc.longitude }} />
+                                    </MapView>
+                                </View>
+                            ) : null}
+
                             <View style={styles.detailRow}><Ionicons name="location-outline" size={16} color="#666" style={{marginRight: 6}} /><Text style={styles.detailText}>{loc.address}</Text></View>
                             <View style={styles.materialsRow}>{loc.accepted.map((item, index) => (<View key={index} style={styles.materialTag}><Text style={styles.materialText}>{item}</Text></View>))}</View>
                             <View style={styles.incentiveBox}>
@@ -318,7 +366,8 @@ const styles = StyleSheet.create({
   resultCard: { backgroundColor: 'white', borderRadius: 15, padding: 18, marginBottom: 15, ...getSafeShadow() },
   locName: { fontSize: 17, fontWeight: 'bold', color: '#333' },
   tagContainer: { backgroundColor: '#F5F5F5', alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 4, marginTop: 4, marginBottom: 12 },
-  tagText: { fontSize: 10, color: '#666', fontWeight: '600' },
+  mapContainer: { width: '100%', height: 130, borderRadius: 12, overflow: 'hidden', marginBottom: 12, borderWidth: 1, borderColor: '#E5E5EA' },
+  map: { width: '100%', height: '100%' },
   detailRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
   detailText: { fontSize: 13, color: '#555' },
   materialsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 10, marginBottom: 15 },
