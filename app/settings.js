@@ -150,7 +150,7 @@ export default function Settings() {
 
         <TouchableOpacity style={styles.menuItem} onPress={() => router.push('/history')}>
             <View style={[styles.menuIcon, { backgroundColor: '#FFF3E0' }]}><MaterialCommunityIcons name="history" size={20} color="#FF9800" /></View>
-            <Text style={styles.menuText}>Activity History</Text>
+            <Text style={styles.menuText}>Surrender History</Text>
             <Ionicons name="chevron-forward" size={20} color="#ccc" />
         </TouchableOpacity>
 

@@ -8,6 +8,7 @@ import { supabase } from '../../lib/supabase';
 import { LinearGradient } from 'expo-linear-gradient';
 import MapView, { Marker } from 'react-native-maps';
 import * as Location from 'expo-location';
+import BankedKgModal from '../BankedKgModal';
 
 export default function Dashboard() {
   const router = useRouter();
@@ -60,7 +61,6 @@ export default function Dashboard() {
     { title: "Harassment or bullying", desc: "Targeting, insulting, or threatening other members of the community." }
   ];
 
-  // 🟢 REAL-TIME LISTENER PARA SA MESSAGES AT NOTIFICATIONS (Para auto-update ang red dot badge)
   useEffect(() => { 
     const msgChannel = supabase.channel('dashboard-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, () => { fetchUserSessionAndData(); })
@@ -90,24 +90,48 @@ export default function Dashboard() {
           const { data: logs, error } = await supabase.from('surrender_logs').select('*').eq('resident_email', userEmail);
           if (logs && !error) {
               totalSubmissions = logs.length;
+              
               logs.forEach(log => {
                   const weight = Number(log.weight_kg) || 0;
-                  totalKg += weight;
-                  if (log.reward_claimed === 'Banked') {
+                  const claimStatus = log.reward_claimed ? log.reward_claimed.trim() : '';
+                  const cEmail = log.collector_email;
+                  const wType = log.waste_type ? log.waste_type.trim() : 'Others';
+
+                  if (claimStatus === 'Banked') {
                       bankedKg += weight;
-                      const cEmail = log.collector_email;
-                      const wType = log.waste_type || 'Others';
+                      totalKg += weight; 
+                      
                       if (!bankedGroup[cEmail]) bankedGroup[cEmail] = {};
                       if (!bankedGroup[cEmail][wType]) bankedGroup[cEmail][wType] = 0;
                       bankedGroup[cEmail][wType] += weight;
+                  } 
+                  // 🟢 FIX APPLIED HERE: startsWith para ma-detect kahit may karugtong na specific item
+                  else if (claimStatus.startsWith('Banked Redemption')) {
+                      bankedKg -= weight;
+                      if (bankedGroup[cEmail] && bankedGroup[cEmail][wType]) {
+                          bankedGroup[cEmail][wType] -= weight;
+                      }
+                  } 
+                  else {
+                      totalKg += weight; 
                   }
               });
+
               const finalBankedList = [];
               for (const email of Object.keys(bankedGroup)) {
-                  const { data: center } = await supabase.from('dropoff_applications').select('program_name, barangay').eq('user_email', email).single();
-                  const locName = center ? (center.program_name || `Brgy. ${center.barangay}`) : 'GreenSort Center';
-                  const materialsArr = Object.keys(bankedGroup[email]).map(type => ({ type: type, kg: bankedGroup[email][type] }));
-                  finalBankedList.push({ email: email, location: locName, materials: materialsArr });
+                  const materialsArr = [];
+                  for (const type of Object.keys(bankedGroup[email])) {
+                      // 🟢 Para hindi magpakita sa modal kung exhausted na ang points
+                      if (bankedGroup[email][type] > 0.01) { 
+                          materialsArr.push({ type: type, kg: bankedGroup[email][type] });
+                      }
+                  }
+                  
+                  if (materialsArr.length > 0) {
+                      const { data: center } = await supabase.from('dropoff_applications').select('program_name, barangay').eq('user_email', email).single();
+                      const locName = center ? (center.program_name || `Brgy. ${center.barangay}`) : 'GreenSort Center';
+                      finalBankedList.push({ email: email, location: locName, materials: materialsArr });
+                  }
               }
               setBankedDetails(finalBankedList);
           }
@@ -118,7 +142,8 @@ export default function Dashboard() {
         kgRecycled: totalKg.toFixed(1),
         submissions: totalSubmissions, 
         upcycleProjects: 0, 
-        bankedPoints: bankedKg.toFixed(1), 
+        // 🟢 FIX APPLIED HERE: Math.max para iwas negative number sa UI
+        bankedPoints: Math.max(0, bankedKg).toFixed(1), 
         avatar: session.user.user_metadata?.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(fullName)}&background=00C853&color=fff&bold=true`
       });
 
@@ -148,7 +173,6 @@ export default function Dashboard() {
             const targetPost = activePosts.find(p => p.title === params.openPostTitle);
             if (targetPost) {
                 openPostDetails(targetPost);
-                // 🟢 AUTO-CLEAR PARAMETER PARA HINDI UMULIT PAG NAG-REFRESH
                 router.setParams({ openPostTitle: '' });
             }
         }
@@ -438,11 +462,10 @@ export default function Dashboard() {
       const { error } = await supabase.from('post_reports').insert([{ post_id: postToReport.id, reporter_email: userData.name, reason: reason, status: 'Pending' }]);
       if (error) throw error;
 
-      // 🟢 BAGONG FIX: Mag-se-send ng warning notification sa may-ari ng post na na-report siya
       if (postToReport.user !== userData.name) {
           await supabase.from('notifications').insert([{
               owner_name: postToReport.user,
-              actor_name: 'GreenSort Admin', // Admin ang nakapangalan para anonymous yung nag-report
+              actor_name: 'GreenSort Admin', 
               actor_avatar: 'https://cdn-icons-png.flaticon.com/512/1892/1892747.png',
               action: 'reported',
               post_title: postToReport.title,
@@ -884,34 +907,12 @@ export default function Dashboard() {
         <View style={{height: 100}} /> 
       </ScrollView>
 
-      <Modal visible={isBankedModalVisible} animationType="slide" transparent={true} onRequestClose={() => setBankedModalVisible(false)}>
-        <View style={styles.modalOverlayDark}>
-          <View style={styles.bankedModalCard}>
-            <View style={styles.bankedModalHeader}><MaterialCommunityIcons name="safe" size={28} color="#FFD54F" /><View style={{flex: 1, marginLeft: 10}}><Text style={styles.bankedModalTitle}>My Banked KG</Text></View><TouchableOpacity onPress={() => setBankedModalVisible(false)}><Ionicons name="close-circle" size={28} color="#fff" /></TouchableOpacity></View>
-            <ScrollView style={styles.bankedModalContent} showsVerticalScrollIndicator={false}>
-               <Text style={styles.bankedModalDesc}>Select an item to generate a QR Code and redeem your banked KG!</Text>
-               {bankedDetails.length === 0 ? (
-                  <View style={{alignItems: 'center', marginTop: 30}}><MaterialCommunityIcons name="leaf-off" size={50} color="#ddd" /><Text style={{textAlign: 'center', color: '#999', marginTop: 10}}>You don't have any banked items yet.</Text></View>
-               ) : (
-                  bankedDetails.map((center, index) => (
-                     <View key={index} style={styles.bankedCenterCard}>
-                        <View style={styles.bankedCenterHeader}><MaterialCommunityIcons name="store" size={18} color="#007C00" /><Text style={styles.bankedCenterName}>{center.location}</Text></View>
-                        <View style={styles.bankedMaterialsList}>
-                           {center.materials.map((mat, i) => (
-                               <TouchableOpacity key={i} style={styles.bankedMaterialRow} activeOpacity={0.7} onPress={() => { setBankedModalVisible(false); router.push({ pathname: '/qr-generator', params: { isBankedRedemption: 'true', collectorEmail: center.email, materialType: mat.type, bankedKg: mat.kg, rewardName: 'Redeem Banked Points' } }); }}>
-                                   <Text style={styles.bankedMaterialType}>{mat.type}</Text>
-                                   <View style={{flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#E8F5E9', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8}}><Text style={styles.bankedMaterialKg}>{mat.kg.toFixed(1)} kg</Text><MaterialCommunityIcons name="qrcode-scan" size={14} color="#007C00" /></View>
-                               </TouchableOpacity>
-                           ))}
-                        </View>
-                     </View>
-                  ))
-               )}
-               <View style={{height: 20}}/>
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
+      {/* 🟢 EXTERNAL MODAL IMPORTED */}
+      <BankedKgModal 
+        visible={isBankedModalVisible} 
+        onClose={() => setBankedModalVisible(false)} 
+        bankedDetails={bankedDetails} 
+      />
 
       <Modal visible={optionsModalVisible} animationType="slide" transparent={true} onRequestClose={() => setOptionsModalVisible(false)}>
         <TouchableOpacity style={{flex: 1, backgroundColor: 'transparent', justifyContent: 'flex-end'}} activeOpacity={1} onPress={() => setOptionsModalVisible(false)}>
@@ -997,6 +998,5 @@ const styles = StyleSheet.create({
   postCard: { backgroundColor: 'white', borderRadius: 16, padding: 15, marginBottom: 15, elevation: 2 }, myPostCardBorder: { backgroundColor: '#F1F8E9', borderWidth: 1, borderColor: '#C8E6C9' }, meBadge: { backgroundColor: '#007C00', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }, meBadgeText: { color: 'white', fontSize: 8, fontWeight: 'bold' },
   postHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 }, postAvatar: { width: 40, height: 40, borderRadius: 20 }, postUser: { fontWeight: 'bold', fontSize: 14, color: '#333' }, postTime: { fontSize: 11, color: '#999' }, typeBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10 }, postTitle: { fontSize: 16, fontWeight: 'bold', color: '#333', marginBottom: 5 }, postDesc: { fontSize: 13, color: '#666', marginBottom: 10 }, postImage: { width: '100%', aspectRatio: 16 / 9, borderRadius: 12, marginBottom: 15, resizeMode: 'cover', backgroundColor: '#f0f0f0' }, postFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, iconRow: { flexDirection: 'row', alignItems: 'center', gap: 5, padding: 5 }, iconText: { fontSize: 14, color: '#666' }, postPrice: { fontSize: 16, fontWeight: 'bold', color: '#007C00' }, contactBtn: { backgroundColor: '#007C00', paddingHorizontal: 15, paddingVertical: 8, borderRadius: 8 }, contactText: { color: 'white', fontWeight: 'bold', fontSize: 12 }, footerInput: { padding: 15, backgroundColor: 'white', borderTopWidth: 1, borderTopColor: '#eee', flexDirection: 'row', alignItems: 'flex-end', gap: 10 }, statusBanner: { backgroundColor: '#E8F5E9', padding: 8, paddingHorizontal: 15, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, inputField: { flex: 1, backgroundColor: '#F5F5F5', borderRadius: 20, paddingHorizontal: 15, paddingVertical: 10, maxHeight: 100 }, sendBtn: { width: 40, height: 40, backgroundColor: '#007C00', borderRadius: 20, justifyContent: 'center', alignItems: 'center', marginBottom: 2 }, createContent: { padding: 20 }, label: { fontSize: 14, fontWeight: '700', color: '#333', marginBottom: 4, marginTop: 15 }, input: { backgroundColor: '#F5F7FA', borderRadius: 10, padding: 15, borderWidth: 1, borderColor: '#F0F0F0' }, inputIconWrap: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F5F7FA', borderRadius: 10, paddingHorizontal: 15, paddingVertical: 12, borderWidth: 1, borderColor: '#F0F0F0' }, typeRow: { flexDirection: 'row', gap: 10 }, typeBtn: { flex: 1, paddingVertical: 15, borderRadius: 12, borderWidth: 1, alignItems: 'center', borderColor: '#E0E0E0' }, typeBtnActive: { borderColor: '#007C00', backgroundColor: '#E8F5E9' }, typeBtnText: { fontSize: 12, fontWeight: '600', color: '#666' }, imageUploadBox: { width: '100%', aspectRatio: 16 / 9, borderWidth: 1, borderColor: '#ddd', borderStyle: 'dashed', borderRadius: 12, justifyContent: 'center', alignItems: 'center', backgroundColor: '#FAFAFA', marginTop: 15 }, submitBtn: { padding: 15, borderRadius: 12, backgroundColor: '#007C00', alignItems: 'center', marginTop: 30 },
   darkModalSheet: { backgroundColor: '#1C1C1E', borderTopLeftRadius: 25, borderTopRightRadius: 25, paddingHorizontal: 20, paddingBottom: 35, shadowColor: '#000', shadowOffset: { width: 0, height: -2 }, shadowOpacity: 0.2, shadowRadius: 10, elevation: 15 }, darkMenuContainer: { backgroundColor: '#2C2C2E', borderRadius: 15, overflow: 'hidden', marginBottom: 15 }, darkMenuItem: { flexDirection: 'row', alignItems: 'center', padding: 18, borderBottomWidth: 1, borderBottomColor: '#3A3A3C' }, darkMenuText: { fontSize: 16, color: '#fff' }, darkCancelBtn: { padding: 18, backgroundColor: '#2C2C2E', borderRadius: 15, alignItems: 'center' },
-  modalOverlayDark: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 20 }, bankedModalCard: { width: '100%', maxHeight: '80%', backgroundColor: '#F4F6F8', borderRadius: 20, overflow: 'hidden', elevation: 10 }, bankedModalHeader: { backgroundColor: '#007C00', padding: 20, flexDirection: 'row', alignItems: 'center' }, bankedModalTitle: { color: 'white', fontSize: 18, fontWeight: 'bold' }, bankedModalContent: { padding: 20 }, bankedModalDesc: { fontSize: 13, color: '#666', marginBottom: 20, lineHeight: 18 }, bankedCenterCard: { backgroundColor: 'white', borderRadius: 12, padding: 15, marginBottom: 15, elevation: 2 }, bankedCenterHeader: { flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: '#eee', paddingBottom: 10, marginBottom: 10 }, bankedCenterName: { fontWeight: 'bold', color: '#333', fontSize: 14, marginLeft: 8 }, bankedMaterialsList: { paddingHorizontal: 5 }, bankedMaterialRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 0.5, borderBottomColor: '#f0f0f0' }, bankedMaterialType: { color: '#333', fontSize: 14, fontWeight: '600' }, bankedMaterialKg: { fontWeight: 'bold', color: '#007C00', fontSize: 14 },
   mapBox: { width: '100%', height: 200, borderRadius: 12, overflow: 'hidden', marginTop: 10, borderWidth: 1, borderColor: '#ddd' }, map: { width: '100%', height: '100%' }
 });

@@ -5,7 +5,7 @@ import { ActivityIndicator, Alert, BackHandler, FlatList, Image, Platform, Scrol
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
 
-const CATEGORIES = ['All', 'Plastics', 'Glass', 'Paper', 'Metals', 'Others'];
+const CATEGORIES = ['All', 'Plastics', 'Glass', 'Paper', 'Metals', 'Others', 'My OWN Guides'];
 
 const getSafeShadow = () => Platform.select({ 
     ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4 }, 
@@ -24,49 +24,48 @@ export default function ProjectsPage() {
   const [isGenerating, setIsGenerating] = useState(false); 
   const [isLoadingProjects, setIsLoadingProjects] = useState(true);
 
-  // 🟢 LOAD PROJECTS FROM SUPABASE
-  useEffect(() => {
-    const loadSavedProjects = async () => {
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) return;
+  const loadSavedProjects = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
 
-        const { data, error } = await supabase
-            .from('saved_projects')
-            .select('*')
-            .eq('user_email', user.email)
-            .order('created_at', { ascending: false });
+      const { data, error } = await supabase
+          .from('saved_projects')
+          .select('*')
+          .eq('user_email', user.email)
+          .order('created_at', { ascending: false });
 
-        if (error) throw error;
-        
-        if (data) {
-            const formattedData = data.map(item => ({
-                id: item.id,
-                title: item.title,
-                materialCategory: item.material_category,
-                difficulty: item.difficulty,
-                time: item.time_required,
-                cost: item.estimated_cost,
-                materials: item.materials,
-                steps: item.steps,
-                sellingPrice: item.selling_price,
-                image: item.image_url,
-                youtubeLink: item.youtube_link,
-                isDone: item.is_done || false 
-            }));
-            setProjects(formattedData);
-        }
-      } catch (error) {
-        console.error("Error loading projects:", error);
-      } finally {
-        setIsLoadingProjects(false);
+      if (error) throw error;
+      
+      if (data) {
+          const formattedData = data.map(item => ({
+              id: item.id,
+              title: item.title,
+              materialCategory: item.material_category,
+              difficulty: item.difficulty,
+              time: item.time_required,
+              cost: item.estimated_cost,
+              materials: item.materials || [],
+              steps: item.steps || [],
+              sellingPrice: item.selling_price,
+              image: item.image_url,
+              youtubeLink: item.youtube_link,
+              isDone: item.is_done || false,
+              isOwnGuide: item.material_category === 'My OWN Guides' 
+          }));
+          setProjects(formattedData);
       }
-    };
-    
+    } catch (error) {
+      console.error("Error loading projects:", error);
+    } finally {
+      setIsLoadingProjects(false);
+    }
+  };
+
+  useEffect(() => {
     loadSavedProjects();
   }, []);
 
-  // 🤖 FETCH DIY GUIDE FROM GPT AND SAVE
   const generateDIYGuide = async (itemName, projectType) => {
     setIsGenerating(true);
     
@@ -109,9 +108,6 @@ export default function ProjectsPage() {
       
       if (jsonMatch) {
           const generatedGuide = JSON.parse(jsonMatch[0]);
-          
-          // 🟢 TINANGGAL NA YUNG RANDOM PICSUM GENERATOR!
-          // Default natin ngayon ay yung mismong in-scan mong picture muna.
           let finalImageUrl = params.scannedImageUri; 
           
           if (params.scannedImageUri && params.scannedImageUri.startsWith('file://')) {
@@ -129,12 +125,11 @@ export default function ProjectsPage() {
 
                   if (uploadError) {
                       console.log("Supabase Upload Blocked:", uploadError.message);
-                      // KUNG MAG-ERROR YUNG UPLOAD, YUNG LOCAL PICTURE MO PA RIN ANG GAGAMITIN NIYA
                   } else if (uploadData) {
                       const { data: urlData } = supabase.storage
                           .from('project_images')
                           .getPublicUrl(uploadData.path);
-                      finalImageUrl = urlData.publicUrl; // Gagamitin na yung cloud link!
+                      finalImageUrl = urlData.publicUrl; 
                   }
               } catch (uploadError) {
                   console.log("Image upload failed:", uploadError);
@@ -155,7 +150,7 @@ export default function ProjectsPage() {
                   materials: generatedGuide.materials, 
                   steps: generatedGuide.steps, 
                   selling_price: generatedGuide.sellingPrice,
-                  image_url: finalImageUrl, // ☁️ Cloud URL or Local URL
+                  image_url: finalImageUrl, 
                   youtube_link: ytLink,
                   is_done: false 
               }])
@@ -176,7 +171,8 @@ export default function ProjectsPage() {
               sellingPrice: insertedData.selling_price,
               image: insertedData.image_url,
               youtubeLink: insertedData.youtube_link,
-              isDone: false
+              isDone: false,
+              isOwnGuide: false
           };
           
           setProjects(prevProjects => [newProject, ...prevProjects]);
@@ -237,6 +233,7 @@ export default function ProjectsPage() {
   const handleBack = () => {
       if (selectedProject) {
           setSelectedProject(null);
+          loadSavedProjects(); 
       } else {
           router.back();
       }
@@ -277,7 +274,7 @@ export default function ProjectsPage() {
             <View style={[styles.header, { paddingTop: Math.max(insets.top, 20) + 15, paddingBottom: 25 }]}>
                 <View style={styles.headerRow}>
                     <TouchableOpacity onPress={handleBack} style={styles.backButton}><Ionicons name="arrow-back" size={24} color="white" /></TouchableOpacity>
-                    <Text style={styles.headerTitle}>DIY Guide</Text>
+                    <Text style={styles.headerTitle}>{selectedProject.isOwnGuide ? 'OWN DIY PROJECT' : 'DIY Guide'}</Text>
                     <View style={{ width: 40 }} />
                 </View>
             </View>
@@ -285,35 +282,37 @@ export default function ProjectsPage() {
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
                 <View style={styles.detailBody}>
                     <View style={styles.detailCard}>
-                        {/* 🟢 KAPAG SIRA YUNG IMAGE, MAGIGING GRAY BOX NALANG IMBES NA ERROR */}
                         <Image source={{ uri: selectedProject.image }} style={styles.detailImage} fallbackSource={require('../../assets/images/favicon.png')} />
                         <View style={styles.categoryBadge}><Text style={styles.categoryBadgeText}>{selectedProject.materialCategory}</Text></View>
                         <View style={styles.detailContent}>
                             <Text style={styles.detailTitle}>{selectedProject.title}</Text>
                             <View style={styles.tagsRow}>
                                 <View style={[styles.tag, {backgroundColor: '#E8F5E9'}]}><Text style={[styles.tagText, {color: '#007C00'}]}>{selectedProject.difficulty}</Text></View>
-                                <View style={styles.metaItem}><MaterialCommunityIcons name="clock-outline" size={16} color="#666" /><Text style={styles.metaText}>{selectedProject.time}</Text></View>
-                                <View style={styles.metaItem}><MaterialCommunityIcons name="cash" size={16} color="#666" /><Text style={styles.metaText}>{selectedProject.cost}</Text></View>
+                                {!selectedProject.isOwnGuide && <View style={styles.metaItem}><MaterialCommunityIcons name="clock-outline" size={16} color="#666" /><Text style={styles.metaText}>{selectedProject.time}</Text></View>}
+                                {!selectedProject.isOwnGuide && <View style={styles.metaItem}><MaterialCommunityIcons name="cash" size={16} color="#666" /><Text style={styles.metaText}>{selectedProject.cost}</Text></View>}
                             </View>
                         </View>
                     </View>
 
-                    <TouchableOpacity 
-                        style={[styles.doneButton, selectedProject.isDone ? styles.doneButtonActive : null]} 
-                        onPress={() => toggleProjectStatus(selectedProject.id, selectedProject.isDone)}
-                    >
-                        <MaterialCommunityIcons 
-                            name={selectedProject.isDone ? "check-circle" : "check-circle-outline"} 
-                            size={24} 
-                            color={selectedProject.isDone ? "white" : "#007C00"} 
-                            style={{marginRight: 10}} 
-                        />
-                        <Text style={[styles.doneButtonText, selectedProject.isDone ? {color: 'white'} : null]}>
-                            {selectedProject.isDone ? "Project Completed! ✅" : "Mark as Done"}
-                        </Text>
-                    </TouchableOpacity>
+                    {/* Tago ang "Mark as Done" button kapag OWN DIY GUIDE na kasi tapos na yon */}
+                    {!selectedProject.isOwnGuide && (
+                        <TouchableOpacity 
+                            style={[styles.doneButton, selectedProject.isDone ? styles.doneButtonActive : null]} 
+                            onPress={() => toggleProjectStatus(selectedProject.id, selectedProject.isDone)}
+                        >
+                            <MaterialCommunityIcons 
+                                name={selectedProject.isDone ? "check-circle" : "check-circle-outline"} 
+                                size={24} 
+                                color={selectedProject.isDone ? "white" : "#007C00"} 
+                                style={{marginRight: 10}} 
+                            />
+                            <Text style={[styles.doneButtonText, selectedProject.isDone ? {color: 'white'} : null]}>
+                                {selectedProject.isDone ? "Project Completed! ✅" : "Mark as Done"}
+                            </Text>
+                        </TouchableOpacity>
+                    )}
 
-                    {selectedProject.youtubeLink && (
+                    {selectedProject.youtubeLink && !selectedProject.isOwnGuide && (
                         <TouchableOpacity style={styles.youtubeButton} onPress={() => openYouTube(selectedProject.youtubeLink)}>
                             <MaterialCommunityIcons name="youtube" size={28} color="white" style={{marginRight: 10}} />
                             <Text style={styles.youtubeButtonText}>Watch YouTube Tutorial</Text>
@@ -330,11 +329,13 @@ export default function ProjectsPage() {
                         {selectedProject.steps.map((step, i) => <View key={i} style={styles.stepItem}><View style={styles.stepNumberBox}><Text style={styles.stepNumber}>{i+1}</Text></View><Text style={styles.stepText}>{step}</Text></View>)}
                     </View>
 
-                    <View style={[styles.sectionCard, { borderLeftWidth: 5, borderLeftColor: '#007C00' }]}>
-                        <View style={{flexDirection: 'row', alignItems: 'center', marginBottom: 5}}><FontAwesome5 name="money-bill-wave" size={16} color="#007C00" /><Text style={[styles.sectionTitle, {marginLeft: 10, marginBottom: 0}]}>Market Value</Text></View>
-                        <Text style={{ fontSize: 24, fontWeight: 'bold', color: '#007C00', marginTop: 5 }}>{selectedProject.sellingPrice}</Text>
-                        <Text style={{ fontSize: 12, color: '#888' }}>Potential selling price for your finished product.</Text>
-                    </View>
+                    {selectedProject.sellingPrice && (
+                        <View style={[styles.sectionCard, { borderLeftWidth: 5, borderLeftColor: '#007C00' }]}>
+                            <View style={{flexDirection: 'row', alignItems: 'center', marginBottom: 5}}><FontAwesome5 name="money-bill-wave" size={16} color="#007C00" /><Text style={[styles.sectionTitle, {marginLeft: 10, marginBottom: 0}]}>Market Value</Text></View>
+                            <Text style={{ fontSize: 24, fontWeight: 'bold', color: '#007C00', marginTop: 5 }}>{selectedProject.sellingPrice}</Text>
+                            <Text style={{ fontSize: 12, color: '#888' }}>Potential selling price for your finished product.</Text>
+                        </View>
+                    )}
                 </View>
             </ScrollView>
         </View>
@@ -365,8 +366,8 @@ export default function ProjectsPage() {
           <View style={styles.categoryContainer}>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryScroll}>
                 {CATEGORIES.map((cat, i) => (
-                    <TouchableOpacity key={i} style={[styles.categoryPill, activeCategory === cat && styles.categoryPillActive]} onPress={() => setActiveCategory(cat)}>
-                        <Text style={[styles.categoryText, activeCategory === cat && styles.categoryTextActive]}>{cat}</Text>
+                    <TouchableOpacity key={i} style={[styles.categoryPill, activeCategory === cat && styles.categoryPillActive, cat === 'My OWN Guides' && {borderWidth: 1, borderColor: '#007C00'}]} onPress={() => setActiveCategory(cat)}>
+                        <Text style={[styles.categoryText, activeCategory === cat && styles.categoryTextActive, cat === 'My OWN Guides' && !activeCategory.includes('My OWN') && {color: '#007C00'}]}>{cat}</Text>
                     </TouchableOpacity>
                 ))}
             </ScrollView>
@@ -381,34 +382,54 @@ export default function ProjectsPage() {
             <FlatList
                 data={filteredProjects}
                 scrollEnabled={false} 
-                keyExtractor={item => item.id}
+                keyExtractor={item => item.id.toString()}
                 contentContainerStyle={styles.listContainer}
                 ListEmptyComponent={() => (
                 <View style={styles.emptyState}>
                     <MaterialCommunityIcons name="robot-outline" size={60} color="#ccc" />
-                    <Text style={[styles.emptyText, {fontWeight: 'bold', color: '#666', marginTop: 15}]}>Your AI Gallery is Empty</Text>
-                    <Text style={[styles.emptyText, {textAlign: 'center', paddingHorizontal: 40, marginTop: 5}]}>Go to the Scan page, take a photo of your waste, and let AI generate DIY projects for you!</Text>
+                    <Text style={[styles.emptyText, {fontWeight: 'bold', color: '#666', marginTop: 15}]}>Your Gallery is Empty</Text>
+                    <Text style={[styles.emptyText, {textAlign: 'center', paddingHorizontal: 40, marginTop: 5}]}>Go to the Scan page, take a photo of your waste, and let AI generate DIY projects for you, or create your own!</Text>
                 </View>
                 )}
                 renderItem={({ item }) => (
-                <TouchableOpacity style={styles.card} onPress={() => setSelectedProject(item)} activeOpacity={0.9}>
+                <TouchableOpacity 
+                    style={styles.card} 
+                    activeOpacity={0.9}
+                    onPress={() => {
+                        // 🟢 LOGIC: Kung "ON GOING" ito (is_done: false), ipadala sa edit page
+                        if (item.isOwnGuide && !item.isDone) {
+                            router.push({ pathname: '/create-own-project', params: { projectId: item.id } });
+                        } else {
+                            setSelectedProject(item);
+                        }
+                    }} 
+                >
                     <Image source={{ uri: item.image }} style={styles.cardImage} />
                     
-                    {item.isDone && (
+                    {/* 🟢 CUSTOM BADGE PARA SA OWN DIY */}
+                    {item.isOwnGuide ? (
+                        <View style={[styles.completedBadge, item.isDone ? {backgroundColor: '#2E7D32'} : {backgroundColor: '#1976D2'}]}>
+                            <MaterialCommunityIcons name={item.isDone ? "check-decagram" : "pencil-circle"} size={14} color="white" />
+                            <Text style={styles.completedBadgeText}>{item.isDone ? "OWN GUIDE | DONE" : "OWN GUIDE | ON GOING"}</Text>
+                        </View>
+                    ) : item.isDone ? (
                         <View style={styles.completedBadge}>
                             <MaterialCommunityIcons name="check-decagram" size={14} color="white" />
                             <Text style={styles.completedBadgeText}>DONE</Text>
                         </View>
-                    )}
+                    ) : null}
 
                     <View style={[styles.badge, {backgroundColor: '#007C00'}]}><Text style={styles.badgeText}>{item.difficulty}</Text></View>
                     <View style={styles.cardContent}>
-                    <Text style={styles.cardMaterialTag}>{item.materialCategory}</Text>
+                    <Text style={[styles.cardMaterialTag, item.isOwnGuide && {color: '#1976D2'}]}>{item.materialCategory}</Text>
                     <Text style={styles.cardTitle}>{item.title}</Text>
-                    <View style={styles.metaRow}>
-                        <View style={styles.metaItem}><MaterialCommunityIcons name="clock-outline" size={16} color="#888" /><Text style={styles.metaText}>{item.time}</Text></View>
-                        <View style={styles.metaItem}><MaterialCommunityIcons name="cash" size={16} color="#888" /><Text style={styles.metaText}>{item.cost}</Text></View>
-                    </View>
+                    
+                    {!item.isOwnGuide && (
+                        <View style={styles.metaRow}>
+                            <View style={styles.metaItem}><MaterialCommunityIcons name="clock-outline" size={16} color="#888" /><Text style={styles.metaText}>{item.time}</Text></View>
+                            <View style={styles.metaItem}><MaterialCommunityIcons name="cash" size={16} color="#888" /><Text style={styles.metaText}>{item.cost}</Text></View>
+                        </View>
+                    )}
                     </View>
                 </TouchableOpacity>
                 )}

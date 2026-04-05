@@ -13,7 +13,6 @@ export default function ProcessSurrender() {
   const [scanned, setScanned] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false); 
   
-  // STATES PARA SA CUSTOM POPUP AT PROFILE
   const [isProfileModalVisible, setProfileModalVisible] = useState(false);
   const [scannedProfilePic, setScannedProfilePic] = useState(null);
   const [userAddress, setUserAddress] = useState('Fetching address...'); 
@@ -24,6 +23,15 @@ export default function ProcessSurrender() {
   const [reward, setReward] = useState('');
   
   const [transactionType, setTransactionType] = useState('Claimed'); 
+  const [isBankedRedemption, setIsBankedRedemption] = useState(false); 
+  
+  // 🟢 MGA BAGONG STATES PARA SA REDEMPTION LOGIC
+  const [maxBankedKg, setMaxBankedKg] = useState(0);
+  const [availableRewards, setAvailableRewards] = useState([]);
+  const [selectedReward, setSelectedReward] = useState(null);
+  const [rewardModalVisible, setRewardModalVisible] = useState(false);
+  const [errorModalVisible, setErrorModalVisible] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
 
   const handleBarCodeScanned = async ({ type, data }) => {
     setScanned(true);
@@ -31,32 +39,38 @@ export default function ProcessSurrender() {
         const parsedData = JSON.parse(data);
         
         if (parsedData.email && parsedData.name) {
+            const { data: { user } } = await supabase.auth.getUser();
+
             setUserData({ name: parsedData.name, email: parsedData.email });
-            setReward(parsedData.targetReward || 'None specified');
-            
-            // 🟢 AUTO-FILL ANG WASTE CATEGORY MULA SA QR CODE
             setWasteType(parsedData.targetMaterial || 'Recyclables');
 
-            // KUNIN ANG PROFILE PIC AT ADDRESS SA SUPABASE
-            try {
-                const { data: profile, error } = await supabase
-                    .from('profiles') 
-                    .select('*') 
-                    .eq('email', parsedData.email)
-                    .single();
-                
-                if (profile && !error) {
-                    if (profile.avatar_url) {
-                        setScannedProfilePic(profile.avatar_url);
-                    } else {
-                        setScannedProfilePic(`https://ui-avatars.com/api/?name=${encodeURIComponent(parsedData.name)}&background=0066FF&color=fff&size=150`);
-                    }
+            if (parsedData.isBankedRedemption === 'true' || parsedData.isBankedRedemption === true) {
+                setIsBankedRedemption(true);
+                setTransactionType('Claimed');
+                setMaxBankedKg(parseFloat(parsedData.bankedKg) || 0);
+                setWeight(''); // 🟢 Blanko para officer ang mag-ta-type
+                setSelectedReward(null);
 
-                    const fetchedAddress = profile.address || 
-                                           (profile.barangay && profile.city ? `${profile.barangay}, ${profile.city}` : null) || 
-                                           profile.location || 
-                                           'Address not provided in profile';
-                    setUserAddress(fetchedAddress);
+                // 🟢 FETCH: Kukunin ang mga available rewards sa center niyo para sa waste type na to
+                const { data: rewards } = await supabase.from('rewards_inventory')
+                    .select('*')
+                    .eq('user_email', user.email)
+                    .eq('is_available', true)
+                    .ilike('condition', `%${parsedData.targetMaterial}%`);
+
+                setAvailableRewards(rewards || []);
+            } else {
+                setIsBankedRedemption(false);
+                setTransactionType('Claimed');
+                setReward(parsedData.targetReward || 'None specified');
+                setWeight('');
+            }
+
+            try {
+                const { data: profile, error } = await supabase.from('profiles').select('*').eq('email', parsedData.email).single();
+                if (profile && !error) {
+                    setScannedProfilePic(profile.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(parsedData.name)}&background=0066FF&color=fff&size=150`);
+                    setUserAddress(profile.address || (profile.barangay && profile.city ? `${profile.barangay}, ${profile.city}` : profile.location) || 'Address not provided in profile');
                 } else {
                     setScannedProfilePic(`https://ui-avatars.com/api/?name=${encodeURIComponent(parsedData.name)}&background=0066FF&color=fff&size=150`);
                     setUserAddress('Profile not found');
@@ -93,7 +107,8 @@ export default function ProcessSurrender() {
           const { data: { user } } = await supabase.auth.getUser();
           if (!user) throw new Error("Collector is not logged in.");
 
-          const finalRewardStatus = transactionType === 'Claimed' ? reward : 'Banked';
+          // 🟢 ISASAVE SA DATABASE YUNG SAKTONG REWARD NA PINILI
+          const finalRewardStatus = isBankedRedemption ? `Banked Redemption - ${selectedReward.name}` : (transactionType === 'Claimed' ? reward : 'Banked');
 
           const { error } = await supabase.from('surrender_logs').insert([{
               collector_email: user.email,
@@ -131,10 +146,16 @@ export default function ProcessSurrender() {
         </View>
         <Text style={styles.scanText}>Scan User QR Code</Text>
         
-        {/* 🟢 SIMULATE BUTTON: Dinagdagan ko ng targetMaterial para ma-test mo agad */}
-        <TouchableOpacity style={styles.simulateBtn} onPress={() => handleBarCodeScanned({type: 'qr', data: '{"email":"mustarddsss@gmail.com", "name":"Lalisa Manoban", "targetReward":"Rice", "targetMaterial":"Plastic Bottles"}'})}>
-            <Text style={{color: '#0066FF', marginTop: 20}}>Simulate Scan (For Testing)</Text>
-        </TouchableOpacity>
+        <View style={{flexDirection: 'row', justifyContent: 'center', gap: 15, marginTop: 20}}>
+            <TouchableOpacity style={styles.simulateBtn} onPress={() => handleBarCodeScanned({type: 'qr', data: '{"email":"test@gmail.com", "name":"Juan Dela Cruz", "targetReward":"Rice", "targetMaterial":"Plastic Bottles"}'})}>
+                <Text style={{color: '#0066FF', fontWeight: 'bold'}}>Test: Normal</Text>
+            </TouchableOpacity>
+            
+            {/* 🟢 SIMULATE BUTTON FOR BANKED REDEMPTION (Glass, 20kg available) */}
+            <TouchableOpacity style={styles.simulateBtn} onPress={() => handleBarCodeScanned({type: 'qr', data: '{"email":"test@gmail.com", "name":"Juan Dela Cruz", "targetReward":"Redeem Banked Points", "targetMaterial":"Glass", "isBankedRedemption": "true", "bankedKg": 20}'})}>
+                <Text style={{color: '#007C00', fontWeight: 'bold'}}>Test: Banked</Text>
+            </TouchableOpacity>
+        </View>
       </View>
     );
   };
@@ -155,36 +176,87 @@ export default function ProcessSurrender() {
 
         <Text style={styles.sectionLabel}>Log Waste Details</Text>
         
-        {/* 🟢 GINAWANG READ-ONLY ANG WASTE CATEGORY DAHIL GALING SA QR */}
         <Text style={styles.inputLabel}>Expected Waste Category</Text>
         <TextInput style={[styles.input, {backgroundColor: '#f0f0f0', color: '#555'}]} editable={false} value={wasteType} />
         
-        <Text style={styles.inputLabel}>Quantity (kg) Surrendered</Text>
-        <TextInput style={styles.input} placeholder="0.0" keyboardType="numeric" value={weight} onChangeText={setWeight} />
+        <Text style={styles.inputLabel}>Quantity (kg) to Redeem</Text>
+        {/* 🟢 EDITABLE NA YUNG QUANTITY KAHIT BANKED POINTS */}
+        <TextInput style={[styles.input, {marginBottom: 5}]} placeholder="0.0" keyboardType="numeric" value={weight} onChangeText={setWeight} />
+        
+        {isBankedRedemption && (
+            <Text style={{fontSize: 12, color: '#007C00', fontWeight: 'bold', marginBottom: 15, marginLeft: 5}}>
+                User's Available Balance: {maxBankedKg} kg
+            </Text>
+        )}
         
         <Text style={styles.inputLabel}>Target Reward</Text>
-        <TextInput style={[styles.input, {backgroundColor: '#f0f0f0', color: '#555'}]} editable={false} value={reward} />
-
-        <Text style={styles.sectionLabel}>Action</Text>
-        <View style={styles.actionToggleRow}>
-            <TouchableOpacity 
-                style={[styles.actionBox, transactionType === 'Claimed' && styles.actionBoxActive]} 
-                onPress={() => setTransactionType('Claimed')}>
-                <MaterialCommunityIcons name="gift-outline" size={24} color={transactionType === 'Claimed' ? 'white' : '#0066FF'} />
-                <Text style={[styles.actionBoxText, transactionType === 'Claimed' && {color: 'white'}]}>Give Reward</Text>
+        
+        {/* 🟢 CUSTOM DROPDOWN KAPAG REDEEMING BANKED POINTS */}
+        {isBankedRedemption ? (
+            <TouchableOpacity style={styles.dropdownBtn} onPress={() => setRewardModalVisible(true)}>
+                <Text style={[styles.dropdownBtnText, selectedReward && {color: '#333'}]}>
+                    {selectedReward ? selectedReward.name : 'Select a reward...'}
+                </Text>
+                <Ionicons name="chevron-down" size={20} color="#666" />
             </TouchableOpacity>
+        ) : (
+            <TextInput style={[styles.input, {backgroundColor: '#f0f0f0', color: '#555'}]} editable={false} value={reward} />
+        )}
 
-            <TouchableOpacity 
-                style={[styles.actionBox, transactionType === 'Banked' && styles.actionBoxActive]} 
-                onPress={() => setTransactionType('Banked')}>
-                <MaterialCommunityIcons name="safe" size={24} color={transactionType === 'Banked' ? 'white' : '#0066FF'} />
-                <Text style={[styles.actionBoxText, transactionType === 'Banked' && {color: 'white'}]}>Save to Balance</Text>
-                <Text style={[styles.actionBoxSub, transactionType === 'Banked' && {color: 'rgba(255,255,255,0.8)'}]}>Not enough KG</Text>
-            </TouchableOpacity>
-        </View>
+        {!isBankedRedemption ? (
+            <>
+                <Text style={styles.sectionLabel}>Action</Text>
+                <View style={styles.actionToggleRow}>
+                    <TouchableOpacity style={[styles.actionBox, transactionType === 'Claimed' && styles.actionBoxActive]} onPress={() => setTransactionType('Claimed')}>
+                        <MaterialCommunityIcons name="gift-outline" size={24} color={transactionType === 'Claimed' ? 'white' : '#0066FF'} />
+                        <Text style={[styles.actionBoxText, transactionType === 'Claimed' && {color: 'white'}]}>Give Reward</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={[styles.actionBox, transactionType === 'Banked' && styles.actionBoxActive]} onPress={() => setTransactionType('Banked')}>
+                        <MaterialCommunityIcons name="safe" size={24} color={transactionType === 'Banked' ? 'white' : '#0066FF'} />
+                        <Text style={[styles.actionBoxText, transactionType === 'Banked' && {color: 'white'}]}>Save to Balance</Text>
+                        <Text style={[styles.actionBoxSub, transactionType === 'Banked' && {color: 'rgba(255,255,255,0.8)'}]}>Not enough KG</Text>
+                    </TouchableOpacity>
+                </View>
+            </>
+        ) : (
+            <View style={{backgroundColor: '#E8F5E9', padding: 15, borderRadius: 10, marginTop: 10, borderWidth: 1, borderColor: '#007C00'}}>
+                <Text style={{color: '#007C00', fontWeight: 'bold', textAlign: 'center'}}>
+                    <MaterialCommunityIcons name="check-decagram" size={16} /> Redeeming Banked Points
+                </Text>
+                <Text style={{color: '#2E7D32', fontSize: 12, textAlign: 'center', marginTop: 5}}>
+                    This action will deduct points from the user's saved balance.
+                </Text>
+            </View>
+        )}
 
         <TouchableOpacity style={[styles.blueBtn, {marginTop: 20}]} onPress={() => {
-            if(!weight) return Alert.alert("Required", "Please type the Quantity (kg).");
+            // 🟢 VALIDATIONS
+            if(!weight || isNaN(parseFloat(weight)) || parseFloat(weight) <= 0) return Alert.alert("Required", "Please enter a valid Quantity (kg).");
+            
+            if (isBankedRedemption) {
+                if (!selectedReward) {
+                    return Alert.alert("Required", "Please select a target reward from the dropdown.");
+                }
+
+                const inputWeight = parseFloat(weight);
+
+                // 🔴 UI ERROR POPUP: KUNG KULANG ANG POINTS NI USER
+                if (inputWeight > maxBankedKg) {
+                    setErrorMessage(`${userData?.name} doesn't have enough points for this. Her/his available credit for ${wasteType} is only ${maxBankedKg} kg.`);
+                    setErrorModalVisible(true);
+                    return;
+                }
+
+                // UI ERROR POPUP: KUNG KULANG YUNG POINTS PARA MA-REDEEM YUNG PINILING REWARD
+                const match = selectedReward.condition.match(/(\d+)/);
+                const baseRate = match ? parseFloat(match[1]) : 1;
+                if (inputWeight < baseRate) {
+                    setErrorMessage(`You need at least ${baseRate} kg of ${wasteType} to redeem ${selectedReward.name}. User wants to use ${inputWeight} kg.`);
+                    setErrorModalVisible(true);
+                    return;
+                }
+            }
+
             setStep(3);
         }}>
             <Text style={styles.btnText}>Review Transaction</Text>
@@ -205,7 +277,9 @@ export default function ProcessSurrender() {
             <View style={styles.divider} />
             <View style={styles.row}>
                 <Text style={styles.label}>Action Taken</Text>
-                {transactionType === 'Claimed' ? (
+                {isBankedRedemption ? (
+                    <Text style={styles.valGreen}>Claimed: {selectedReward?.name}</Text>
+                ) : transactionType === 'Claimed' ? (
                     <Text style={styles.valGreen}>Claimed: {reward}</Text>
                 ) : (
                     <Text style={{fontWeight: 'bold', color: '#F57C00'}}>Added to Balance</Text>
@@ -247,38 +321,74 @@ export default function ProcessSurrender() {
         {step === 4 && renderStep4()}
       </View>
 
-      {/* CUSTOM PROFILE POPUP MODAL */}
+      {/* 🟢 CUSTOM DROPDOWN MODAL PARA SA REWARDS */}
+      <Modal visible={rewardModalVisible} transparent={true} animationType="fade">
+          <View style={styles.modalOverlayDark}>
+              <View style={styles.dropdownModalCard}>
+                  <View style={styles.dropdownHeader}>
+                      <Text style={styles.dropdownTitle}>Available Rewards for {wasteType}</Text>
+                      <TouchableOpacity onPress={() => setRewardModalVisible(false)}><Ionicons name="close" size={24} color="#333" /></TouchableOpacity>
+                  </View>
+                  
+                  <ScrollView style={{maxHeight: 300}}>
+                      {availableRewards.length === 0 ? (
+                          <Text style={{padding: 20, textAlign: 'center', color: '#999'}}>No available rewards found for this item at your center.</Text>
+                      ) : (
+                          availableRewards.map((item) => (
+                              <TouchableOpacity 
+                                  key={item.id} 
+                                  style={styles.dropdownItem} 
+                                  onPress={() => {
+                                      setSelectedReward(item);
+                                      setRewardModalVisible(false);
+                                  }}
+                              >
+                                  <View style={{flex: 1}}>
+                                      <Text style={styles.dropdownItemName}>{item.name}</Text>
+                                      <Text style={styles.dropdownItemCondition}>Requires: {item.condition}</Text>
+                                  </View>
+                                  <Ionicons name="chevron-forward" size={20} color="#ccc" />
+                              </TouchableOpacity>
+                          ))
+                      )}
+                  </ScrollView>
+              </View>
+          </View>
+      </Modal>
+
+      {/* 🟢 CUSTOM FRONTEND ERROR MODAL (Kapag kulang ang points) */}
+      <Modal visible={errorModalVisible} transparent={true} animationType="fade">
+          <View style={styles.modalOverlayDark}>
+              <View style={styles.errorModalCard}>
+                  <View style={styles.errorIconBg}>
+                      <Ionicons name="warning" size={40} color="#D32F2F" />
+                  </View>
+                  <Text style={styles.errorModalTitle}>Insufficient Points</Text>
+                  <Text style={styles.errorModalMessage}>{errorMessage}</Text>
+                  <TouchableOpacity style={styles.errorBtn} onPress={() => setErrorModalVisible(false)}>
+                      <Text style={styles.errorBtnText}>Okay, I understand</Text>
+                  </TouchableOpacity>
+              </View>
+          </View>
+      </Modal>
+
       <Modal visible={isProfileModalVisible} transparent={true} animationType="fade">
           <View style={styles.modalOverlayDark}>
               <View style={styles.profileModalCard}>
                   <View style={styles.modalBanner} />
-                  
-                  <View style={styles.avatarContainerModal}>
-                      <Image source={{ uri: scannedProfilePic }} style={styles.profilePicLarge} />
-                  </View>
-
+                  <View style={styles.avatarContainerModal}><Image source={{ uri: scannedProfilePic }} style={styles.profilePicLarge} /></View>
                   <Text style={styles.modalUserName}>{userData?.name}</Text>
                   <Text style={styles.modalUserId}>{userData?.email}</Text>
-                  
-                  <View style={styles.addressRow}>
-                      <MaterialCommunityIcons name="map-marker" size={14} color="#666" />
-                      <Text style={styles.modalUserAddress} numberOfLines={2}>{userAddress}</Text>
-                  </View>
-
+                  <View style={styles.addressRow}><MaterialCommunityIcons name="map-marker" size={14} color="#666" /><Text style={styles.modalUserAddress} numberOfLines={2}>{userAddress}</Text></View>
                   <View style={styles.rewardIntentBox}>
-                      <MaterialCommunityIcons name="star-shooting" size={20} color="#F57C00" />
-                      <Text style={styles.rewardIntentTitle}>Wants to claim:</Text>
+                      <MaterialCommunityIcons name={isBankedRedemption ? "safe" : "star-shooting"} size={20} color="#F57C00" />
+                      <Text style={styles.rewardIntentTitle}>{isBankedRedemption ? "Redeeming Balance:" : "Wants to claim:"}</Text>
                       <Text style={styles.rewardIntentValue}>{reward}</Text>
-                      <Text style={{fontSize: 12, color: '#666', marginTop: 4}}>Expected Item: <Text style={{fontWeight:'bold', color:'#333'}}>{wasteType}</Text></Text>
+                      <Text style={{fontSize: 12, color: '#666', marginTop: 4}}>Item: <Text style={{fontWeight:'bold', color:'#333'}}>{wasteType}</Text></Text>
                   </View>
-
                   <View style={styles.modalBtnRow}>
-                      <TouchableOpacity style={styles.modalCancelBtn} onPress={handleCancelScan}>
-                          <Text style={styles.modalCancelText}>Cancel</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity style={styles.modalProceedBtn} onPress={handleProceedToStep2}>
-                          <Text style={styles.modalProceedText}>Proceed</Text>
-                      </TouchableOpacity>
+                      <TouchableOpacity style={styles.modalCancelBtn} onPress={handleCancelScan}><Text style={styles.modalCancelText}>Cancel</Text></TouchableOpacity>
+                      <TouchableOpacity style={styles.modalProceedBtn} onPress={handleProceedToStep2}><Text style={styles.modalProceedText}>Proceed</Text></TouchableOpacity>
                   </View>
               </View>
           </View>
@@ -289,38 +399,31 @@ export default function ProcessSurrender() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F5F7FA' }, header: { backgroundColor: '#0066FF', paddingTop: 50, paddingBottom: 20, borderBottomLeftRadius: 20, borderBottomRightRadius: 20 }, navRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 15 }, headerTitle: { color: 'white', fontSize: 18, fontWeight: 'bold' }, content: { flex: 1, padding: 20 }, stepContainer: { flex: 1 }, cameraBox: { height: 350, borderRadius: 20, overflow: 'hidden', marginTop: 10, marginBottom: 20, elevation: 5 }, camera: { flex: 1 }, overlay: { ...StyleSheet.absoluteFillObject, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.2)' }, scanFrame: { width: 200, height: 200, borderWidth: 2, borderColor: 'white', borderStyle: 'dashed', borderRadius: 20 }, scanText: { textAlign: 'center', fontSize: 18, fontWeight: 'bold', color: '#333' }, simulateBtn: { marginTop: 10, padding: 15, alignItems: 'center' }, 
+  container: { flex: 1, backgroundColor: '#F5F7FA' }, header: { backgroundColor: '#0066FF', paddingTop: 50, paddingBottom: 20, borderBottomLeftRadius: 20, borderBottomRightRadius: 20 }, navRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 15 }, headerTitle: { color: 'white', fontSize: 18, fontWeight: 'bold' }, content: { flex: 1, padding: 20 }, stepContainer: { flex: 1 }, cameraBox: { height: 350, borderRadius: 20, overflow: 'hidden', marginTop: 10, marginBottom: 20, elevation: 5 }, camera: { flex: 1 }, overlay: { ...StyleSheet.absoluteFillObject, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.2)' }, scanFrame: { width: 200, height: 200, borderWidth: 2, borderColor: 'white', borderStyle: 'dashed', borderRadius: 20 }, scanText: { textAlign: 'center', fontSize: 18, fontWeight: 'bold', color: '#333' }, simulateBtn: { padding: 10, alignItems: 'center', backgroundColor: '#e0e0e0', borderRadius: 8 }, 
   
   userCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#E3F2FD', padding: 15, borderRadius: 12, marginBottom: 20, borderWidth: 1, borderColor: '#90CAF9' }, avatarImgSmall: { width: 50, height: 50, borderRadius: 25, marginRight: 15, backgroundColor: '#ccc' }, userName: { fontWeight: 'bold', fontSize: 16, color: '#0066FF' }, userId: { color: '#555', fontSize: 12 }, userAddressSmall: { fontSize: 11, color: '#555', marginLeft: 4, flex: 1 },
   
   sectionLabel: { fontWeight: 'bold', fontSize: 16, marginBottom: 10, marginTop: 10 }, inputLabel: { fontSize: 12, color: '#666', marginBottom: 5, fontWeight: 'bold' }, input: { backgroundColor: 'white', padding: 15, borderRadius: 10, marginBottom: 15, elevation: 1 }, 
   
-  actionToggleRow: { flexDirection: 'row', gap: 10, marginBottom: 15 },
-  actionBox: { flex: 1, backgroundColor: 'white', padding: 15, borderRadius: 12, borderWidth: 1, borderColor: '#90CAF9', alignItems: 'center', justifyContent: 'center' },
-  actionBoxActive: { backgroundColor: '#0066FF', borderColor: '#0066FF' },
-  actionBoxText: { fontWeight: 'bold', fontSize: 14, color: '#0066FF', marginTop: 8 },
-  actionBoxSub: { fontSize: 10, color: '#888', marginTop: 2 },
+  // 🟢 NEW STYLES FOR DROPDOWN
+  dropdownBtn: { backgroundColor: 'white', padding: 15, borderRadius: 10, marginBottom: 15, elevation: 1, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  dropdownBtnText: { color: '#999', fontSize: 14 },
+  dropdownModalCard: { width: '90%', backgroundColor: 'white', borderRadius: 15, overflow: 'hidden' },
+  dropdownHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, borderBottomWidth: 1, borderBottomColor: '#eee' },
+  dropdownTitle: { fontSize: 16, fontWeight: 'bold', color: '#333' },
+  dropdownItem: { flexDirection: 'row', alignItems: 'center', padding: 20, borderBottomWidth: 1, borderBottomColor: '#f5f5f5' },
+  dropdownItemName: { fontSize: 16, fontWeight: 'bold', color: '#0066FF' },
+  dropdownItemCondition: { fontSize: 12, color: '#666', marginTop: 2 },
 
-  confirmTitle: { fontSize: 18, fontWeight: 'bold', marginTop: 10 }, receiptCard: { backgroundColor: 'white', padding: 20, borderRadius: 15, elevation: 3, marginBottom: 30 }, receiptHeader: { fontWeight: 'bold', fontSize: 14, marginBottom: 10 }, divider: { height: 1, backgroundColor: '#eee', marginVertical: 10 }, row: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 8 }, label: { color: '#666' }, val: { fontWeight: '600' }, valBlue: { fontWeight: 'bold', color: '#0066FF' }, valGreen: { fontWeight: 'bold', color: '#007C00' }, successTitle: { fontSize: 28, fontWeight: 'bold', marginTop: 20, color: '#333' }, successSub: { color: '#666', textAlign: 'center', marginTop: 5 }, btnRow: { flexDirection: 'row', gap: 10 }, blueBtn: { backgroundColor: '#0066FF', padding: 15, borderRadius: 10, alignItems: 'center', elevation: 2, justifyContent: 'center' }, backBtn: { backgroundColor: '#ddd', padding: 15, borderRadius: 10, alignItems: 'center', width: 80, justifyContent: 'center' }, btnText: { color: 'white', fontWeight: 'bold' }, centerContent: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  // 🟢 NEW STYLES FOR ERROR MODAL
+  errorModalCard: { width: '85%', backgroundColor: 'white', borderRadius: 20, padding: 25, alignItems: 'center', elevation: 10 },
+  errorIconBg: { width: 70, height: 70, borderRadius: 35, backgroundColor: '#FFEBEE', justifyContent: 'center', alignItems: 'center', marginBottom: 15 },
+  errorModalTitle: { fontSize: 20, fontWeight: 'bold', color: '#D32F2F', marginBottom: 10 },
+  errorModalMessage: { fontSize: 14, color: '#555', textAlign: 'center', lineHeight: 20, marginBottom: 25 },
+  errorBtn: { backgroundColor: '#D32F2F', width: '100%', padding: 15, borderRadius: 12, alignItems: 'center' },
+  errorBtnText: { color: 'white', fontWeight: 'bold', fontSize: 15 },
 
-  // MODAL STYLES
-  modalOverlayDark: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 20 },
-  profileModalCard: { width: '100%', backgroundColor: 'white', borderRadius: 20, overflow: 'hidden', alignItems: 'center', paddingBottom: 25, elevation: 10 },
-  modalBanner: { width: '100%', height: 80, backgroundColor: '#0066FF' },
-  avatarContainerModal: { width: 100, height: 100, borderRadius: 50, backgroundColor: 'white', marginTop: -50, justifyContent: 'center', alignItems: 'center', elevation: 5, padding: 4 },
-  profilePicLarge: { width: '100%', height: '100%', borderRadius: 50 },
-  modalUserName: { fontSize: 22, fontWeight: 'bold', color: '#333', marginTop: 10 },
-  modalUserId: { fontSize: 14, color: '#666' },
-  
-  addressRow: { flexDirection: 'row', alignItems: 'center', marginTop: 5, marginBottom: 20, paddingHorizontal: 20 },
-  modalUserAddress: { fontSize: 13, color: '#666', marginLeft: 5, textAlign: 'center' },
-  
-  rewardIntentBox: { backgroundColor: '#FFF3E0', padding: 15, borderRadius: 12, width: '85%', alignItems: 'center', borderWidth: 1, borderColor: '#FFE0B2', marginBottom: 25 },
-  rewardIntentTitle: { fontSize: 12, color: '#F57C00', fontWeight: 'bold', marginTop: 5 },
-  rewardIntentValue: { fontSize: 16, fontWeight: '900', color: '#E65100', textAlign: 'center', marginTop: 2 },
-  modalBtnRow: { flexDirection: 'row', width: '85%', gap: 10 },
-  modalCancelBtn: { flex: 1, backgroundColor: '#F5F5F5', paddingVertical: 14, borderRadius: 12, alignItems: 'center' },
-  modalCancelText: { color: '#666', fontWeight: 'bold', fontSize: 15 },
-  modalProceedBtn: { flex: 1, backgroundColor: '#00C853', paddingVertical: 14, borderRadius: 12, alignItems: 'center', elevation: 2 },
-  modalProceedText: { color: 'white', fontWeight: 'bold', fontSize: 15 }
+  actionToggleRow: { flexDirection: 'row', gap: 10, marginBottom: 15 }, actionBox: { flex: 1, backgroundColor: 'white', padding: 15, borderRadius: 12, borderWidth: 1, borderColor: '#90CAF9', alignItems: 'center', justifyContent: 'center' }, actionBoxActive: { backgroundColor: '#0066FF', borderColor: '#0066FF' }, actionBoxText: { fontWeight: 'bold', fontSize: 14, color: '#0066FF', marginTop: 8 }, actionBoxSub: { fontSize: 10, color: '#888', marginTop: 2 }, confirmTitle: { fontSize: 18, fontWeight: 'bold', marginTop: 10 }, receiptCard: { backgroundColor: 'white', padding: 20, borderRadius: 15, elevation: 3, marginBottom: 30 }, receiptHeader: { fontWeight: 'bold', fontSize: 14, marginBottom: 10 }, divider: { height: 1, backgroundColor: '#eee', marginVertical: 10 }, row: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 8 }, label: { color: '#666' }, val: { fontWeight: '600' }, valBlue: { fontWeight: 'bold', color: '#0066FF' }, valGreen: { fontWeight: 'bold', color: '#007C00' }, successTitle: { fontSize: 28, fontWeight: 'bold', marginTop: 20, color: '#333' }, successSub: { color: '#666', textAlign: 'center', marginTop: 5 }, btnRow: { flexDirection: 'row', gap: 10 }, blueBtn: { backgroundColor: '#0066FF', padding: 15, borderRadius: 10, alignItems: 'center', elevation: 2, justifyContent: 'center' }, backBtn: { backgroundColor: '#ddd', padding: 15, borderRadius: 10, alignItems: 'center', width: 80, justifyContent: 'center' }, btnText: { color: 'white', fontWeight: 'bold' }, centerContent: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+
+  modalOverlayDark: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 20 }, profileModalCard: { width: '100%', backgroundColor: 'white', borderRadius: 20, overflow: 'hidden', alignItems: 'center', paddingBottom: 25, elevation: 10 }, modalBanner: { width: '100%', height: 80, backgroundColor: '#0066FF' }, avatarContainerModal: { width: 100, height: 100, borderRadius: 50, backgroundColor: 'white', marginTop: -50, justifyContent: 'center', alignItems: 'center', elevation: 5, padding: 4 }, profilePicLarge: { width: '100%', height: '100%', borderRadius: 50 }, modalUserName: { fontSize: 22, fontWeight: 'bold', color: '#333', marginTop: 10 }, modalUserId: { fontSize: 14, color: '#666' }, addressRow: { flexDirection: 'row', alignItems: 'center', marginTop: 5, marginBottom: 20, paddingHorizontal: 20 }, modalUserAddress: { fontSize: 13, color: '#666', marginLeft: 5, textAlign: 'center' }, rewardIntentBox: { backgroundColor: '#FFF3E0', padding: 15, borderRadius: 12, width: '85%', alignItems: 'center', borderWidth: 1, borderColor: '#FFE0B2', marginBottom: 25 }, rewardIntentTitle: { fontSize: 12, color: '#F57C00', fontWeight: 'bold', marginTop: 5 }, rewardIntentValue: { fontSize: 16, fontWeight: '900', color: '#E65100', textAlign: 'center', marginTop: 2 }, modalBtnRow: { flexDirection: 'row', width: '85%', gap: 10 }, modalCancelBtn: { flex: 1, backgroundColor: '#F5F5F5', paddingVertical: 14, borderRadius: 12, alignItems: 'center' }, modalCancelText: { color: '#666', fontWeight: 'bold', fontSize: 15 }, modalProceedBtn: { flex: 1, backgroundColor: '#00C853', paddingVertical: 14, borderRadius: 12, alignItems: 'center', elevation: 2 }, modalProceedText: { color: 'white', fontWeight: 'bold', fontSize: 15 }
 });

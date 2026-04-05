@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { ActivityIndicator, Alert, Image, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { supabase } from '../../lib/supabase';
 
 export default function ScanPage() {
   const router = useRouter();
@@ -14,26 +15,51 @@ export default function ScanPage() {
   const [loading, setLoading] = useState(false);
   const [loadingText, setLoadingText] = useState('');
   const [manualInput, setManualInput] = useState('');
+  
   const [modalVisible, setModalVisible] = useState(false);
+  
+  // 🟢 MGA BAGONG STATES PARA SA OWN DIY CREATION
+  const [titleModalVisible, setTitleModalVisible] = useState(false);
+  const [successModalVisible, setSuccessModalVisible] = useState(false);
+  const [ownProjectTitle, setOwnProjectTitle] = useState('');
+  const [isCreatingDraft, setIsCreatingDraft] = useState(false);
 
-  // 🤖 DIRECT TO GPT-4o VISION API
   const fetchGPTAnalysis = async (base64Image, textInput) => {
-    setLoadingText('GPT AI is looking at your waste...');
+    setLoadingText('Greensort AI is looking at your waste...');
     
-    // 🟢 UPDATED PROMPT: Humihingi ng 7-10 projects na naka-object format para makuha ang YouTube Link!
-    const promptText = `Analyze the provided image carefully. Identify the MAIN, largest waste item. Ignore minor accessories (like a single straw) if attached to a larger container (like a bottle). Distinguish carefully between materials, especially Glass vs. Plastic based on transparency, glare, and thickness.
-    Respond strictly in pure JSON format (no markdown blocks like \`\`\`json) with the following keys:
+    const promptText = `Analyze the provided image carefully. Identify the MAIN, largest waste item. Ignore minor accessories. Distinguish carefully between materials.
+
+    CRITICAL RULE FOR MONEY/BANKNOTES: If the image contains actual money, legal tender, or official banknotes (e.g., Philippine Peso), YOU MUST classify it as "Not allowed to dispose or use for recycling". However, if you are CERTAIN it is fake "Play Money" (toy money), treat it as Recyclable Paper/Plastic.
+    
+    CRITICAL RULE FOR ACCURACY: If the image is blurry, ambiguous, or you are unsure what the item is (like a plain black box or generic case), assign a low "accuracy" score (e.g., 40-70). If it is very clear (like a transparent plastic bottle), assign a high score (85-98).
+
+    CRITICAL RULE FOR PERSON DETECTED: If the image contains a person holding an item, FOCUS on the item and not the person. Do NOT classify the person as part of the waste. Only classify the item they are holding.
+
+    CRITICAL RULE IF MANY ITEMS: If there are multiple waste items, identify the MAIN one (largest or most central). You can mention the others in the recycling tip but only classify one main item.
+    
+    CRITICAL RULE IF IT IS A GENERIC CONTAINER: If the image shows a generic container (like a plain black box, unbranded bottle, or generic bag) and you cannot identify the material, classify it as "General Waste" with a low accuracy score (40-60). In the recycling tip, advise the user to check for any labels or markings to better identify the material for proper disposal.
+
+    CRITICAL RULE IF IT IS ONLY A PERSON WITHOUT ANY CLEAR ITEM: If the image ONLY shows a person (or body parts like a hand/face) without any clear waste item, YOU MUST classify it exactly like this:
+    - detected: "Person / Not a Waste Item"
+    - category: "Not a Waste"
+    - status: "Prohibited"
+    - projects: []
+    - accuracy: 99
+
+    Respond strictly in pure JSON format with the following keys:
     {
-      "detected": "Standardized name of the MAIN item (e.g., Glass Bottle, Plastic Cup, Laptop, Broken Phone)",
-      "category": "Choose the most appropriate: Recyclable Plastic, Glass, Paper, Metal, Organic Waste, General Waste, E-Waste, Hazardous",
-      "status": "e.g., Recyclable Material, Non-Recyclable, Compostable, Electronic Waste Drop-off",
-      "recyclingTip": "Provide 1 short and actionable tip on how to dispose, clean, or prepare it. If E-Waste, strongly recommend dropping it off at certified e-waste facilities.",
+      "detected": "Standardized name of the MAIN item",
+      "category": "Choose the most appropriate: Recyclable Plastic, Glass, Paper, Metal, Organic Waste, General Waste, E-Waste, Hazardous, Not allowed to dispose or use for recycling, Not a Waste",
+      "status": "e.g., Recyclable Material, Non-Recyclable, Compostable, Electronic Waste Drop-off, Prohibited",
+      "accuracy": <number between 40 to 99 based on how certain you are>,
+      "recyclingTip": "Provide 1 short and actionable tip on how to dispose, clean, or prepare it. If it is a person, say 'Please scan a valid waste item.'",
       "projects": [
         {
-          "title": "Mini Herb Planter",
-          "youtubeLink": "https://www.youtube.com/results?search_query=diy+plastic+cup+planter"
+          "title": "Pen Holder",
+          "difficulty": "Easy",
+          "youtubeLink": "https://www.youtube.com/results?search_query=diy+plastic+bottle+pen+holder"
         }
-      ] // IMPORTANT: Provide 7 to 10 creative DIY upcycle projects for the scanned item. Format as an array of objects containing 'title' and 'youtubeLink' (generate a relevant YouTube search URL for the specific DIY). If the item is Hazardous, E-Waste, or unsafe to upcycle, make this an empty array [].
+      ] // IMPORTANT: Provide EXACTLY 7 creative DIY upcycle projects. Include a mix: 3 "Easy", 2 "Medium", and 2 "Hard". Format as an array of objects containing 'title', 'difficulty' (Easy, Medium, Hard), and 'youtubeLink'. If the item is Hazardous, E-Waste, Prohibited, Money, or a Person ("Not a Waste"), make this an empty array [].
     }`;
 
     let messagesContent = [];
@@ -61,23 +87,16 @@ export default function ScanPage() {
             { role: 'user', content: messagesContent }
           ],
           temperature: 0.5,
-          max_completion_tokens: 800, 
+          max_completion_tokens: 800,
         })
       });
 
       const data = await response.json();
-      
-      if (data.error) {
-         console.error("OpenAI API Error:", data.error.message);
-         throw new Error(data.error.message); 
-      }
+      if (data.error) throw new Error(data.error.message); 
       
       const content = data.choices[0].message.content;
       const jsonMatch = content.match(/\{[\s\S]*\}/);
-      
-      if (jsonMatch) {
-          return JSON.parse(jsonMatch[0]);
-      }
+      if (jsonMatch) return JSON.parse(jsonMatch[0]);
       return null;
     } catch (error) {
       console.error("GPT Fetch Error:", error);
@@ -99,7 +118,7 @@ export default function ScanPage() {
                 success: true,
                 detected: gptData.detected,
                 category: gptData.category,
-                confidenceScore: Math.floor(Math.random() * (98 - 88 + 1)) + 88, 
+                confidenceScore: gptData.accuracy || Math.floor(Math.random() * (98 - 88 + 1)) + 88, 
                 status: gptData.status,
                 recyclingTip: gptData.recyclingTip,
                 projects: gptData.projects || []
@@ -117,18 +136,8 @@ export default function ScanPage() {
     try {
         const { status } = await ImagePicker.requestCameraPermissionsAsync();
         if (status !== 'granted') { Alert.alert('Permission needed', 'We need access to your camera!'); return; }
-        
-        let pickerResult = await ImagePicker.launchCameraAsync({ 
-            mediaTypes: ['images'], 
-            quality: 0.3, 
-            allowsEditing: true, 
-            aspect: [1, 1],
-            base64: true 
-        });
-        
-        if (!pickerResult.canceled) {
-             handleAnalysis(pickerResult.assets[0].uri, pickerResult.assets[0].base64, null);
-        }
+        let pickerResult = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.3, allowsEditing: true, aspect: [1, 1], base64: true });
+        if (!pickerResult.canceled) handleAnalysis(pickerResult.assets[0].uri, pickerResult.assets[0].base64, null);
     } catch (error) { Alert.alert("Error", "Could not open camera."); }
   };
 
@@ -136,18 +145,8 @@ export default function ScanPage() {
     try {
         const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
         if (status !== 'granted') { Alert.alert('Permission needed', 'We need access to your gallery!'); return; }
-        
-        let pickerResult = await ImagePicker.launchImageLibraryAsync({ 
-            mediaTypes: ['images'], 
-            quality: 0.3, 
-            allowsEditing: true, 
-            aspect: [1, 1],
-            base64: true 
-        });
-        
-        if (!pickerResult.canceled) {
-            handleAnalysis(pickerResult.assets[0].uri, pickerResult.assets[0].base64, null);
-        }
+        let pickerResult = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.3, allowsEditing: true, aspect: [1, 1], base64: true });
+        if (!pickerResult.canceled) handleAnalysis(pickerResult.assets[0].uri, pickerResult.assets[0].base64, null);
     } catch (error) { Alert.alert("Error", "Could not open gallery."); }
   };
 
@@ -157,13 +156,9 @@ export default function ScanPage() {
       setManualInput('');
   };
 
-  // 🟢 UPDATED: Ipinasa na natin ang result.detected papunta sa Rewards page bilang 'wasteType'
   const goToRewards = () => {
       if (result && result.detected) {
-          router.push({
-              pathname: '/(tabs)/rewards',
-              params: { wasteType: result.detected }
-          });
+          router.push({ pathname: '/(tabs)/rewards', params: { wasteType: result.detected } });
       } else {
           router.push('/(tabs)/rewards');
       }
@@ -172,18 +167,60 @@ export default function ScanPage() {
   const proceedToProject = (ideaObj) => {
     setModalVisible(false);
     if (result) {
-        router.push({ 
-            pathname: '/(tabs)/projects', 
-            params: { 
-                itemName: result.detected, 
-                projectType: ideaObj.title, 
-                youtubeLink: ideaObj.youtubeLink, 
-                openDirectly: 'true',
-                scannedImageUri: image 
-            } 
-        });
+        router.push({ pathname: '/(tabs)/projects', params: { itemName: result.detected, projectType: ideaObj.title, youtubeLink: ideaObj.youtubeLink, openDirectly: 'true', scannedImageUri: image } });
     }
   };
+
+  // 🟢 LOGIC PARA GUMAWA NG DRAFT PROJECT AGAD
+  const handleStartOwnProject = async () => {
+      if (!ownProjectTitle.trim()) {
+          Alert.alert("Required", "Please enter a project title to start.");
+          return;
+      }
+      setIsCreatingDraft(true);
+
+      try {
+          const { data: { user } } = await supabase.auth.getUser();
+          if (!user) throw new Error("Please log in first.");
+
+          const { error: dbError } = await supabase.from('saved_projects').insert([{
+              user_email: user.email,
+              title: ownProjectTitle,
+              material_category: 'My OWN Guides', 
+              difficulty: 'Medium', // Default
+              time_required: 'Self Paced',
+              estimated_cost: 'Custom',
+              materials: [],
+              steps: [],
+              selling_price: '',
+              image_url: image || 'https://images.unsplash.com/photo-1528323273322-d81458248d40?w=500', 
+              is_done: false // 🟢 ON GOING STATUS
+          }]);
+
+          if (dbError) throw dbError;
+
+          // Ipakita ang Success Popup kapag na-save na ang draft
+          setTitleModalVisible(false);
+          setSuccessModalVisible(true);
+          setOwnProjectTitle('');
+
+      } catch (error) {
+          Alert.alert("Error", error.message);
+      } finally {
+          setIsCreatingDraft(false);
+      }
+  };
+
+  const getDifficultyColor = (diff) => {
+    switch (diff?.toLowerCase()) {
+        case 'easy': return '#4CAF50';
+        case 'medium': return '#FF9800';
+        case 'hard': return '#F44336';
+        default: return '#9E9E9E';
+    }
+  };
+
+  const isProhibited = result && (result.category.toLowerCase().includes('not allowed') || result.category.toLowerCase().includes('not a waste'));
 
   return (
     <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{flex:1, backgroundColor: '#F4F6F8'}}>
@@ -224,9 +261,11 @@ export default function ScanPage() {
                   <Text style={styles.cardHeaderTitle}>AI Recognition Result</Text>
                   <View style={styles.accuracyContainer}>
                       <View style={styles.progressBarBg}>
-                          <View style={[styles.progressBarFill, {width: `${result.confidenceScore}%`}]} />
+                          <View style={[styles.progressBarFill, {width: `${result.confidenceScore}%`}, result.confidenceScore < 70 && {backgroundColor: '#FF9800'}, result.confidenceScore < 50 && {backgroundColor: '#F44336'}]} />
                       </View>
-                      <Text style={styles.accuracyText}>Accuracy Level: {result.confidenceScore}%</Text>
+                      <Text style={[styles.accuracyText, result.confidenceScore < 70 && {color: '#FF9800'}, result.confidenceScore < 50 && {color: '#F44336'}]}>
+                          Accuracy Level: {result.confidenceScore}% {result.confidenceScore < 70 && " (AI is not completely sure)"}
+                      </Text>
                   </View>
 
                   <View style={{marginTop: 15}}>
@@ -234,25 +273,28 @@ export default function ScanPage() {
                       <Text style={styles.mainWasteTitle}>{result.detected}</Text>
                       <Text style={styles.smallLabel}>Category</Text>
                       <Text style={styles.categoryText}>{result.category}</Text>
-                      <View style={styles.statusChip}>
-                          <MaterialCommunityIcons name="check-circle-outline" size={16} color="#2E7D32" />
-                          <Text style={styles.statusText}>{result.status}</Text>
+                      
+                      <View style={[styles.statusChip, isProhibited && {backgroundColor: '#FFEBEE', borderColor: '#FFCDD2'}]}>
+                          <MaterialCommunityIcons name={isProhibited ? "cancel" : "check-circle-outline"} size={16} color={isProhibited ? "#D32F2F" : "#2E7D32"} />
+                          <Text style={[styles.statusText, isProhibited && {color: '#D32F2F'}]}>{result.status}</Text>
                       </View>
                   </View>
 
                   <Text style={styles.actionLabel}>What would you like to do?</Text>
 
-                  <Pressable onPress={goToRewards} style={({ pressed }) => [styles.outlinedBtn, pressed && styles.outlinedBtnActive]}>
-                      {({ pressed }) => (
-                          <>
-                              <View>
-                                  <Text style={[styles.outlinedBtnTitle, pressed && {color: 'white'}]}>Find Disposal & Incentives</Text>
-                                  <Text style={[styles.outlinedBtnSub, pressed && {color: 'rgba(255,255,255,0.9)'}]}>View rewards recommendations</Text>
-                              </View>
-                              <MaterialCommunityIcons name="arrow-right-circle" size={24} color={pressed ? "white" : "#007C00"} />
-                          </>
-                      )}
-                  </Pressable>
+                  {!isProhibited && (
+                      <Pressable onPress={goToRewards} style={({ pressed }) => [styles.outlinedBtn, pressed && styles.outlinedBtnActive]}>
+                          {({ pressed }) => (
+                              <>
+                                  <View>
+                                      <Text style={[styles.outlinedBtnTitle, pressed && {color: 'white'}]}>Find Disposal & Incentives</Text>
+                                      <Text style={[styles.outlinedBtnSub, pressed && {color: 'rgba(255,255,255,0.9)'}]}>View rewards recommendations</Text>
+                                  </View>
+                                  <MaterialCommunityIcons name="arrow-right-circle" size={24} color={pressed ? "white" : "#007C00"} />
+                              </>
+                          )}
+                      </Pressable>
+                  )}
 
                   {result.projects && result.projects.length > 0 ? (
                       <Pressable onPress={() => setModalVisible(true)} style={({ pressed }) => [styles.outlinedBtn, pressed && styles.outlinedBtnActive]}>
@@ -268,11 +310,13 @@ export default function ScanPage() {
                       </Pressable>
                   ) : result.category.toLowerCase().includes('e-waste') || result.category.toLowerCase().includes('electronic') ? (
                       <View style={{padding: 15, backgroundColor: '#E3F2FD', borderRadius: 12, marginTop: 5, borderWidth: 1, borderColor: '#1976D2'}}>
-                          <View style={{flexDirection: 'row', alignItems: 'center', marginBottom: 5}}>
-                              <MaterialCommunityIcons name="recycle-variant" size={20} color="#1976D2" />
-                              <Text style={{color: '#1976D2', fontSize: 14, fontWeight: 'bold', marginLeft: 5}}>E-Waste Drop-off Recommended</Text>
-                          </View>
+                          <View style={{flexDirection: 'row', alignItems: 'center', marginBottom: 5}}><MaterialCommunityIcons name="recycle-variant" size={20} color="#1976D2" /><Text style={{color: '#1976D2', fontSize: 14, fontWeight: 'bold', marginLeft: 5}}>E-Waste Drop-off Recommended</Text></View>
                           <Text style={{color: '#1565C0', fontSize: 12, lineHeight: 18}}>Electronics contain hazardous materials. Please do not throw them in regular bins. Surrender this to your LGU or designated E-Waste collection centers.</Text>
+                      </View>
+                  ) : isProhibited ? (
+                      <View style={{padding: 10, backgroundColor: '#FFEBEE', borderRadius: 8, marginTop: 5, borderWidth: 1, borderColor: '#EF9A9A'}}>
+                          <Text style={{color: '#D32F2F', fontSize: 13, textAlign: 'center', fontWeight: 'bold'}}>{result.category.toLowerCase().includes('not a waste') ? "Not a Waste Item" : "Prohibited Item Detected"}</Text>
+                          <Text style={{color: '#C62828', fontSize: 12, textAlign: 'center', marginTop: 4}}>{result.category.toLowerCase().includes('not a waste') ? "We detected a person or non-waste object. Please scan a valid waste item." : "Official banknotes or restricted items cannot be used for recycling or disposed of via this app."}</Text>
                       </View>
                   ) : (
                       <View style={{padding: 10, backgroundColor: '#FFEBEE', borderRadius: 8, marginTop: 5}}>
@@ -292,13 +336,6 @@ export default function ScanPage() {
                </View>
           )}
 
-          {result && !loading && (
-              <View style={styles.tipsContainer}>
-                  <View style={styles.tipHeaderRow}><MaterialCommunityIcons name="leaf" size={18} color="#2E7D32" /><Text style={styles.tipsTitle}>Recycling Tip</Text></View>
-                  <View style={styles.bulletPoint}><Text style={styles.bulletText}>• {result.recyclingTip}</Text></View>
-              </View>
-          )}
-          
           {result && !loading && result.projects && result.projects.length > 0 && (
                <View style={styles.collectibleContainer}>
                    <FontAwesome5 name="coins" size={20} color="#2E7D32" />
@@ -329,27 +366,100 @@ export default function ScanPage() {
               <View style={styles.modalOverlay}>
                   <View style={styles.modalContent}>
                       <View style={styles.modalHeaderRow}>
-                          <Text style={styles.modalTitle}>Choose Project</Text>
+                          <Text style={styles.modalTitle}>Choose Project Level</Text>
                           <TouchableOpacity onPress={() => setModalVisible(false)}><MaterialCommunityIcons name="close-circle" size={28} color="#ccc" /></TouchableOpacity>
                       </View>
-                      <Text style={styles.modalSubtitle}>Ideas for {result.detected}:</Text>
                       
-                      <ScrollView style={{maxHeight: 400}} showsVerticalScrollIndicator={false}>
+                      <ScrollView style={{maxHeight: 500}} showsVerticalScrollIndicator={false}>
+                          
+                          <TouchableOpacity 
+                              style={{ backgroundColor: '#007C00', padding: 15, borderRadius: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 15, elevation: 2 }} 
+                              onPress={() => {
+                                  setModalVisible(false);
+                                  setTitleModalVisible(true); // 🟢 LALABAS YUNG TITLE INPUT MODAL
+                              }}
+                          >
+                              <MaterialCommunityIcons name="lightbulb-on" size={20} color="white" style={{marginRight: 8}} />
+                              <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 15 }}>Create Your Own Project</Text>
+                          </TouchableOpacity>
+
+                          <View style={{height: 1, backgroundColor: '#eee', marginBottom: 15}} />
+                          <Text style={{fontSize: 12, color: '#999', marginBottom: 10, fontWeight: 'bold'}}>OR TRY AI SUGGESTIONS:</Text>
+
                           {result.projects && result.projects.map((ideaObj, i) => (
                               <TouchableOpacity key={i} style={styles.modalOption} onPress={() => proceedToProject(ideaObj)}>
-                                  <View style={{flexDirection: 'row', alignItems: 'center', flex: 1}}>
-                                      <MaterialCommunityIcons name="youtube" size={24} color="#FF0000" style={{marginRight: 10}} />
-                                      <Text style={[styles.optionText, {flex: 1, paddingRight: 10}]}>{ideaObj.title}</Text>
+                                  <View style={{flex: 1}}>
+                                      <Text style={styles.optionText}>{ideaObj.title}</Text>
+                                      <View style={[styles.difficultyTag, {backgroundColor: getDifficultyColor(ideaObj.difficulty) + '20'}]}>
+                                          <Text style={[styles.difficultyText, {color: getDifficultyColor(ideaObj.difficulty)}]}>{ideaObj.difficulty || 'Normal'}</Text>
+                                      </View>
                                   </View>
-                                  <MaterialCommunityIcons name="chevron-right" size={24} color="#007C00" />
+                                  <MaterialCommunityIcons name="chevron-right" size={24} color="#ccc" />
                               </TouchableOpacity>
                           ))}
                       </ScrollView>
-
                   </View>
               </View>
           </Modal>
         )}
+
+        {/* 🟢 MODAL 1: ENTER TITLE PARA SA DRAFT */}
+        <Modal visible={titleModalVisible} transparent animationType="fade">
+            <View style={styles.modalOverlayDark}>
+                <View style={styles.inputModalCard}>
+                    <Text style={styles.inputModalTitle}>Name your DIY Project</Text>
+                    <Text style={styles.inputModalSub}>Give it a catchy name to start your upcycling journey!</Text>
+                    
+                    <TextInput 
+                        style={styles.titleInput} 
+                        placeholder="e.g. My Custom Bottle Lamp" 
+                        value={ownProjectTitle} 
+                        onChangeText={setOwnProjectTitle} 
+                        autoFocus
+                    />
+
+                    <View style={styles.modalBtnRow}>
+                        <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setTitleModalVisible(false)}>
+                            <Text style={styles.modalCancelText}>Cancel</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={styles.modalProceedBtn} onPress={handleStartOwnProject} disabled={isCreatingDraft}>
+                            {isCreatingDraft ? <ActivityIndicator color="white" /> : <Text style={styles.modalProceedText}>Start Project</Text>}
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </View>
+        </Modal>
+
+        {/* 🟢 MODAL 2: SUCCESS & MOTIVATION POPUP */}
+        <Modal visible={successModalVisible} transparent animationType="fade">
+            <View style={styles.modalOverlayDark}>
+                <View style={styles.successModalCard}>
+                    <View style={styles.successIconBg}>
+                        <MaterialCommunityIcons name="check-decagram" size={50} color="#007C00" />
+                    </View>
+                    <Text style={styles.successTitle}>Project Created!</Text>
+                    <Text style={styles.successMessage}>
+                        YOUR OWN DIY PROJECT IS NOW SAVED IN THE UPCYCLE IDEAS TAB!
+                    </Text>
+                    
+                    <View style={styles.quoteBox}>
+                        <MaterialCommunityIcons name="format-quote-open" size={20} color="#007C00" style={{marginBottom: 5}}/>
+                        <Text style={styles.quoteText}>"Every piece of waste has a second life. Great job starting your upcycling journey!"</Text>
+                    </View>
+
+                    <TouchableOpacity 
+                        style={styles.goUpcycleBtn} 
+                        onPress={() => {
+                            setSuccessModalVisible(false);
+                            router.push('/(tabs)/projects'); // Direkta sa Upcycle Ideas
+                        }}
+                    >
+                        <Text style={styles.goUpcycleBtnText}>Go to Upcycle Ideas</Text>
+                    </TouchableOpacity>
+                </View>
+            </View>
+        </Modal>
+
         <View style={{height: 50}} /> 
       </ScrollView>
     </KeyboardAvoidingView>
@@ -416,6 +526,29 @@ const styles = StyleSheet.create({
   modalHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
   modalTitle: { fontSize: 20, fontWeight: 'bold', color: '#333' },
   modalSubtitle: { fontSize: 14, color: '#666', marginBottom: 15 },
-  modalOption: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 15, borderBottomWidth: 1, borderColor: '#eee', alignItems: 'center' },
-  optionText: { fontSize: 16, color: '#333', fontWeight: '500' },
+  modalOption: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 15, borderBottomWidth: 1, borderColor: '#f0f0f0', alignItems: 'center' },
+  optionText: { fontSize: 16, color: '#333', fontWeight: 'bold', marginBottom: 4 },
+  difficultyTag: { alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6 },
+  difficultyText: { fontSize: 11, fontWeight: 'bold' },
+
+  // 🟢 NEW STYLES FOR DRAFT & SUCCESS MODALS
+  modalOverlayDark: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 20 },
+  inputModalCard: { width: '100%', backgroundColor: 'white', borderRadius: 20, padding: 25, elevation: 10 },
+  inputModalTitle: { fontSize: 20, fontWeight: 'bold', color: '#333', marginBottom: 5 },
+  inputModalSub: { fontSize: 13, color: '#666', marginBottom: 20 },
+  titleInput: { backgroundColor: '#F5F7FA', borderWidth: 1, borderColor: '#E0E0E0', padding: 15, borderRadius: 12, fontSize: 16, color: '#333', marginBottom: 25 },
+  modalBtnRow: { flexDirection: 'row', gap: 10 },
+  modalCancelBtn: { flex: 1, paddingVertical: 14, borderRadius: 12, alignItems: 'center', backgroundColor: '#F5F5F5' },
+  modalCancelText: { color: '#666', fontWeight: 'bold', fontSize: 15 },
+  modalProceedBtn: { flex: 1, backgroundColor: '#007C00', paddingVertical: 14, borderRadius: 12, alignItems: 'center', elevation: 2 },
+  modalProceedText: { color: 'white', fontWeight: 'bold', fontSize: 15 },
+
+  successModalCard: { width: '90%', backgroundColor: 'white', borderRadius: 24, padding: 30, alignItems: 'center', elevation: 10 },
+  successIconBg: { width: 80, height: 80, borderRadius: 40, backgroundColor: '#E8F5E9', justifyContent: 'center', alignItems: 'center', marginBottom: 20 },
+  successTitle: { fontSize: 22, fontWeight: 'bold', color: '#333', marginBottom: 10 },
+  successMessage: { fontSize: 14, color: '#007C00', textAlign: 'center', fontWeight: 'bold', marginBottom: 20, lineHeight: 22 },
+  quoteBox: { backgroundColor: '#F9F9F9', padding: 15, borderRadius: 12, borderWidth: 1, borderColor: '#eee', alignItems: 'center', marginBottom: 25 },
+  quoteText: { fontStyle: 'italic', color: '#555', textAlign: 'center', fontSize: 13, lineHeight: 20 },
+  goUpcycleBtn: { backgroundColor: '#007C00', width: '100%', paddingVertical: 16, borderRadius: 12, alignItems: 'center', elevation: 3 },
+  goUpcycleBtnText: { color: 'white', fontWeight: 'bold', fontSize: 16, letterSpacing: 0.5 }
 });

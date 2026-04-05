@@ -1,148 +1,234 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { StyleSheet, Text, View, Image, TouchableOpacity, FlatList, StatusBar, ActivityIndicator, Platform, BackHandler } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, RefreshControl, StatusBar, ActivityIndicator } from 'react-native';
+import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { supabase } from '../../lib/supabase'; 
 
-// 🟢 TAMA NA ANG PATH: Dalawang akyat pabalik sa root directory
-import { supabase } from '../../lib/supabase';
-
-const getSafeShadow = () => Platform.select({ 
-    ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4 }, 
-    android: { elevation: 3 },
-    web: { boxShadow: '0px 2px 4px rgba(0, 0, 0, 0.1)' }
-});
-
-export default function HistoryPage() {
-  const router = useRouter(); 
+export default function History() {
+  const router = useRouter();
   const insets = useSafeAreaInsets();
-
-  const [history, setHistory] = useState([]);
+  
+  const [logs, setLogs] = useState([]);
+  const [totalRecycled, setTotalRecycled] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [totalWeight, setTotalWeight] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
 
-  // 🟢 NAVIGATION FIX: History -> Settings
-  useEffect(() => {
-    const backAction = () => {
-      router.navigate('/settings');
-      return true;
-    };
-    const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
-    return () => backHandler.remove(); 
-  }, []);
-
-  const fetchHistory = useCallback(async () => {
-    setLoading(true);
+  const fetchHistory = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-          const { data, error } = await supabase
-              .from('surrender_logs')
-              .select(`id, created_at, waste_type, weight_kg, collector_email, reward_claimed`)
-              .eq('resident_email', user.email)
-              .order('created_at', { ascending: false });
-
-          if (data && !error) {
-              const total = data.reduce((sum, item) => sum + parseFloat(item.weight_kg), 0);
-              setTotalWeight(total.toFixed(1));
-              const formattedData = await Promise.all(data.map(async (item) => {
-                  const { data: center } = await supabase.from('dropoff_applications').select('program_name').eq('user_email', item.collector_email).single();
-                  return {
-                      id: item.id.toString(),
-                      item: item.waste_type,
-                      image: 'https://images.unsplash.com/photo-1605600659873-d808a13e4d2a?q=80&w=200', 
-                      weight: `${item.weight_kg} kg`,
-                      date: new Date(item.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-                      location: center ? center.program_name : 'GreenSort Center',
-                      reward: item.reward_claimed
-                  };
-              }));
-              setHistory(formattedData);
-          }
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) {
+          router.replace('/login');
+          return;
       }
-    } catch (err) {
-      console.log("Supabase Error:", err.message);
+
+      const userEmail = session.user.email;
+
+      // 🟢 1. KUNIN ANG LAHAT NG SURRENDER LOGS NG USER MULA SA DATABASE
+      const { data: logsData, error } = await supabase
+        .from('surrender_logs')
+        .select('*')
+        .eq('resident_email', userEmail)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      let totalKg = 0;
+      const formattedLogs = [];
+
+      // 🟢 2. I-PROCESS ANG DATA AT KUNIN ANG CENTER NAME
+      for (const log of logsData) {
+          const weight = Number(log.weight_kg) || 0;
+          const claimStatus = log.reward_claimed ? log.reward_claimed.trim() : 'Unknown';
+          
+          // Idadagdag lang natin sa "Total Recycled" kapag HINDI ito redemption ng Banked Points
+          // Para hindi madoble yung bilang ng nirecycle na item
+          if (!claimStatus.startsWith('Banked Redemption')) {
+              totalKg += weight;
+          }
+
+          // Kunin ang Drop-off Center Name gamit ang email ng collector
+          let locationName = 'GreenSort Drop-off';
+          if (log.collector_email) {
+              const { data: center } = await supabase
+                .from('dropoff_applications')
+                .select('program_name, barangay')
+                .eq('user_email', log.collector_email)
+                .single();
+                
+              if (center) {
+                  locationName = center.program_name || `Brgy. ${center.barangay}`;
+              }
+          }
+
+          // Mag-assign ng placeholder image base sa waste type
+          let imageUrl = 'https://images.unsplash.com/photo-1611284446314-60a58ac0deb9?w=500&q=80'; // Default recycle image
+          const typeLower = (log.waste_type || '').toLowerCase();
+          if (typeLower.includes('glass')) imageUrl = 'https://images.unsplash.com/photo-1528323273322-d81458248d40?w=500&q=80';
+          else if (typeLower.includes('plastic') || typeLower.includes('pet')) imageUrl = 'https://images.unsplash.com/photo-1526951521990-620dc14c214b?w=500&q=80';
+          else if (typeLower.includes('paper') || typeLower.includes('cardboard')) imageUrl = 'https://images.unsplash.com/photo-1532153975070-2e9ab71f1b14?w=500&q=80';
+          else if (typeLower.includes('metal') || typeLower.includes('can')) imageUrl = 'https://images.unsplash.com/photo-1566847413488-82db371de1e3?w=500&q=80';
+
+          formattedLogs.push({
+              id: log.id,
+              waste_type: log.waste_type || 'Recyclables',
+              weight: weight,
+              date: new Date(log.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }),
+              location: locationName,
+              reward: claimStatus,
+              image: imageUrl,
+              isRedemption: claimStatus.startsWith('Banked Redemption')
+          });
+      }
+
+      setTotalRecycled(totalKg);
+      setLogs(formattedLogs);
+
+    } catch (error) {
+      console.log("Error fetching history:", error);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
+  };
+
+  useEffect(() => {
+    fetchHistory();
   }, []);
 
-  useEffect(() => { fetchHistory(); }, [fetchHistory]);
-
-  const renderSummaryCard = () => (
-    <View style={styles.summaryCardContainer}>
-      <View style={styles.summaryCard}>
-          <View style={styles.iconCircle}><MaterialCommunityIcons name="weight-kilogram" size={32} color="#007C00" /></View>
-          <View style={{flex: 1, marginLeft: 15}}><Text style={styles.summaryLabel}>Total Waste Recycled</Text><Text style={styles.summaryValue}>{totalWeight} KG</Text></View>
-      </View>
-      <Text style={styles.sectionTitle}>Recent Surrenders</Text>
-    </View>
-  );
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    fetchHistory();
+  }, []);
 
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#007C00" translucent={true} />
-      <View style={[styles.header, { paddingTop: Math.max(insets.top, 20) + 15, paddingBottom: 25 }]}>
-          <View style={styles.headerRow}>
-              {/* 🟢 NAVIGATION FIX: Screen Back Button */}
-              <TouchableOpacity onPress={() => router.navigate('/settings')} style={styles.backButton}>
-                  <Ionicons name="arrow-back" size={24} color="white" />
-              </TouchableOpacity>
-              <View style={{alignItems: 'center'}}><Text style={styles.headerTitle}>Surrender History</Text><Text style={styles.headerSubtitle}>Track your waste submissions</Text></View>
-              <View style={{ width: 40 }} />
-          </View>
+      
+      {/* HEADER */}
+      <View style={[styles.header, { paddingTop: Math.max(insets.top, 20) + 10 }]}>
+        <View style={styles.headerRow}>
+            <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+                <Ionicons name="arrow-back" size={24} color="white" />
+            </TouchableOpacity>
+            <View style={{flex: 1, alignItems: 'center', marginRight: 40}}>
+                <Text style={styles.headerTitle}>Surrender History</Text>
+                <Text style={styles.headerSubtitle}>Track your waste submissions</Text>
+            </View>
+        </View>
       </View>
-      {loading ? ( <ActivityIndicator size="large" color="#007C00" style={{marginTop: 50}} /> ) : (
-          <FlatList
-            data={history}
-            renderItem={({ item }) => (
-                <View style={styles.card}>
-                    <Image source={{ uri: item.image }} style={styles.cardImage} />
-                    <View style={styles.cardContent}>
-                        <Text style={styles.itemTitle} numberOfLines={1}>{item.item}</Text>
-                        <View style={styles.row}><Ionicons name="scale-outline" size={14} color="#666" style={{marginRight: 6}} /><Text style={styles.label}>Weight: </Text><Text style={styles.weightValue}>{item.weight}</Text></View>
-                        <View style={styles.row}><Ionicons name="calendar-outline" size={14} color="#666" style={{marginRight: 6}} /><Text style={styles.dateText}>{item.date}</Text></View>
-                        <View style={styles.row}><Ionicons name="location-outline" size={14} color="#666" style={{marginRight: 6}} /><Text style={styles.locationText} numberOfLines={1}>{item.location}</Text></View>
-                        {item.reward && item.reward !== 'None' && ( <View style={styles.rewardBadge}><Ionicons name="gift" size={12} color="#007C00" style={{marginRight: 4}} /><Text style={styles.rewardText}>Reward: {item.reward}</Text></View> )}
+
+      <ScrollView 
+        contentContainerStyle={styles.scrollContent} 
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#007C00']} />}
+      >
+        {loading ? (
+            <View style={{marginTop: 50, alignItems: 'center'}}>
+                <ActivityIndicator size="large" color="#007C00" />
+                <Text style={{marginTop: 10, color: '#666'}}>Fetching records...</Text>
+            </View>
+        ) : (
+            <>
+                {/* TOTAL CARD */}
+                <View style={styles.totalCard}>
+                    <View style={styles.totalIconBg}>
+                        <MaterialCommunityIcons name="weight" size={32} color="#007C00" />
+                    </View>
+                    <View style={{marginLeft: 15}}>
+                        <Text style={styles.totalLabel}>TOTAL WASTE RECYCLED</Text>
+                        <Text style={styles.totalValue}>{totalRecycled.toFixed(1)} KG</Text>
                     </View>
                 </View>
-            )}
-            keyExtractor={item => item.id}
-            ListHeaderComponent={renderSummaryCard}
-            contentContainerStyle={styles.listContainer}
-            showsVerticalScrollIndicator={false}
-            ListEmptyComponent={ <View style={styles.emptyState}><MaterialCommunityIcons name="history" size={60} color="#ccc" /><Text style={styles.emptyText}>No surrenders yet.</Text></View> }
-          />
-      )}
+
+                <Text style={styles.sectionTitle}>Recent Surrenders</Text>
+
+                {logs.length === 0 ? (
+                    <View style={styles.emptyContainer}>
+                        <MaterialCommunityIcons name="history" size={60} color="#ccc" />
+                        <Text style={styles.emptyText}>You haven't surrendered any waste yet.</Text>
+                    </View>
+                ) : (
+                    logs.map((log) => (
+                        <View key={log.id} style={styles.logCard}>
+                            <Image source={{ uri: log.image }} style={styles.logImage} />
+                            <View style={styles.logDetails}>
+                                <Text style={styles.wasteType}>{log.waste_type}</Text>
+                                
+                                <View style={styles.infoRow}>
+                                    <MaterialCommunityIcons name="scale" size={14} color="#666" />
+                                    <Text style={styles.infoText}>Weight: <Text style={{fontWeight: 'bold', color: '#333'}}>{log.weight} kg</Text></Text>
+                                </View>
+                                
+                                <View style={styles.infoRow}>
+                                    <MaterialCommunityIcons name="calendar" size={14} color="#666" />
+                                    <Text style={styles.infoText}>{log.date}</Text>
+                                </View>
+                                
+                                <View style={styles.infoRow}>
+                                    <MaterialCommunityIcons name="map-marker-outline" size={14} color="#666" />
+                                    <Text style={styles.infoText} numberOfLines={1}>{log.location}</Text>
+                                </View>
+
+                                {/* 🟢 REWARD STATUS CHIP */}
+                                <View style={[
+                                    styles.rewardChip, 
+                                    log.isRedemption ? {backgroundColor: '#E8F5E9'} : 
+                                    log.reward === 'Banked' ? {backgroundColor: '#E8F5E9'} : {backgroundColor: '#E3F2FD'}
+                                ]}>
+                                    <MaterialCommunityIcons 
+                                        name={log.reward === 'Banked' ? "safe" : "gift"} 
+                                        size={14} 
+                                        color={log.isRedemption || log.reward === 'Banked' ? "#007C00" : "#1976D2"} 
+                                        style={{marginRight: 4}}
+                                    />
+                                    <Text style={[
+                                        styles.rewardText, 
+                                        log.isRedemption || log.reward === 'Banked' ? {color: '#007C00'} : {color: '#1976D2'}
+                                    ]}>
+                                        Reward: {log.reward === 'Banked' ? 'Banked' : 
+                                                log.isRedemption ? log.reward : `Claimed - ${log.reward}`}
+                                    </Text>
+                                </View>
+                            </View>
+                        </View>
+                    ))
+                )}
+            </>
+        )}
+        <View style={{height: 100}} />
+      </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F5F7FA' }, 
-  header: { backgroundColor: '#007C00', paddingHorizontal: 20, borderBottomLeftRadius: 30, borderBottomRightRadius: 30, elevation: 5 },
-  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', width: '100%' },
+  container: { flex: 1, backgroundColor: '#F5F7FA' },
+  header: { backgroundColor: '#007C00', paddingBottom: 25, paddingHorizontal: 20, borderBottomLeftRadius: 25, borderBottomRightRadius: 25, elevation: 5 },
+  headerRow: { flexDirection: 'row', alignItems: 'center' },
+  backButton: { padding: 8, backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 12 },
   headerTitle: { color: 'white', fontSize: 20, fontWeight: 'bold' },
   headerSubtitle: { color: 'rgba(255,255,255,0.9)', fontSize: 12, marginTop: 2 },
-  backButton: { backgroundColor: 'rgba(255,255,255,0.2)', padding: 8, borderRadius: 12 },
-  summaryCardContainer: { marginTop: 20, marginBottom: 10 },
-  summaryCard: { backgroundColor: 'white', borderRadius: 16, padding: 20, flexDirection: 'row', alignItems: 'center', ...getSafeShadow(), marginBottom: 20 },
-  iconCircle: { backgroundColor: '#E8F5E9', padding: 15, borderRadius: 50 },
-  summaryLabel: { fontSize: 12, color: '#666', fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 },
-  summaryValue: { fontSize: 26, fontWeight: 'bold', color: '#333', marginTop: 2 },
-  sectionTitle: { fontSize: 16, fontWeight: 'bold', color: '#263238', marginBottom: 10 },
-  listContainer: { paddingHorizontal: 20, paddingBottom: 30 },
-  card: { backgroundColor: 'white', borderRadius: 16, marginBottom: 15, padding: 15, flexDirection: 'row', alignItems: 'center', ...getSafeShadow() },
-  cardImage: { width: 75, height: 95, borderRadius: 12, backgroundColor: '#eee', marginRight: 15 },
-  cardContent: { flex: 1, justifyContent: 'center' },
-  itemTitle: { fontSize: 16, fontWeight: 'bold', color: '#333', marginBottom: 8 },
-  row: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
-  label: { fontSize: 12, color: '#666' },
-  weightValue: { fontSize: 13, fontWeight: 'bold', color: '#333' },
-  dateText: { fontSize: 12, color: '#666' },
-  locationText: { fontSize: 12, color: '#666', flex: 1 },
-  rewardBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#E8F5E9', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, alignSelf: 'flex-start', marginTop: 6 },
-  rewardText: { fontSize: 10, color: '#007C00', fontWeight: 'bold' },
-  emptyState: { alignItems: 'center', marginTop: 40 },
+  
+  scrollContent: { padding: 20 },
+  
+  totalCard: { backgroundColor: 'white', borderRadius: 20, padding: 20, flexDirection: 'row', alignItems: 'center', marginBottom: 25, elevation: 3, shadowColor: '#000', shadowOffset: {width: 0, height: 2}, shadowOpacity: 0.1, shadowRadius: 4 },
+  totalIconBg: { width: 60, height: 60, borderRadius: 30, backgroundColor: '#E8F5E9', justifyContent: 'center', alignItems: 'center' },
+  totalLabel: { fontSize: 12, color: '#666', fontWeight: 'bold', letterSpacing: 0.5 },
+  totalValue: { fontSize: 28, fontWeight: 'bold', color: '#333', marginTop: 2 },
+  
+  sectionTitle: { fontSize: 18, fontWeight: 'bold', color: '#333', marginBottom: 15 },
+  
+  logCard: { flexDirection: 'row', backgroundColor: 'white', borderRadius: 16, padding: 15, marginBottom: 15, elevation: 2, shadowColor: '#000', shadowOffset: {width: 0, height: 1}, shadowOpacity: 0.05, shadowRadius: 3 },
+  logImage: { width: 80, height: 90, borderRadius: 12, backgroundColor: '#eee' },
+  logDetails: { flex: 1, marginLeft: 15, justifyContent: 'center' },
+  wasteType: { fontSize: 16, fontWeight: 'bold', color: '#333', marginBottom: 6 },
+  infoRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
+  infoText: { fontSize: 12, color: '#666', marginLeft: 6 },
+  
+  rewardChip: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, marginTop: 6 },
+  rewardText: { fontSize: 11, fontWeight: 'bold' },
+  
+  emptyContainer: { alignItems: 'center', marginTop: 50 },
   emptyText: { color: '#999', marginTop: 10, fontSize: 14 }
 });
