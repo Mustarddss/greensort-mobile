@@ -2,13 +2,11 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router'; 
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Image, KeyboardAvoidingView, Modal, Platform, RefreshControl, ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { ActivityIndicator, Alert, Image, Keyboard, KeyboardAvoidingView, Modal, Platform, RefreshControl, ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
 import { LinearGradient } from 'expo-linear-gradient';
 import MapView, { Marker } from 'react-native-maps';
 import * as Location from 'expo-location';
-import BankedKgModal from '../BankedKgModal';
 
 export default function Dashboard() {
   const router = useRouter();
@@ -49,16 +47,71 @@ export default function Dashboard() {
 
   const [isBankedModalVisible, setBankedModalVisible] = useState(false);
   const [bankedDetails, setBankedDetails] = useState([]);
+
+  // 🟢 STATES PARA SA NESTED REPORTING & ADDITIONAL INFO
+  const [selectedMainReason, setSelectedMainReason] = useState(null);
   const [selectedReportReason, setSelectedReportReason] = useState(null); 
+  const [selectedMainCommentReason, setSelectedMainCommentReason] = useState(null);
+  const [selectedCommentSubReason, setSelectedCommentSubReason] = useState(null);
+  const [reportAdditionalInfo, setReportAdditionalInfo] = useState(''); // 🟢 BAGONG STATE PARA SA TEXTBOX
 
   const reportReasons = [
-    { title: "Spam or misleading", desc: "Repeated posts, fake information, or misleading titles." },
-    { title: "Scam or fraud", desc: "Attempting to deceive others for money or personal information." },
-    { title: "Inappropriate content", desc: "Offensive language, nudity, or disturbing imagery." },
-    { title: "Not related to recycling/eco", desc: "Posts that have nothing to do with recycling, upcycling, or environmental efforts." },
-    { title: "Hazardous or dangerous materials", desc: "Trading or selling toxic chemicals, medical waste, or illegal items." },
-    { title: "Fake or unrealistic price/trade", desc: "Trolling with absurd prices or fake trade requests." },
-    { title: "Harassment or bullying", desc: "Targeting, insulting, or threatening other members of the community." }
+    { 
+      title: "Spam or misleading", desc: "Repeated posts, fake information, or misleading titles.",
+      subCategories: [
+        { title: "Repeated posting", desc: "Posting the exact same item multiple times." },
+        { title: "Fake information", desc: "Details or photos do not match the actual item." },
+        { title: "Misleading title/tags", desc: "Clickbait or using incorrect categories to get views." }
+      ]
+    },
+    { 
+      title: "Scam or fraud", desc: "Attempting to deceive others for money or personal information.",
+      subCategories: [
+        { title: "Asking for money upfront", desc: "Demanding payment before meetup or delivery." },
+        { title: "Suspicious links", desc: "Phishing links or directing outside the app safely." },
+        { title: "Fake profile", desc: "Impersonating someone else or a fake business." }
+      ]
+    },
+    { 
+      title: "Inappropriate content", desc: "Offensive language, nudity, or disturbing imagery.",
+      subCategories: [
+        { title: "Offensive language", desc: "Cursing, slurs, or hate speech." },
+        { title: "Nudity or sexual content", desc: "Inappropriate images or text." },
+        { title: "Graphic imagery", desc: "Violent or disturbing pictures." }
+      ]
+    },
+    { 
+      title: "Not related to recycling/eco", desc: "Posts that have nothing to do with environmental efforts.",
+      subCategories: [
+        { title: "Selling commercial goods", desc: "Selling brand new, non-eco products for pure profit." },
+        { title: "Unrelated services", desc: "Advertising irrelevant businesses or services." },
+        { title: "General off-topic", desc: "Content that has nothing to do with waste, trading, or upcycling." }
+      ]
+    },
+    { 
+      title: "Hazardous or dangerous materials", desc: "Trading or selling toxic chemicals or illegal items.",
+      subCategories: [
+        { title: "Toxic chemicals", desc: "Paints, unsealed batteries, or industrial toxins." },
+        { title: "Medical/Biohazardous waste", desc: "Used syringes, spoiled food, or bodily fluids." },
+        { title: "Illegal items", desc: "Weapons, explosives, or prohibited substances." }
+      ]
+    },
+    { 
+      title: "Fake or unrealistic price/trade", desc: "Trolling with absurd prices or fake trade requests.",
+      subCategories: [
+        { title: "Troll pricing", desc: "Setting absurd prices (e.g. ₱999,999 for a plastic bottle)." },
+        { title: "Unrealistic trade demands", desc: "Demanding high-value items for literal trash." },
+        { title: "Bait and switch", desc: "Changing the price or item when contacted privately." }
+      ]
+    },
+    { 
+      title: "Harassment or bullying", desc: "Targeting, insulting, or threatening other members.",
+      subCategories: [
+        { title: "Insulting behavior", desc: "Name-calling or derogatory remarks towards a user." },
+        { title: "Doxing", desc: "Sharing someone's private information or address publicly." },
+        { title: "Threatening", desc: "Any form of physical or emotional threat." }
+      ]
+    }
   ];
 
   useEffect(() => { 
@@ -66,8 +119,40 @@ export default function Dashboard() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, () => { fetchUserSessionAndData(); })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications' }, () => { fetchUserSessionAndData(); })
       .subscribe();
+
+      let presenceChannel = null;
+
+    const setupPresence = async () => {
+        const { data: { user } } = await supabase.auth.getUser();
+        
+        if (user) {
+            // Siguraduhing pareho ang pangalan ng channel ('app-presence') sa admin mo
+            presenceChannel = supabase.channel('app-presence');
+            
+            presenceChannel
+                .on('presence', { event: 'sync' }, () => {
+                    console.log('Presence sync completed');
+                })
+                .subscribe(async (status) => {
+                    if (status === 'SUBSCRIBED') {
+                        // Kapag nakapasok na sa channel, i-broadcast niya yung sarili niya!
+                        await presenceChannel.track({
+                            user_id: user.id,
+                            online_at: new Date().toISOString(),
+                        });
+                        console.log('Broadcasted presence for:', user.id);
+                    }
+                });
+        }
+    };
+
+    setupPresence();
       
-    return () => { supabase.removeChannel(msgChannel); };
+    return () => { supabase.removeChannel(msgChannel); 
+      if (presenceChannel) {
+            supabase.removeChannel(presenceChannel);
+        }
+    };
   }, []);
 
   useFocusEffect(
@@ -86,52 +171,42 @@ export default function Dashboard() {
       let bankedKg = 0;
       let bankedGroup = {};
 
+      // 🟢 DITO NATIN ILALAGAY ANG UPDATE LAST LOGIN
+      // Ina-update natin ang profiles table para malaman ng Admin Dashboard na active siya ngayon
+      try {
+          const { error: updateError } = await supabase
+              .from('profiles')
+              .update({ last_login: new Date().toISOString() })
+              .eq('email', userEmail); // Ginamit natin ang email bilang identifier para safe
+          if (updateError) console.log("Failed to update last login:", updateError.message);
+      } catch (err) {
+          console.log("Error updating last login:", err);
+      }
+      // 🟢 END OF UPDATE LAST LOGIN
+
       try {
           const { data: logs, error } = await supabase.from('surrender_logs').select('*').eq('resident_email', userEmail);
+          // ... (Ang susunod na lines ay yung existing code mo para sa surrender_logs)
           if (logs && !error) {
               totalSubmissions = logs.length;
-              
               logs.forEach(log => {
                   const weight = Number(log.weight_kg) || 0;
-                  const claimStatus = log.reward_claimed ? log.reward_claimed.trim() : '';
-                  const cEmail = log.collector_email;
-                  const wType = log.waste_type ? log.waste_type.trim() : 'Others';
-
-                  if (claimStatus === 'Banked') {
+                  totalKg += weight;
+                  if (log.reward_claimed === 'Banked') {
                       bankedKg += weight;
-                      totalKg += weight; 
-                      
+                      const cEmail = log.collector_email;
+                      const wType = log.waste_type || 'Others';
                       if (!bankedGroup[cEmail]) bankedGroup[cEmail] = {};
                       if (!bankedGroup[cEmail][wType]) bankedGroup[cEmail][wType] = 0;
                       bankedGroup[cEmail][wType] += weight;
-                  } 
-                  // 🟢 FIX APPLIED HERE: startsWith para ma-detect kahit may karugtong na specific item
-                  else if (claimStatus.startsWith('Banked Redemption')) {
-                      bankedKg -= weight;
-                      if (bankedGroup[cEmail] && bankedGroup[cEmail][wType]) {
-                          bankedGroup[cEmail][wType] -= weight;
-                      }
-                  } 
-                  else {
-                      totalKg += weight; 
                   }
               });
-
               const finalBankedList = [];
               for (const email of Object.keys(bankedGroup)) {
-                  const materialsArr = [];
-                  for (const type of Object.keys(bankedGroup[email])) {
-                      // 🟢 Para hindi magpakita sa modal kung exhausted na ang points
-                      if (bankedGroup[email][type] > 0.01) { 
-                          materialsArr.push({ type: type, kg: bankedGroup[email][type] });
-                      }
-                  }
-                  
-                  if (materialsArr.length > 0) {
-                      const { data: center } = await supabase.from('dropoff_applications').select('program_name, barangay').eq('user_email', email).single();
-                      const locName = center ? (center.program_name || `Brgy. ${center.barangay}`) : 'GreenSort Center';
-                      finalBankedList.push({ email: email, location: locName, materials: materialsArr });
-                  }
+                  const { data: center } = await supabase.from('dropoff_applications').select('program_name, barangay').eq('user_email', email).single();
+                  const locName = center ? (center.program_name || `Brgy. ${center.barangay}`) : 'GreenSort Center';
+                  const materialsArr = Object.keys(bankedGroup[email]).map(type => ({ type: type, kg: bankedGroup[email][type] }));
+                  finalBankedList.push({ email: email, location: locName, materials: materialsArr });
               }
               setBankedDetails(finalBankedList);
           }
@@ -142,8 +217,7 @@ export default function Dashboard() {
         kgRecycled: totalKg.toFixed(1),
         submissions: totalSubmissions, 
         upcycleProjects: 0, 
-        // 🟢 FIX APPLIED HERE: Math.max para iwas negative number sa UI
-        bankedPoints: Math.max(0, bankedKg).toFixed(1), 
+        bankedPoints: bankedKg.toFixed(1), 
         avatar: session.user.user_metadata?.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(fullName)}&background=00C853&color=fff&bold=true`
       });
 
@@ -454,12 +528,25 @@ export default function Dashboard() {
   const handleOtherPostOptions = (post) => {
     setPostToReport(post);
     setReportStep(0); 
+    setReportAdditionalInfo(''); // 🟢 Reset text box
     setReportModalVisible(true);
   };
 
-  const submitReport = async (reason) => {
+  // 🟢 UPDATED SUBMIT REPORT FOR POSTS (Appends the comment to the reason)
+  const submitReport = async (baseReason) => {
+    // Kung may dinagdag na text, idudugtong natin sa huli
+    const fullReasonString = reportAdditionalInfo.trim() 
+        ? `${baseReason} - Details: ${reportAdditionalInfo}` 
+        : baseReason;
+
     try {
-      const { error } = await supabase.from('post_reports').insert([{ post_id: postToReport.id, reporter_email: userData.name, reason: reason, status: 'Pending' }]);
+      const { error } = await supabase.from('post_reports').insert([{ 
+          post_id: postToReport.id, 
+          reporter_email: userData.name, 
+          reason: fullReasonString, 
+          status: 'Pending' 
+      }]);
+      
       if (error) throw error;
 
       if (postToReport.user !== userData.name) {
@@ -473,13 +560,16 @@ export default function Dashboard() {
           }]);
       }
 
-      Alert.alert("Report Submitted", `Thank you for reporting this post for: "${reason}". Our admins will review it shortly.`);
+      Alert.alert("Report Submitted", `Thank you for reporting. Our admins will review it shortly.`);
     } catch (error) { 
       Alert.alert("Error", "Could not submit report: " + error.message);
     } finally { 
       setReportModalVisible(false); 
       setPostToReport(null); 
       setReportStep(0); 
+      setSelectedMainReason(null);
+      setSelectedReportReason(null);
+      setReportAdditionalInfo(''); // 🟢 Reset after submit
     }
   };
 
@@ -494,8 +584,41 @@ export default function Dashboard() {
     ]);
   };
   
-  const handleReportCommentAction = () => { setCommentOptionsModalVisible(false); setCommentReportStep(0); setCommentReportModalVisible(true); };
-  const submitCommentReport = (reason) => { Alert.alert("Report Submitted", `Thank you for reporting this comment for: "${reason}". Our admins will review it.`); setCommentReportModalVisible(false); setCommentReportStep(0); };
+  const handleReportCommentAction = () => { 
+      setCommentOptionsModalVisible(false); 
+      setCommentReportStep(0); 
+      setReportAdditionalInfo(''); // 🟢 Reset text box
+      setCommentReportModalVisible(true); 
+  };
+  
+  // 🟢 UPDATED SUBMIT REPORT FOR COMMENTS (Naka-connect na sa Supabase)
+  const submitCommentReport = async (baseReason) => { // ⚠️ WAG KALIMUTAN YUNG 'async'
+    const fullReasonString = reportAdditionalInfo.trim() 
+        ? `${baseReason} - Details: ${reportAdditionalInfo}` 
+        : baseReason;
+        
+    try {
+      // 🟢 I-insert sa bagong 'comment_reports' table
+      const { error } = await supabase.from('comment_reports').insert([{ 
+          comment_id: selectedCommentForOptions.id, 
+          reporter_email: userData.name, // Gamit natin name mo as reporter base sa post_reports logic mo
+          reason: fullReasonString, 
+          status: 'Pending' 
+      }]);
+      
+      if (error) throw error;
+
+      Alert.alert("Report Submitted", `Thank you for reporting this comment. Our admins will review it.`); 
+    } catch (error) {
+      Alert.alert("Error", "Could not submit report: " + error.message);
+    } finally {
+      setCommentReportModalVisible(false); 
+      setCommentReportStep(0); 
+      setSelectedMainCommentReason(null);
+      setSelectedCommentSubReason(null);
+      setReportAdditionalInfo('');
+    }
+  };
 
   const filteredPosts = posts.filter(post => {
       const matchFilter = activeFilter === 'All' ? true : post.type === activeFilter;
@@ -718,18 +841,72 @@ export default function Dashboard() {
           </TouchableOpacity>
         </Modal>
 
+        {/* 🟢 NESTED COMMENT REPORT MODAL (WITH COMMENT BOX) */}
         <Modal visible={commentReportModalVisible} animationType="slide" transparent={true} onRequestClose={() => setCommentReportModalVisible(false)}>
           <TouchableOpacity style={{flex: 1, backgroundColor: 'transparent', justifyContent: 'flex-end'}} activeOpacity={1} onPress={() => setCommentReportModalVisible(false)}>
             <TouchableOpacity activeOpacity={1} style={styles.darkModalSheet}>
               <View style={{width: 40, height: 5, backgroundColor: '#555', borderRadius: 5, alignSelf: 'center', marginTop: 15, marginBottom: 20}} />
-              {commentReportStep === 0 ? (
+              
+              {commentReportStep === 0 && (
                 <View style={styles.darkMenuContainer}><TouchableOpacity style={{flexDirection: 'row', alignItems: 'center', padding: 18}} onPress={() => setCommentReportStep(1)}><Ionicons name="warning-outline" size={22} color="#FF3B30" style={{marginRight: 15}} /><Text style={{fontSize: 16, color: '#FF3B30', fontWeight: 'bold'}}>Report this comment</Text></TouchableOpacity></View>
-              ) : (
+              )}
+              
+              {commentReportStep === 1 && (
                 <View style={{marginBottom: 15}}><Text style={{fontSize: 18, fontWeight: 'bold', color: '#fff', marginBottom: 15, textAlign: 'center'}}>Why report this comment?</Text>
-                    {reportReasons.map((reason, index) => (<TouchableOpacity key={index} style={styles.darkMenuItem} onPress={() => submitCommentReport(reason)}><Text style={styles.darkMenuText}>{reason}</Text><Ionicons name="chevron-forward" size={20} color="#555" /></TouchableOpacity>))}
+                    {reportReasons.map((reason, index) => (
+                      <TouchableOpacity key={index} style={styles.darkMenuItem} onPress={() => { setSelectedMainCommentReason(reason); setCommentReportStep(2); }}>
+                        <Text style={styles.darkMenuText}>{reason.title}</Text>
+                        <Ionicons name="chevron-forward" size={20} color="#555" />
+                      </TouchableOpacity>
+                    ))}
                     <TouchableOpacity style={[styles.darkCancelBtn, {marginTop: 15}]} onPress={() => setCommentReportStep(0)}><Text style={{color: '#fff', fontWeight: 'bold'}}>Back</Text></TouchableOpacity>
                 </View>
               )}
+
+              {commentReportStep === 2 && selectedMainCommentReason && (
+                <View style={{marginBottom: 15}}>
+                    <Text style={{fontSize: 18, fontWeight: 'bold', color: '#fff', marginBottom: 15, textAlign: 'center'}}>{selectedMainCommentReason.title}</Text>
+                    <Text style={{color: '#aaa', textAlign: 'center', marginBottom: 15, paddingHorizontal: 20}}>Please specify the exact issue:</Text>
+                    {selectedMainCommentReason.subCategories.map((sub, index) => (
+                        <TouchableOpacity key={index} style={styles.darkMenuItem} onPress={() => { setSelectedCommentSubReason(sub); setCommentReportStep(3); }}>
+                            <Text style={styles.darkMenuText}>{sub.title}</Text>
+                            <Ionicons name="chevron-forward" size={20} color="#555" />
+                        </TouchableOpacity>
+                    ))}
+                    <TouchableOpacity style={[styles.darkCancelBtn, {marginTop: 15}]} onPress={() => setCommentReportStep(1)}><Text style={{color: '#fff', fontWeight: 'bold'}}>Back</Text></TouchableOpacity>
+                </View>
+              )}
+
+              {/* 🟢 STEP 3: COMMENT CONFIRMATION (May TextBox) */}
+              {commentReportStep === 3 && selectedCommentSubReason && (
+                <View style={{marginBottom: 15}}>
+                  <Text style={{fontSize: 18, fontWeight: 'bold', color: '#fff', marginBottom: 15, textAlign: 'center'}}>Confirm Report</Text>
+                  <View style={{backgroundColor: '#2C2C2E', padding: 20, borderRadius: 15, marginBottom: 15}}>
+                      <Text style={{color: '#fff', fontSize: 16, fontWeight: 'bold', marginBottom: 8}}>{selectedMainCommentReason.title} - {selectedCommentSubReason.title}</Text>
+                      <Text style={{color: '#aaa', fontSize: 14, lineHeight: 22}}>{selectedCommentSubReason.desc}</Text>
+                  </View>
+                  
+                  <TextInput 
+                      style={styles.darkTextInput}
+                      placeholder="Add additional details (optional)..."
+                      placeholderTextColor="#888"
+                      multiline={true}
+                      returnKeyType="done" // 🟢 ITO ANG MAGPAPALIT SA "ENTER" MAGING "DONE/CHECK"
+                      blurOnSubmit={true} // 🟢 PARA BUMABA YUNG KEYBOARD PAGKAPINDOT
+                      onSubmitEditing={() => Keyboard.dismiss()} // 🟢 EXTRA SAFETY PARA MATAGO ANG KEYBOARD
+                      value={reportAdditionalInfo}
+                      onChangeText={setReportAdditionalInfo}
+                  />
+
+                  <TouchableOpacity style={{backgroundColor: '#FF3B30', padding: 18, borderRadius: 15, alignItems: 'center'}} onPress={() => submitCommentReport(`${selectedMainCommentReason.title}: ${selectedCommentSubReason.title}`)}>
+                    <Text style={{color: 'white', fontWeight: 'bold', fontSize: 16}}>Submit Report</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[styles.darkCancelBtn, {marginTop: 10}]} onPress={() => setCommentReportStep(2)}>
+                    <Text style={{color: '#fff', fontWeight: 'bold'}}>Back</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+
             </TouchableOpacity>
           </TouchableOpacity>
         </Modal>
@@ -907,12 +1084,34 @@ export default function Dashboard() {
         <View style={{height: 100}} /> 
       </ScrollView>
 
-      {/* 🟢 EXTERNAL MODAL IMPORTED */}
-      <BankedKgModal 
-        visible={isBankedModalVisible} 
-        onClose={() => setBankedModalVisible(false)} 
-        bankedDetails={bankedDetails} 
-      />
+      <Modal visible={isBankedModalVisible} animationType="slide" transparent={true} onRequestClose={() => setBankedModalVisible(false)}>
+        <View style={styles.modalOverlayDark}>
+          <View style={styles.bankedModalCard}>
+            <View style={styles.bankedModalHeader}><MaterialCommunityIcons name="safe" size={28} color="#FFD54F" /><View style={{flex: 1, marginLeft: 10}}><Text style={styles.bankedModalTitle}>My Banked KG</Text></View><TouchableOpacity onPress={() => setBankedModalVisible(false)}><Ionicons name="close-circle" size={28} color="#fff" /></TouchableOpacity></View>
+            <ScrollView style={styles.bankedModalContent} showsVerticalScrollIndicator={false}>
+               <Text style={styles.bankedModalDesc}>Select an item to generate a QR Code and redeem your banked KG!</Text>
+               {bankedDetails.length === 0 ? (
+                  <View style={{alignItems: 'center', marginTop: 30}}><MaterialCommunityIcons name="leaf-off" size={50} color="#ddd" /><Text style={{textAlign: 'center', color: '#999', marginTop: 10}}>You don't have any banked items yet.</Text></View>
+               ) : (
+                  bankedDetails.map((center, index) => (
+                     <View key={index} style={styles.bankedCenterCard}>
+                        <View style={styles.bankedCenterHeader}><MaterialCommunityIcons name="store" size={18} color="#007C00" /><Text style={styles.bankedCenterName}>{center.location}</Text></View>
+                        <View style={styles.bankedMaterialsList}>
+                           {center.materials.map((mat, i) => (
+                               <TouchableOpacity key={i} style={styles.bankedMaterialRow} activeOpacity={0.7} onPress={() => { setBankedModalVisible(false); router.push({ pathname: '/qr-generator', params: { isBankedRedemption: 'true', collectorEmail: center.email, materialType: mat.type, bankedKg: mat.kg, rewardName: 'Redeem Banked Points' } }); }}>
+                                   <Text style={styles.bankedMaterialType}>{mat.type}</Text>
+                                   <View style={{flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#E8F5E9', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8}}><Text style={styles.bankedMaterialKg}>{mat.kg.toFixed(1)} kg</Text><MaterialCommunityIcons name="qrcode-scan" size={14} color="#007C00" /></View>
+                               </TouchableOpacity>
+                           ))}
+                        </View>
+                     </View>
+                  ))
+               )}
+               <View style={{height: 20}}/>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
 
       <Modal visible={optionsModalVisible} animationType="slide" transparent={true} onRequestClose={() => setOptionsModalVisible(false)}>
         <TouchableOpacity style={{flex: 1, backgroundColor: 'transparent', justifyContent: 'flex-end'}} activeOpacity={1} onPress={() => setOptionsModalVisible(false)}>
@@ -928,6 +1127,7 @@ export default function Dashboard() {
         </TouchableOpacity>
       </Modal>
 
+      {/* 🟢 NESTED POST REPORT MODAL (WITH COMMENT BOX) */}
       <Modal visible={reportModalVisible} animationType="slide" transparent={true} onRequestClose={() => setReportModalVisible(false)}>
         <TouchableOpacity style={{flex: 1, backgroundColor: 'transparent', justifyContent: 'flex-end'}} activeOpacity={1} onPress={() => setReportModalVisible(false)}>
           <TouchableOpacity activeOpacity={1} style={styles.darkModalSheet}>
@@ -946,32 +1146,63 @@ export default function Dashboard() {
               <View style={{marginBottom: 15}}>
                 <Text style={{fontSize: 18, fontWeight: 'bold', color: '#fff', marginBottom: 15, textAlign: 'center'}}>Why report this post?</Text>
                 {reportReasons.map((item, index) => (
-                  <TouchableOpacity key={index} style={styles.darkMenuItem} onPress={() => { setSelectedReportReason(item); setReportStep(2); }}>
+                  <TouchableOpacity key={index} style={styles.darkMenuItem} onPress={() => { setSelectedMainReason(item); setReportStep(2); }}>
                     <Text style={styles.darkMenuText}>{item.title}</Text>
                     <Ionicons name="chevron-forward" size={20} color="#555" />
                   </TouchableOpacity>
                 ))}
                 <TouchableOpacity style={[styles.darkCancelBtn, {marginTop: 15}]} onPress={() => setReportStep(0)}>
+                  <Text style={{color: '#fff', fontWeight: 'bold'}}>Cancel</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {reportStep === 2 && selectedMainReason && (
+              <View style={{marginBottom: 15}}>
+                <Text style={{fontSize: 18, fontWeight: 'bold', color: '#fff', marginBottom: 15, textAlign: 'center'}}>{selectedMainReason.title}</Text>
+                <Text style={{color: '#aaa', textAlign: 'center', marginBottom: 15, paddingHorizontal: 20}}>Please specify the exact issue:</Text>
+                {selectedMainReason.subCategories.map((sub, index) => (
+                  <TouchableOpacity key={index} style={styles.darkMenuItem} onPress={() => { setSelectedReportReason(sub); setReportStep(3); }}>
+                    <Text style={styles.darkMenuText}>{sub.title}</Text>
+                    <Ionicons name="chevron-forward" size={20} color="#555" />
+                  </TouchableOpacity>
+                ))}
+                <TouchableOpacity style={[styles.darkCancelBtn, {marginTop: 15}]} onPress={() => setReportStep(1)}>
                   <Text style={{color: '#fff', fontWeight: 'bold'}}>Back</Text>
                 </TouchableOpacity>
               </View>
             )}
 
-            {reportStep === 2 && selectedReportReason && (
+            {/* 🟢 STEP 3: POST CONFIRMATION (May TextBox) */}
+            {reportStep === 3 && selectedReportReason && (
               <View style={{marginBottom: 15}}>
                 <Text style={{fontSize: 18, fontWeight: 'bold', color: '#fff', marginBottom: 15, textAlign: 'center'}}>Confirm Report</Text>
-                <View style={{backgroundColor: '#2C2C2E', padding: 20, borderRadius: 15, marginBottom: 20}}>
-                    <Text style={{color: '#fff', fontSize: 16, fontWeight: 'bold', marginBottom: 8}}>{selectedReportReason.title}</Text>
+                <View style={{backgroundColor: '#2C2C2E', padding: 20, borderRadius: 15, marginBottom: 15}}>
+                    <Text style={{color: '#fff', fontSize: 16, fontWeight: 'bold', marginBottom: 8}}>{selectedMainReason.title} - {selectedReportReason.title}</Text>
                     <Text style={{color: '#aaa', fontSize: 14, lineHeight: 22}}>{selectedReportReason.desc}</Text>
                 </View>
-                <TouchableOpacity style={{backgroundColor: '#FF3B30', padding: 18, borderRadius: 15, alignItems: 'center'}} onPress={() => submitReport(selectedReportReason.title)}>
+
+                <TextInput 
+                      style={styles.darkTextInput}
+                      placeholder="Add additional details (optional)..."
+                      placeholderTextColor="#888"
+                      multiline={true}
+                      returnKeyType="done" // 🟢 ITO ANG MAGPAPALIT SA "ENTER" MAGING "DONE/CHECK"
+                      blurOnSubmit={true} // 🟢 PARA BUMABA YUNG KEYBOARD PAGKAPINDOT
+                      onSubmitEditing={() => Keyboard.dismiss()} // 🟢 EXTRA SAFETY PARA MATAGO ANG KEYBOARD
+                      value={reportAdditionalInfo}
+                      onChangeText={setReportAdditionalInfo}
+                  />
+
+                <TouchableOpacity style={{backgroundColor: '#FF3B30', padding: 18, borderRadius: 15, alignItems: 'center'}} onPress={() => submitReport(`${selectedMainReason.title}: ${selectedReportReason.title}`)}>
                   <Text style={{color: 'white', fontWeight: 'bold', fontSize: 16}}>Submit Report</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={[styles.darkCancelBtn, {marginTop: 10}]} onPress={() => setReportStep(1)}>
+                <TouchableOpacity style={[styles.darkCancelBtn, {marginTop: 10}]} onPress={() => setReportStep(2)}>
                   <Text style={{color: '#fff', fontWeight: 'bold'}}>Back</Text>
                 </TouchableOpacity>
               </View>
             )}
+
           </TouchableOpacity>
         </TouchableOpacity>
       </Modal>
@@ -998,5 +1229,8 @@ const styles = StyleSheet.create({
   postCard: { backgroundColor: 'white', borderRadius: 16, padding: 15, marginBottom: 15, elevation: 2 }, myPostCardBorder: { backgroundColor: '#F1F8E9', borderWidth: 1, borderColor: '#C8E6C9' }, meBadge: { backgroundColor: '#007C00', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }, meBadgeText: { color: 'white', fontSize: 8, fontWeight: 'bold' },
   postHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 }, postAvatar: { width: 40, height: 40, borderRadius: 20 }, postUser: { fontWeight: 'bold', fontSize: 14, color: '#333' }, postTime: { fontSize: 11, color: '#999' }, typeBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10 }, postTitle: { fontSize: 16, fontWeight: 'bold', color: '#333', marginBottom: 5 }, postDesc: { fontSize: 13, color: '#666', marginBottom: 10 }, postImage: { width: '100%', aspectRatio: 16 / 9, borderRadius: 12, marginBottom: 15, resizeMode: 'cover', backgroundColor: '#f0f0f0' }, postFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, iconRow: { flexDirection: 'row', alignItems: 'center', gap: 5, padding: 5 }, iconText: { fontSize: 14, color: '#666' }, postPrice: { fontSize: 16, fontWeight: 'bold', color: '#007C00' }, contactBtn: { backgroundColor: '#007C00', paddingHorizontal: 15, paddingVertical: 8, borderRadius: 8 }, contactText: { color: 'white', fontWeight: 'bold', fontSize: 12 }, footerInput: { padding: 15, backgroundColor: 'white', borderTopWidth: 1, borderTopColor: '#eee', flexDirection: 'row', alignItems: 'flex-end', gap: 10 }, statusBanner: { backgroundColor: '#E8F5E9', padding: 8, paddingHorizontal: 15, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, inputField: { flex: 1, backgroundColor: '#F5F5F5', borderRadius: 20, paddingHorizontal: 15, paddingVertical: 10, maxHeight: 100 }, sendBtn: { width: 40, height: 40, backgroundColor: '#007C00', borderRadius: 20, justifyContent: 'center', alignItems: 'center', marginBottom: 2 }, createContent: { padding: 20 }, label: { fontSize: 14, fontWeight: '700', color: '#333', marginBottom: 4, marginTop: 15 }, input: { backgroundColor: '#F5F7FA', borderRadius: 10, padding: 15, borderWidth: 1, borderColor: '#F0F0F0' }, inputIconWrap: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F5F7FA', borderRadius: 10, paddingHorizontal: 15, paddingVertical: 12, borderWidth: 1, borderColor: '#F0F0F0' }, typeRow: { flexDirection: 'row', gap: 10 }, typeBtn: { flex: 1, paddingVertical: 15, borderRadius: 12, borderWidth: 1, alignItems: 'center', borderColor: '#E0E0E0' }, typeBtnActive: { borderColor: '#007C00', backgroundColor: '#E8F5E9' }, typeBtnText: { fontSize: 12, fontWeight: '600', color: '#666' }, imageUploadBox: { width: '100%', aspectRatio: 16 / 9, borderWidth: 1, borderColor: '#ddd', borderStyle: 'dashed', borderRadius: 12, justifyContent: 'center', alignItems: 'center', backgroundColor: '#FAFAFA', marginTop: 15 }, submitBtn: { padding: 15, borderRadius: 12, backgroundColor: '#007C00', alignItems: 'center', marginTop: 30 },
   darkModalSheet: { backgroundColor: '#1C1C1E', borderTopLeftRadius: 25, borderTopRightRadius: 25, paddingHorizontal: 20, paddingBottom: 35, shadowColor: '#000', shadowOffset: { width: 0, height: -2 }, shadowOpacity: 0.2, shadowRadius: 10, elevation: 15 }, darkMenuContainer: { backgroundColor: '#2C2C2E', borderRadius: 15, overflow: 'hidden', marginBottom: 15 }, darkMenuItem: { flexDirection: 'row', alignItems: 'center', padding: 18, borderBottomWidth: 1, borderBottomColor: '#3A3A3C' }, darkMenuText: { fontSize: 16, color: '#fff' }, darkCancelBtn: { padding: 18, backgroundColor: '#2C2C2E', borderRadius: 15, alignItems: 'center' },
+  // 🟢 BAGONG STYLE PARA SA REPORT TEXTBOX
+  darkTextInput: { backgroundColor: '#2C2C2E', color: 'white', borderRadius: 12, padding: 15, height: 90, textAlignVertical: 'top', marginBottom: 20, borderWidth: 1, borderColor: '#3A3A3C', fontSize: 15 },
+  modalOverlayDark: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 20 }, bankedModalCard: { width: '100%', maxHeight: '80%', backgroundColor: '#F4F6F8', borderRadius: 20, overflow: 'hidden', elevation: 10 }, bankedModalHeader: { backgroundColor: '#007C00', padding: 20, flexDirection: 'row', alignItems: 'center' }, bankedModalTitle: { color: 'white', fontSize: 18, fontWeight: 'bold' }, bankedModalContent: { padding: 20 }, bankedModalDesc: { fontSize: 13, color: '#666', marginBottom: 20, lineHeight: 18 }, bankedCenterCard: { backgroundColor: 'white', borderRadius: 12, padding: 15, marginBottom: 15, elevation: 2 }, bankedCenterHeader: { flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: '#eee', paddingBottom: 10, marginBottom: 10 }, bankedCenterName: { fontWeight: 'bold', color: '#333', fontSize: 14, marginLeft: 8 }, bankedMaterialsList: { paddingHorizontal: 5 }, bankedMaterialRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 0.5, borderBottomColor: '#f0f0f0' }, bankedMaterialType: { color: '#333', fontSize: 14, fontWeight: '600' }, bankedMaterialKg: { fontWeight: 'bold', color: '#007C00', fontSize: 14 },
   mapBox: { width: '100%', height: 200, borderRadius: 12, overflow: 'hidden', marginTop: 10, borderWidth: 1, borderColor: '#ddd' }, map: { width: '100%', height: '100%' }
 });

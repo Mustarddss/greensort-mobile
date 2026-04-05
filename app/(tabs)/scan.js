@@ -1,10 +1,21 @@
 import { Feather, FontAwesome5, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ActivityIndicator, Alert, Image, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
+
+// 🟢 MIXED FUN FACTS: Environment + GreenSort App Knowledge
+const FUN_FACTS = [
+  "GreenSort uses AI technology to instantly identify your waste and suggest creative upcycling projects!",
+  "Recycling 1 aluminum can saves enough energy to power a TV for 3 hours!",
+  "You can earn rewards in GreenSort by turning in your recyclable Waste Collectibles to our exchange partners.",
+  "It takes about 500 years for a single plastic water bottle to fully decompose.",
+  "GreenSort promotes a circular economy by connecting your household waste to proper recycling channels.",
+  "Upcycling adds value to waste by transforming it into a product of higher quality. Be creative!",
+  "Only 9% of all plastic ever produced has been recycled. Let's change that together with GreenSort!"
+];
 
 export default function ScanPage() {
   const router = useRouter();
@@ -17,21 +28,33 @@ export default function ScanPage() {
   const [manualInput, setManualInput] = useState('');
   
   const [modalVisible, setModalVisible] = useState(false);
-  
-  // 🟢 MGA BAGONG STATES PARA SA OWN DIY CREATION
   const [titleModalVisible, setTitleModalVisible] = useState(false);
   const [successModalVisible, setSuccessModalVisible] = useState(false);
   const [ownProjectTitle, setOwnProjectTitle] = useState('');
   const [isCreatingDraft, setIsCreatingDraft] = useState(false);
 
+  const [currentFactIndex, setCurrentFactIndex] = useState(0);
+
+  useEffect(() => {
+    let interval;
+    if (loading) {
+      interval = setInterval(() => {
+        setCurrentFactIndex((prev) => (prev + 1) % FUN_FACTS.length);
+      }, 4500); 
+    } else {
+      setCurrentFactIndex(0);
+    }
+    return () => clearInterval(interval);
+  }, [loading]);
+
   const fetchGPTAnalysis = async (base64Image, textInput) => {
-    setLoadingText('Greensort AI is looking at your waste...');
-    
     const promptText = `Analyze the provided image carefully. Identify the MAIN, largest waste item. Ignore minor accessories. Distinguish carefully between materials.
 
     CRITICAL RULE FOR MONEY/BANKNOTES: If the image contains actual money, legal tender, or official banknotes (e.g., Philippine Peso), YOU MUST classify it as "Not allowed to dispose or use for recycling". However, if you are CERTAIN it is fake "Play Money" (toy money), treat it as Recyclable Paper/Plastic.
     
-    CRITICAL RULE FOR ACCURACY: If the image is blurry, ambiguous, or you are unsure what the item is (like a plain black box or generic case), assign a low "accuracy" score (e.g., 40-70). If it is very clear (like a transparent plastic bottle), assign a high score (85-98).
+    CRITICAL RULE FOR ELECTRONICS/BATTERIES: E-Waste is STRICTLY NOT SCOPED for upcycling to prevent safety hazards (like explosions). If you detect electronics, batteries, phones, laptops, or any related components, classify it as "Hazardous" or "Not allowed to dispose or use for recycling" with status "Electronic Waste Drop-off Recommended". Do NOT provide any upcycling projects for electronics.
+
+    CRITICAL RULE FOR ACCURACY: If the image is blurry, ambiguous, or you are unsure what the item is, assign a low "accuracy" score (e.g., 40-70). If it is very clear, assign a high score (85-98).
 
     CRITICAL RULE FOR PERSON DETECTED: If the image contains a person holding an item, FOCUS on the item and not the person. Do NOT classify the person as part of the waste. Only classify the item they are holding.
 
@@ -45,21 +68,25 @@ export default function ScanPage() {
     - status: "Prohibited"
     - projects: []
     - accuracy: 99
-
+    
     Respond strictly in pure JSON format with the following keys:
     {
       "detected": "Standardized name of the MAIN item",
-      "category": "Choose the most appropriate: Recyclable Plastic, Glass, Paper, Metal, Organic Waste, General Waste, E-Waste, Hazardous, Not allowed to dispose or use for recycling, Not a Waste",
-      "status": "e.g., Recyclable Material, Non-Recyclable, Compostable, Electronic Waste Drop-off, Prohibited",
-      "accuracy": <number between 40 to 99 based on how certain you are>,
-      "recyclingTip": "Provide 1 short and actionable tip on how to dispose, clean, or prepare it. If it is a person, say 'Please scan a valid waste item.'",
+      "category": "Choose: Recyclable Plastic, Glass, Paper, Metal, Organic Waste, General Waste, Hazardous, Not allowed to dispose or use for recycling, Not a Waste",
+      "status": "e.g., Recyclable Material, Non-Recyclable, Compostable, Electronic Waste Drop-off Recommended, Prohibited",
+      "accuracy": <number between 40 to 99>,
+      "recyclingTips": [
+         "Remove caps and labels before recycling",
+         "Rinse bottles thoroughly and let dry",
+         "Crush bottles to save space"
+      ], 
       "projects": [
         {
           "title": "Pen Holder",
           "difficulty": "Easy",
           "youtubeLink": "https://www.youtube.com/results?search_query=diy+plastic+bottle+pen+holder"
         }
-      ] // IMPORTANT: Provide EXACTLY 7 creative DIY upcycle projects. Include a mix: 3 "Easy", 2 "Medium", and 2 "Hard". Format as an array of objects containing 'title', 'difficulty' (Easy, Medium, Hard), and 'youtubeLink'. If the item is Hazardous, E-Waste, Prohibited, Money, or a Person ("Not a Waste"), make this an empty array [].
+      ] 
     }`;
 
     let messagesContent = [];
@@ -83,9 +110,7 @@ export default function ScanPage() {
         },
         body: JSON.stringify({
           model: 'gpt-5.4', 
-          messages: [
-            { role: 'user', content: messagesContent }
-          ],
+          messages: [{ role: 'user', content: messagesContent }],
           temperature: 0.5,
           max_completion_tokens: 800,
         })
@@ -107,6 +132,7 @@ export default function ScanPage() {
 
   const handleAnalysis = async (uri, base64Image, textInput) => {
     setLoading(true); 
+    setLoadingText('Greensort AI is looking at your waste...');
     setResult(null);
     if (uri) setImage(uri);
 
@@ -120,7 +146,7 @@ export default function ScanPage() {
                 category: gptData.category,
                 confidenceScore: gptData.accuracy || Math.floor(Math.random() * (98 - 88 + 1)) + 88, 
                 status: gptData.status,
-                recyclingTip: gptData.recyclingTip,
+                recyclingTips: gptData.recyclingTips || (gptData.recyclingTip ? [gptData.recyclingTip] : []),
                 projects: gptData.projects || []
             });
         }
@@ -128,7 +154,6 @@ export default function ScanPage() {
         console.error("General Analysis Error", e);
     } finally {
         setLoading(false);
-        setLoadingText('');
     }
   };
 
@@ -171,7 +196,6 @@ export default function ScanPage() {
     }
   };
 
-  // 🟢 LOGIC PARA GUMAWA NG DRAFT PROJECT AGAD
   const handleStartOwnProject = async () => {
       if (!ownProjectTitle.trim()) {
           Alert.alert("Required", "Please enter a project title to start.");
@@ -187,19 +211,18 @@ export default function ScanPage() {
               user_email: user.email,
               title: ownProjectTitle,
               material_category: 'My OWN Guides', 
-              difficulty: 'Medium', // Default
+              difficulty: 'Medium',
               time_required: 'Self Paced',
               estimated_cost: 'Custom',
               materials: [],
               steps: [],
               selling_price: '',
               image_url: image || 'https://images.unsplash.com/photo-1528323273322-d81458248d40?w=500', 
-              is_done: false // 🟢 ON GOING STATUS
+              is_done: false 
           }]);
 
           if (dbError) throw dbError;
 
-          // Ipakita ang Success Popup kapag na-save na ang draft
           setTitleModalVisible(false);
           setSuccessModalVisible(true);
           setOwnProjectTitle('');
@@ -220,7 +243,9 @@ export default function ScanPage() {
     }
   };
 
-  const isProhibited = result && (result.category.toLowerCase().includes('not allowed') || result.category.toLowerCase().includes('not a waste'));
+  const isPerson = result && result.category.toLowerCase().includes('not a waste');
+  const isProhibited = result && (result.category.toLowerCase().includes('not allowed') || isPerson);
+  const isHazardousOrElectronic = result && (result.category.toLowerCase().includes('hazardous') || result.status.toLowerCase().includes('electronic'));
 
   return (
     <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{flex:1, backgroundColor: '#F4F6F8'}}>
@@ -238,10 +263,11 @@ export default function ScanPage() {
       <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
         <View style={styles.bodyContent}>
         
+          {/* 🟢 CARD BOARD CONTAINER */}
           <View style={styles.cameraContainer}>
               {loading ? (
                    <View style={styles.loadingContainer}>
-                      <ActivityIndicator size="large" color="#007C00" />
+                      <ActivityIndicator size="large" color="#007C00" style={{ transform: [{ scale: 1.2 }], marginBottom: 15 }} />
                       <Text style={styles.loadingText}>{loadingText}</Text>
                    </View>
               ) : image ? (
@@ -256,105 +282,173 @@ export default function ScanPage() {
               )}
           </View>
 
+          {/* 🟢 SA ILALIM MISMO NG CARD BOARD YUNG DID YOU KNOW */}
+          {loading && (
+             <View style={styles.funFactCard}>
+                 <View style={styles.funFactHeader}>
+                     <MaterialCommunityIcons name="lightbulb-on" size={18} color="#007C00" />
+                     <Text style={styles.funFactTitle}>DID YOU KNOW?</Text>
+                 </View>
+                 <Text style={styles.funFactText}>{FUN_FACTS[currentFactIndex]}</Text>
+             </View>
+          )}
+
           {result && !loading && (
                <View style={styles.resultCard}>
-                  <Text style={styles.cardHeaderTitle}>AI Recognition Result</Text>
-                  <View style={styles.accuracyContainer}>
-                      <View style={styles.progressBarBg}>
-                          <View style={[styles.progressBarFill, {width: `${result.confidenceScore}%`}, result.confidenceScore < 70 && {backgroundColor: '#FF9800'}, result.confidenceScore < 50 && {backgroundColor: '#F44336'}]} />
-                      </View>
-                      <Text style={[styles.accuracyText, result.confidenceScore < 70 && {color: '#FF9800'}, result.confidenceScore < 50 && {color: '#F44336'}]}>
-                          Accuracy Level: {result.confidenceScore}% {result.confidenceScore < 70 && " (AI is not completely sure)"}
-                      </Text>
+                  <View style={styles.cardHeaderArea}>
+                      <Text style={styles.cardHeaderTitle}>AI Recognition Result</Text>
                   </View>
 
-                  <View style={{marginTop: 15}}>
-                      <Text style={styles.smallLabel}>Waste Type</Text>
-                      <Text style={styles.mainWasteTitle}>{result.detected}</Text>
-                      <Text style={styles.smallLabel}>Category</Text>
-                      <Text style={styles.categoryText}>{result.category}</Text>
-                      
-                      <View style={[styles.statusChip, isProhibited && {backgroundColor: '#FFEBEE', borderColor: '#FFCDD2'}]}>
-                          <MaterialCommunityIcons name={isProhibited ? "cancel" : "check-circle-outline"} size={16} color={isProhibited ? "#D32F2F" : "#2E7D32"} />
-                          <Text style={[styles.statusText, isProhibited && {color: '#D32F2F'}]}>{result.status}</Text>
+                  <View style={styles.cardBodyArea}>
+                      <View style={styles.accuracyContainer}>
+                          <View style={styles.progressBarBg}>
+                              <View style={[styles.progressBarFill, {width: `${result.confidenceScore}%`}, result.confidenceScore < 70 && {backgroundColor: '#FF9800'}, result.confidenceScore < 50 && {backgroundColor: '#F44336'}]} />
+                          </View>
+                          <Text style={[styles.accuracyText, result.confidenceScore < 70 && {color: '#FF9800'}, result.confidenceScore < 50 && {color: '#F44336'}]}>
+                              Accuracy Level: {result.confidenceScore}% {result.confidenceScore < 70 && " (Unsure)"}
+                          </Text>
                       </View>
-                  </View>
 
-                  <Text style={styles.actionLabel}>What would you like to do?</Text>
+                      <View style={{marginTop: 15}}>
+                          <Text style={styles.smallLabel}>Waste Type</Text>
+                          <Text style={styles.mainWasteTitle}>{result.detected}</Text>
+                          
+                          <Text style={styles.smallLabel}>Category</Text>
+                          <Text style={styles.categoryText}>{result.category}</Text>
+                          
+                          <View style={[styles.statusChip, (isProhibited || isHazardousOrElectronic) && {backgroundColor: '#FFEBEE', borderColor: '#FFCDD2'}]}>
+                              <MaterialCommunityIcons name={(isProhibited || isHazardousOrElectronic) ? "cancel" : "check-circle-outline"} size={16} color={(isProhibited || isHazardousOrElectronic) ? "#D32F2F" : "#2E7D32"} />
+                              <Text style={[styles.statusText, (isProhibited || isHazardousOrElectronic) && {color: '#D32F2F'}]}>{result.status}</Text>
+                          </View>
+                      </View>
 
-                  {!isProhibited && (
-                      <Pressable onPress={goToRewards} style={({ pressed }) => [styles.outlinedBtn, pressed && styles.outlinedBtnActive]}>
-                          {({ pressed }) => (
-                              <>
+                      <Text style={styles.actionLabel}>What would you like to do?</Text>
+
+                      {(!isProhibited && !isHazardousOrElectronic) && (
+                          <Pressable onPress={goToRewards} style={({ pressed }) => [styles.outlinedBtn, pressed && styles.outlinedBtnActive]}>
+                              {({ pressed }) => (
+                                  <>
+                                      <View>
+                                          <Text style={[styles.outlinedBtnTitle, pressed && {color: 'white'}]}>Find Disposal & Incentives</Text>
+                                          <Text style={[styles.outlinedBtnSub, pressed && {color: 'rgba(255,255,255,0.9)'}]}>View rewards recommendations</Text>
+                                      </View>
+                                      <MaterialCommunityIcons name="arrow-right-circle" size={24} color={pressed ? "white" : "#007C00"} />
+                                  </>
+                              )}
+                          </Pressable>
+                      )}
+
+                      {result.projects && result.projects.length > 0 && !isHazardousOrElectronic ? (
+                          <Pressable onPress={() => setModalVisible(true)} style={({ pressed }) => [styles.outlinedBtn, pressed && styles.outlinedBtnActive]}>
+                              {({ pressed }) => (
+                                  <>
+                                      <View>
+                                          <Text style={[styles.outlinedBtnTitle, pressed && {color: 'white'}]}>View DIY upcycling projects</Text>
+                                          <Text style={[styles.outlinedBtnSub, pressed && {color: 'rgba(255,255,255,0.9)'}]}>Creative ways to reuse this item</Text>
+                                      </View>
+                                      <MaterialCommunityIcons name="arrow-right-circle-outline" size={24} color={pressed ? "white" : "#007C00"} />
+                                  </>
+                              )}
+                          </Pressable>
+                      ) : isHazardousOrElectronic ? (
+                          <View style={{padding: 15, backgroundColor: '#FFEBEE', borderRadius: 12, marginTop: 5, borderWidth: 1, borderColor: '#EF9A9A'}}>
+                              <View style={{flexDirection: 'row', alignItems: 'center', marginBottom: 5}}><MaterialCommunityIcons name="alert-circle" size={20} color="#D32F2F" /><Text style={{color: '#D32F2F', fontSize: 14, fontWeight: 'bold', marginLeft: 5}}>Not Safe for Upcycling</Text></View>
+                              <Text style={{color: '#C62828', fontSize: 12, lineHeight: 18}}>Electronics and hazardous items can be dangerous to upcycle due to toxic chemicals or risk of explosion. Please surrender this to designated Drop-off locations instead.</Text>
+                              
+                              <Pressable onPress={goToRewards} style={({ pressed }) => [styles.solidBtnRed, pressed && {opacity: 0.8}, {marginTop: 15}]}>
                                   <View>
-                                      <Text style={[styles.outlinedBtnTitle, pressed && {color: 'white'}]}>Find Disposal & Incentives</Text>
-                                      <Text style={[styles.outlinedBtnSub, pressed && {color: 'rgba(255,255,255,0.9)'}]}>View rewards recommendations</Text>
+                                      <Text style={styles.solidBtnRedTitle}>Find E-Waste Drop-off</Text>
+                                      <Text style={styles.solidBtnRedSub}>Search for safe disposal locations</Text>
                                   </View>
-                                  <MaterialCommunityIcons name="arrow-right-circle" size={24} color={pressed ? "white" : "#007C00"} />
-                              </>
-                          )}
-                      </Pressable>
-                  )}
+                                  <MaterialCommunityIcons name="map-marker-radius" size={24} color="white" />
+                              </Pressable>
+                          </View>
+                      ) : isProhibited ? (
+                          <View style={{padding: 10, backgroundColor: '#FFEBEE', borderRadius: 8, marginTop: 5, borderWidth: 1, borderColor: '#EF9A9A'}}>
+                              <Text style={{color: '#D32F2F', fontSize: 13, textAlign: 'center', fontWeight: 'bold'}}>{isPerson ? "Not a Waste Item" : "Prohibited Item Detected"}</Text>
+                              <Text style={{color: '#C62828', fontSize: 12, textAlign: 'center', marginTop: 4}}>{isPerson ? "We detected a person or non-waste object. Please scan a valid waste item." : "Official banknotes or restricted items cannot be used for recycling or disposed of via this app."}</Text>
+                          </View>
+                      ) : (
+                          <View style={{padding: 10, backgroundColor: '#FFEBEE', borderRadius: 8, marginTop: 5}}>
+                              <Text style={{color: '#D32F2F', fontSize: 12, textAlign: 'center'}}>This item cannot be upcycled safely. Please dispose of it properly.</Text>
+                          </View>
+                      )}
 
-                  {result.projects && result.projects.length > 0 ? (
-                      <Pressable onPress={() => setModalVisible(true)} style={({ pressed }) => [styles.outlinedBtn, pressed && styles.outlinedBtnActive]}>
-                          {({ pressed }) => (
-                              <>
-                                  <View>
-                                      <Text style={[styles.outlinedBtnTitle, pressed && {color: 'white'}]}>View DIY upcycling projects</Text>
-                                      <Text style={[styles.outlinedBtnSub, pressed && {color: 'rgba(255,255,255,0.9)'}]}>Creative ways to reuse this item</Text>
-                                  </View>
-                                  <MaterialCommunityIcons name="arrow-right-circle" size={24} color={pressed ? "white" : "#007C00"} />
-                              </>
-                          )}
-                      </Pressable>
-                  ) : result.category.toLowerCase().includes('e-waste') || result.category.toLowerCase().includes('electronic') ? (
-                      <View style={{padding: 15, backgroundColor: '#E3F2FD', borderRadius: 12, marginTop: 5, borderWidth: 1, borderColor: '#1976D2'}}>
-                          <View style={{flexDirection: 'row', alignItems: 'center', marginBottom: 5}}><MaterialCommunityIcons name="recycle-variant" size={20} color="#1976D2" /><Text style={{color: '#1976D2', fontSize: 14, fontWeight: 'bold', marginLeft: 5}}>E-Waste Drop-off Recommended</Text></View>
-                          <Text style={{color: '#1565C0', fontSize: 12, lineHeight: 18}}>Electronics contain hazardous materials. Please do not throw them in regular bins. Surrender this to your LGU or designated E-Waste collection centers.</Text>
+                      <Text style={styles.manualInputLabel}>Couldn't get the exact waste result?</Text>
+                      <View style={styles.inputWrapper}>
+                          <TextInput style={styles.textInput} placeholder="Type your waste here" value={manualInput} onChangeText={setManualInput} />
+                          <TouchableOpacity onPress={submitManualInput}><Feather name="send" size={20} color="#007C00" style={{marginRight: 10}}/></TouchableOpacity>
                       </View>
-                  ) : isProhibited ? (
-                      <View style={{padding: 10, backgroundColor: '#FFEBEE', borderRadius: 8, marginTop: 5, borderWidth: 1, borderColor: '#EF9A9A'}}>
-                          <Text style={{color: '#D32F2F', fontSize: 13, textAlign: 'center', fontWeight: 'bold'}}>{result.category.toLowerCase().includes('not a waste') ? "Not a Waste Item" : "Prohibited Item Detected"}</Text>
-                          <Text style={{color: '#C62828', fontSize: 12, textAlign: 'center', marginTop: 4}}>{result.category.toLowerCase().includes('not a waste') ? "We detected a person or non-waste object. Please scan a valid waste item." : "Official banknotes or restricted items cannot be used for recycling or disposed of via this app."}</Text>
-                      </View>
-                  ) : (
-                      <View style={{padding: 10, backgroundColor: '#FFEBEE', borderRadius: 8, marginTop: 5}}>
-                          <Text style={{color: '#D32F2F', fontSize: 12, textAlign: 'center'}}>This item cannot be upcycled safely. Please dispose of it properly.</Text>
-                      </View>
-                  )}
 
-                  <Text style={styles.manualInputLabel}>Couldn't get the exact waste result?</Text>
-                  <View style={styles.inputWrapper}>
-                      <TextInput style={styles.textInput} placeholder="Type your waste here" value={manualInput} onChangeText={setManualInput} />
-                      <TouchableOpacity onPress={submitManualInput}><Feather name="send" size={20} color="#007C00" style={{marginRight: 10}}/></TouchableOpacity>
+                      <TouchableOpacity style={{marginTop: 25, alignItems: 'center'}} onPress={() => {setResult(null); setImage(null);}}>
+                          <Text style={styles.scanAgainLink}>Scan Another Item</Text>
+                      </TouchableOpacity>
                   </View>
-
-                  <TouchableOpacity style={{marginTop: 20, alignItems: 'center'}} onPress={() => {setResult(null); setImage(null);}}>
-                      <Text style={styles.scanAgainLink}>Scan Another Item</Text>
-                  </TouchableOpacity>
                </View>
           )}
 
+          {result && !loading && isPerson ? (
+              <View style={[styles.tipsContainer, {borderColor: '#1976D2', backgroundColor: '#E3F2FD'}]}>
+                  <View style={styles.tipHeaderRow}>
+                      <MaterialCommunityIcons name="heart" size={18} color="#1976D2" />
+                      <Text style={[styles.tipsTitle, {color: '#1976D2'}]}>A Gentle Reminder</Text>
+                  </View>
+                  <Text style={{color: '#1565C0', fontSize: 13, fontStyle: 'italic', lineHeight: 22, textAlign: 'center'}}>
+                      "A person is never a waste. Every human life holds immeasurable value, potential, and purpose. Let's focus on healing the planet, starting with kindness and love for one another."
+                  </Text>
+              </View>
+          ) : result && !loading && result.recyclingTips && result.recyclingTips.length > 0 && !isProhibited && (
+              <View style={styles.tipsContainer}>
+                  <View style={styles.tipHeaderRow}>
+                      <MaterialCommunityIcons name="leaf" size={18} color="#007C00" />
+                      <Text style={styles.tipsTitle}>Recycling Tip</Text>
+                  </View>
+                  {result.recyclingTips.map((tip, index) => (
+                      <View key={index} style={styles.bulletPoint}>
+                          <View style={styles.bulletDot} />
+                          <Text style={styles.bulletText}>{tip}</Text>
+                      </View>
+                  ))}
+              </View>
+          )}
+          
           {result && !loading && result.projects && result.projects.length > 0 && (
                <View style={styles.collectibleContainer}>
-                   <FontAwesome5 name="coins" size={20} color="#2E7D32" />
-                   <Text style={styles.collectibleText}><Text style={{fontWeight:'bold'}}>This is a Waste Collectible!</Text> Collect and earn rewards.</Text>
+                   <MaterialCommunityIcons name="database-outline" size={24} color="#007C00" />
+                   <View style={{flex: 1, marginLeft: 15, alignItems: 'center'}}>
+                       <Text style={styles.collectibleSmallText}>This is a Waste Collectible!</Text>
+                       <Text style={styles.collectibleBoldText}>You can collect these recyclable items and turn them into rewards.</Text>
+                   </View>
                </View>
           )}
 
           {!result && !loading && (
               <View>
                   <View style={styles.defaultActions}>
-                      <TouchableOpacity style={styles.scanBtn} onPress={pickImageCamera}><MaterialCommunityIcons name="camera" size={20} color="white" style={{marginRight: 10}} /><Text style={styles.scanBtnText}>Scan Now</Text></TouchableOpacity>
-                      <TouchableOpacity style={styles.uploadBtn} onPress={pickImageGallery}><MaterialCommunityIcons name="image-outline" size={20} color="#007C00" style={{marginRight: 10}} /><Text style={styles.uploadBtnText}>Upload from Gallery</Text></TouchableOpacity>
+                      <TouchableOpacity style={styles.scanBtn} onPress={pickImageCamera}>
+                          <MaterialCommunityIcons name="camera" size={20} color="white" style={{marginRight: 10}} />
+                          <Text style={styles.scanBtnText}>Scan Now</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={styles.uploadBtn} onPress={pickImageGallery}>
+                          <MaterialCommunityIcons name="image-outline" size={20} color="#007C00" style={{marginRight: 10}} />
+                          <Text style={styles.uploadBtnText}>Upload from Gallery</Text>
+                      </TouchableOpacity>
                   </View>
 
-                  <View style={styles.tipsCard}>
-                      <View style={styles.tipsHeader}><Text style={styles.tipsCardTitle}>Scanning Tips</Text><View style={styles.tipsBadge}><Text style={styles.tipsBadgeText}>?</Text></View></View>
-                      <View style={styles.tipItem}><View style={styles.bullet} /><Text style={styles.tipCardText}>Ensure good lighting for accurate results</Text></View>
-                      <View style={styles.tipItem}><View style={styles.bullet} /><Text style={styles.tipCardText}>Place the item on a plain background</Text></View>
-                      <View style={styles.tipItem}><View style={styles.bullet} /><Text style={styles.tipCardText}>Center the waste item in the frame</Text></View>
+                  <View style={styles.preScanTipsCard}>
+                      <Text style={styles.preScanTipsTitle}>Scanning Tips</Text>
+                      <View style={styles.tipItem}>
+                          <View style={styles.bulletDot} />
+                          <Text style={styles.preScanTipText}>Ensure good lighting for accurate results</Text>
+                      </View>
+                      <View style={styles.tipItem}>
+                          <View style={styles.bulletDot} />
+                          <Text style={styles.preScanTipText}>Place the item on a plain background</Text>
+                      </View>
+                      <View style={styles.tipItem}>
+                          <View style={styles.bulletDot} />
+                          <Text style={styles.preScanTipText}>Center the waste item in the frame</Text>
+                      </View>
                   </View>
               </View>
           )}
@@ -371,13 +465,9 @@ export default function ScanPage() {
                       </View>
                       
                       <ScrollView style={{maxHeight: 500}} showsVerticalScrollIndicator={false}>
-                          
                           <TouchableOpacity 
                               style={{ backgroundColor: '#007C00', padding: 15, borderRadius: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 15, elevation: 2 }} 
-                              onPress={() => {
-                                  setModalVisible(false);
-                                  setTitleModalVisible(true); // 🟢 LALABAS YUNG TITLE INPUT MODAL
-                              }}
+                              onPress={() => { setModalVisible(false); setTitleModalVisible(true); }}
                           >
                               <MaterialCommunityIcons name="lightbulb-on" size={20} color="white" style={{marginRight: 8}} />
                               <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 15 }}>Create Your Own Project</Text>
@@ -403,34 +493,20 @@ export default function ScanPage() {
           </Modal>
         )}
 
-        {/* 🟢 MODAL 1: ENTER TITLE PARA SA DRAFT */}
         <Modal visible={titleModalVisible} transparent animationType="fade">
             <View style={styles.modalOverlayDark}>
                 <View style={styles.inputModalCard}>
                     <Text style={styles.inputModalTitle}>Name your DIY Project</Text>
                     <Text style={styles.inputModalSub}>Give it a catchy name to start your upcycling journey!</Text>
-                    
-                    <TextInput 
-                        style={styles.titleInput} 
-                        placeholder="e.g. My Custom Bottle Lamp" 
-                        value={ownProjectTitle} 
-                        onChangeText={setOwnProjectTitle} 
-                        autoFocus
-                    />
-
+                    <TextInput style={styles.titleInput} placeholder="e.g. My Custom Bottle Lamp" value={ownProjectTitle} onChangeText={setOwnProjectTitle} autoFocus />
                     <View style={styles.modalBtnRow}>
-                        <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setTitleModalVisible(false)}>
-                            <Text style={styles.modalCancelText}>Cancel</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity style={styles.modalProceedBtn} onPress={handleStartOwnProject} disabled={isCreatingDraft}>
-                            {isCreatingDraft ? <ActivityIndicator color="white" /> : <Text style={styles.modalProceedText}>Start Project</Text>}
-                        </TouchableOpacity>
+                        <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setTitleModalVisible(false)}><Text style={styles.modalCancelText}>Cancel</Text></TouchableOpacity>
+                        <TouchableOpacity style={styles.modalProceedBtn} onPress={handleStartOwnProject} disabled={isCreatingDraft}>{isCreatingDraft ? <ActivityIndicator color="white" /> : <Text style={styles.modalProceedText}>Start Project</Text>}</TouchableOpacity>
                     </View>
                 </View>
             </View>
         </Modal>
 
-        {/* 🟢 MODAL 2: SUCCESS & MOTIVATION POPUP */}
         <Modal visible={successModalVisible} transparent animationType="fade">
             <View style={styles.modalOverlayDark}>
                 <View style={styles.successModalCard}>
@@ -438,22 +514,14 @@ export default function ScanPage() {
                         <MaterialCommunityIcons name="check-decagram" size={50} color="#007C00" />
                     </View>
                     <Text style={styles.successTitle}>Project Created!</Text>
-                    <Text style={styles.successMessage}>
-                        YOUR OWN DIY PROJECT IS NOW SAVED IN THE UPCYCLE IDEAS TAB!
-                    </Text>
+                    <Text style={styles.successMessage}>YOUR OWN DIY PROJECT IS NOW SAVED IN THE UPCYCLE IDEAS TAB!</Text>
                     
                     <View style={styles.quoteBox}>
                         <MaterialCommunityIcons name="format-quote-open" size={20} color="#007C00" style={{marginBottom: 5}}/>
                         <Text style={styles.quoteText}>"Every piece of waste has a second life. Great job starting your upcycling journey!"</Text>
                     </View>
 
-                    <TouchableOpacity 
-                        style={styles.goUpcycleBtn} 
-                        onPress={() => {
-                            setSuccessModalVisible(false);
-                            router.push('/(tabs)/projects'); // Direkta sa Upcycle Ideas
-                        }}
-                    >
+                    <TouchableOpacity style={styles.goUpcycleBtn} onPress={() => { setSuccessModalVisible(false); router.push('/(tabs)/projects'); }}>
                         <Text style={styles.goUpcycleBtnText}>Go to Upcycle Ideas</Text>
                     </TouchableOpacity>
                 </View>
@@ -468,70 +536,93 @@ export default function ScanPage() {
 
 const styles = StyleSheet.create({
   container: { flexGrow: 1, backgroundColor: '#F4F6F8' },
-  header: { backgroundColor: '#007C00', paddingBottom: 25, paddingHorizontal: 20, borderBottomLeftRadius: 25, borderBottomRightRadius: 25, flexDirection: 'row', alignItems: 'center', elevation: 6, position: 'relative', shadowColor: '#000', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.2, shadowRadius: 5 },
-  backButton: { position: 'absolute', left: 20, bottom: 25, zIndex: 10 },
+  header: { backgroundColor: '#007C00', paddingBottom: 20, paddingHorizontal: 20, borderBottomLeftRadius: 20, borderBottomRightRadius: 20, flexDirection: 'row', alignItems: 'center', elevation: 2 },
+  backButton: { position: 'absolute', left: 20, bottom: 20, zIndex: 10 },
   headerTextContainer: { flex: 1, alignItems: 'center' },
-  headerTitle: { color: 'white', fontSize: 22, fontWeight: 'bold' },
-  headerSubtitle: { color: 'rgba(255,255,255,0.9)', fontSize: 13, marginTop: 2 },
-  bodyContent: { paddingHorizontal: 20, paddingTop: 20 }, 
-  cameraContainer: { width: '100%', height: 250, borderRadius: 20, overflow: 'hidden', backgroundColor: '#fff', marginBottom: 20, elevation: 4, justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOffset: {width: 0, height: 2}, shadowOpacity: 0.1, shadowRadius: 4 },
-  cameraImage: { width: '100%', height: '100%', resizeMode: 'cover' },
-  loadingContainer: { alignItems: 'center' },
-  loadingText: { marginTop: 10, color: '#007C00', fontWeight: 'bold', fontSize: 12 },
+  headerTitle: { color: 'white', fontSize: 18, fontWeight: 'bold' },
+  headerSubtitle: { color: 'rgba(255,255,255,0.9)', fontSize: 12, marginTop: 2 },
+  bodyContent: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 20 }, 
+  
+  // 🟢 CAMERA CONTAINER / CARD BOARD
+  cameraContainer: { width: '100%', height: 250, borderRadius: 20, overflow: 'hidden', backgroundColor: '#fff', elevation: 4, justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOffset: {width: 0, height: 2}, shadowOpacity: 0.1, shadowRadius: 4 },
+  cameraImage: { width: '100%', height: '100%', resizeMode: 'contain' },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#fff', width: '100%' },
+  loadingText: { marginTop: 10, color: '#007C00', fontWeight: 'bold', fontSize: 14 },
+  
+  // 🟢 NAKA-POSITION SA ILALIM NG CARD BOARD
+  funFactCard: { backgroundColor: '#E8F5E9', padding: 15, borderRadius: 15, borderWidth: 1, borderColor: '#C8E6C9', width: '100%', marginTop: 15 },
+  funFactHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 8, justifyContent: 'center' },
+  funFactTitle: { fontSize: 14, fontWeight: 'bold', color: '#007C00', marginLeft: 6 },
+  funFactText: { fontSize: 13, color: '#2E7D32', textAlign: 'center', fontStyle: 'italic', lineHeight: 20 },
+
   placeholderContainer: { alignItems: 'center' },
   iconCircle: { width: 60, height: 60, borderRadius: 30, backgroundColor: '#E8F5E9', justifyContent: 'center', alignItems: 'center', marginBottom: 10 },
   placeholderText: { fontSize: 16, color: '#666', fontWeight: 'bold' },
-  resultCard: { backgroundColor: 'white', borderRadius: 15, padding: 20, elevation: 3, shadowColor: '#000', shadowOffset: {width: 0, height: 2}, shadowOpacity: 0.1, shadowRadius: 4, marginBottom: 20 },
-  cardHeaderTitle: { fontSize: 14, fontWeight: 'bold', color: '#333', marginBottom: 10 },
+
+  resultCard: { backgroundColor: 'white', borderRadius: 15, borderWidth: 1, borderColor: '#007C00', overflow: 'hidden', marginBottom: 15 },
+  cardHeaderArea: { backgroundColor: '#E8F5E9', paddingVertical: 12, paddingHorizontal: 15 },
+  cardHeaderTitle: { fontSize: 14, fontWeight: 'bold', color: '#333' },
+  cardBodyArea: { padding: 20 },
+  
   accuracyContainer: { marginBottom: 15 },
-  progressBarBg: { height: 8, backgroundColor: '#E0E0E0', borderRadius: 4, overflow: 'hidden', marginBottom: 5 },
-  progressBarFill: { height: '100%', backgroundColor: '#007C00', borderRadius: 4 },
-  accuracyText: { fontSize: 12, color: '#007C00', fontWeight: 'bold' },
-  smallLabel: { fontSize: 12, color: '#888', marginBottom: 2 },
-  mainWasteTitle: { fontSize: 20, fontWeight: 'bold', color: '#007C00', marginBottom: 10 },
-  categoryText: { fontSize: 16, color: '#333', marginBottom: 10 },
-  statusChip: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', backgroundColor: '#E8F5E9', paddingVertical: 6, paddingHorizontal: 12, borderRadius: 20, borderWidth: 1, borderColor: '#C8E6C9' },
-  statusText: { color: '#2E7D32', fontWeight: 'bold', fontSize: 12, marginLeft: 5 },
+  progressBarBg: { height: 10, backgroundColor: '#E0E0E0', borderRadius: 5, overflow: 'hidden', marginBottom: 5, borderWidth: 1, borderColor: '#007C00' },
+  progressBarFill: { height: '100%', backgroundColor: '#007C00', borderRadius: 5 },
+  accuracyText: { fontSize: 14, color: '#007C00', fontWeight: 'bold' },
+  
+  smallLabel: { fontSize: 11, color: '#888', marginBottom: 2 },
+  mainWasteTitle: { fontSize: 20, fontWeight: 'bold', color: '#007C00', marginBottom: 15 },
+  categoryText: { fontSize: 14, color: '#333', marginBottom: 10 },
+  
+  statusChip: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', backgroundColor: '#E8F5E9', paddingVertical: 6, paddingHorizontal: 15, borderRadius: 8, borderWidth: 1, borderColor: '#007C00', marginBottom: 5 },
+  statusText: { color: '#007C00', fontWeight: 'bold', fontSize: 13, marginLeft: 8 },
+  
   actionLabel: { fontSize: 13, fontWeight: 'bold', color: '#333', marginTop: 20, marginBottom: 10 },
-  outlinedBtn: { backgroundColor: 'white', borderRadius: 12, padding: 15, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, borderWidth: 1, borderColor: '#007C00' },
+  
+  outlinedBtn: { backgroundColor: 'white', borderRadius: 10, padding: 15, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, borderWidth: 1, borderColor: '#007C00' },
   outlinedBtnActive: { backgroundColor: '#007C00' },
-  outlinedBtnTitle: { color: '#007C00', fontWeight: 'bold', fontSize: 14 },
-  outlinedBtnSub: { color: '#666', fontSize: 11 },
-  manualInputLabel: { fontSize: 12, color: '#666', fontWeight: '600', marginBottom: 5 },
-  inputWrapper: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#ccc', borderRadius: 10, paddingHorizontal: 5, backgroundColor: '#F9F9F9' },
-  textInput: { flex: 1, paddingVertical: 10, paddingHorizontal: 10, fontSize: 14, color: '#333' },
+  outlinedBtnTitle: { color: '#007C00', fontWeight: 'bold', fontSize: 13 },
+  outlinedBtnSub: { color: '#666', fontSize: 10 },
+
+  solidBtnRed: { backgroundColor: '#D32F2F', borderRadius: 10, padding: 15, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  solidBtnRedTitle: { color: 'white', fontWeight: 'bold', fontSize: 13 },
+  solidBtnRedSub: { color: 'rgba(255,255,255,0.8)', fontSize: 10 },
+  
+  manualInputLabel: { fontSize: 11, color: '#007C00', fontWeight: 'bold', marginBottom: 5, marginTop: 10 },
+  inputWrapper: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#007C00', borderRadius: 10, paddingHorizontal: 5, backgroundColor: '#FFF' },
+  textInput: { flex: 1, paddingVertical: 10, paddingHorizontal: 10, fontSize: 13, color: '#333' },
   scanAgainLink: { color: '#007C00', fontWeight: 'bold', fontSize: 14 },
-  tipsContainer: { backgroundColor: 'white', borderRadius: 15, padding: 15, borderWidth: 1, borderColor: '#4CAF50', marginBottom: 15 },
-  tipHeaderRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 5 },
-  tipsTitle: { fontWeight: 'bold', color: '#2E7D32', marginLeft: 5, fontSize: 14 },
-  bulletPoint: { marginTop: 5, paddingLeft: 5 },
-  bulletText: { fontSize: 12, color: '#2E7D32', lineHeight: 18 },
-  collectibleContainer: { backgroundColor: '#E8F5E9', borderRadius: 15, padding: 15, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#81C784', marginBottom: 30 },
-  collectibleText: { flex: 1, marginLeft: 10, fontSize: 12, color: '#1B5E20' },
+  
+  tipsContainer: { backgroundColor: 'white', borderRadius: 10, padding: 15, borderWidth: 1, borderColor: '#007C00', marginBottom: 15 },
+  tipHeaderRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
+  tipsTitle: { fontWeight: 'bold', color: '#007C00', marginLeft: 5, fontSize: 14 },
+  bulletPoint: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 6, paddingLeft: 5 },
+  bulletDot: { width: 4, height: 4, borderRadius: 2, backgroundColor: '#007C00', marginTop: 6, marginRight: 8 },
+  bulletText: { fontSize: 11, color: '#007C00', flex: 1, lineHeight: 16 },
+
+  collectibleContainer: { backgroundColor: '#F1F8E9', borderRadius: 10, padding: 20, alignItems: 'center', borderWidth: 1, borderColor: '#007C00', marginBottom: 30 },
+  collectibleSmallText: { fontSize: 10, color: '#007C00', marginBottom: 4 },
+  collectibleBoldText: { fontSize: 12, color: '#007C00', fontWeight: 'bold', textAlign: 'center', lineHeight: 18 },
+
   defaultActions: { gap: 15, marginTop: 10 },
   scanBtn: { backgroundColor: '#007C00', flexDirection: 'row', justifyContent: 'center', alignItems: 'center', padding: 16, borderRadius: 12, elevation: 3 },
   scanBtnText: { color: 'white', fontSize: 16, fontWeight: 'bold' },
   uploadBtn: { backgroundColor: 'white', flexDirection: 'row', justifyContent: 'center', alignItems: 'center', padding: 16, borderRadius: 12, borderWidth: 1, borderColor: '#007C00' },
   uploadBtnText: { color: '#007C00', fontSize: 16, fontWeight: 'bold' },
-  tipsCard: { backgroundColor: '#E8F5E9', marginTop: 25, padding: 20, borderRadius: 15, borderWidth: 1, borderColor: '#C8E6C9' },
-  tipsHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
-  tipsCardTitle: { color: '#2E7D32', fontWeight: 'bold', fontSize: 16 },
-  tipsBadge: { backgroundColor: '#007C00', width: 24, height: 24, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
-  tipsBadgeText: { color: 'white', fontWeight: 'bold', fontSize: 12 },
+  
+  preScanTipsCard: { backgroundColor: '#F1F8E9', marginTop: 25, padding: 20, borderRadius: 10, borderWidth: 1, borderColor: '#C8E6C9' },
+  preScanTipsTitle: { color: '#007C00', fontWeight: 'bold', fontSize: 16, marginBottom: 15 },
   tipItem: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 10 },
-  bullet: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#007C00', marginTop: 6, marginRight: 10 },
-  tipCardText: { color: '#1B5E20', fontSize: 13, lineHeight: 18, flex: 1 },
+  preScanTipText: { color: '#007C00', fontSize: 13, flex: 1, marginLeft: 2 },
+
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
   modalContent: { backgroundColor: 'white', padding: 25, borderTopLeftRadius: 25, borderTopRightRadius: 25 },
   modalHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
   modalTitle: { fontSize: 20, fontWeight: 'bold', color: '#333' },
-  modalSubtitle: { fontSize: 14, color: '#666', marginBottom: 15 },
   modalOption: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 15, borderBottomWidth: 1, borderColor: '#f0f0f0', alignItems: 'center' },
   optionText: { fontSize: 16, color: '#333', fontWeight: 'bold', marginBottom: 4 },
   difficultyTag: { alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6 },
   difficultyText: { fontSize: 11, fontWeight: 'bold' },
 
-  // 🟢 NEW STYLES FOR DRAFT & SUCCESS MODALS
   modalOverlayDark: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 20 },
   inputModalCard: { width: '100%', backgroundColor: 'white', borderRadius: 20, padding: 25, elevation: 10 },
   inputModalTitle: { fontSize: 20, fontWeight: 'bold', color: '#333', marginBottom: 5 },

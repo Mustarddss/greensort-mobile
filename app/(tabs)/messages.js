@@ -1,7 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { FlatList, Image, RefreshControl, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+// 🟢 Idinagdag natin ang Keyboard at Modal dito sa import
+import { FlatList, Image, Keyboard, Modal, RefreshControl, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
 
@@ -12,6 +13,22 @@ export default function MessagesList() {
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [currentUserName, setCurrentUserName] = useState('');
+
+  // 🟢 STATES PARA SA REPORT USER MODAL
+  const [reportModalVisible, setReportModalVisible] = useState(false);
+  const [userToReport, setUserToReport] = useState(null);
+  const [reportStep, setReportStep] = useState(0);
+  const [selectedMainReason, setSelectedMainReason] = useState(null);
+  const [reportAdditionalInfo, setReportAdditionalInfo] = useState('');
+
+  // 🟢 MGA RASON PARA SA PAG-REPORT NG TAO
+  const userReportReasons = [
+    "Harassment or bullying",
+    "Scam or fraud attempt",
+    "Spamming messages",
+    "Inappropriate or offensive language",
+    "Fake account or impersonation"
+  ];
 
   useEffect(() => { 
       fetchChats(); 
@@ -90,6 +107,39 @@ export default function MessagesList() {
     setRefreshing(true); await fetchChats(); setRefreshing(false);
   }, []);
 
+  // 🟢 FUNCTION PARA MAG-TRIGGER NG REPORT PAG NI-LONG PRESS
+  const handleLongPressChat = (userName) => {
+    if (userName === 'GreenSort AI Assistant') return; // Bawal i-report yung bot!
+    setUserToReport(userName);
+    setReportStep(1);
+    setReportModalVisible(true);
+  };
+
+  // 🟢 FUNCTION PARA MAG-SUBMIT SA SUPABASE (user_reports)
+  const submitUserReport = async (reasonStr) => {
+    const finalReason = reportAdditionalInfo.trim() ? `${reasonStr} - Details: ${reportAdditionalInfo}` : reasonStr;
+    
+    try {
+        const { error } = await supabase.from('user_reports').insert([{
+            reported_user: userToReport,
+            reporter_email: currentUserName,
+            reason: finalReason,
+            status: 'Pending'
+        }]);
+        
+        if (error) throw error;
+        Alert.alert("Report Sent", `You have successfully reported ${userToReport}. Our admins will review this shortly.`);
+    } catch (e) {
+        Alert.alert("Error", e.message);
+    } finally {
+        setReportModalVisible(false);
+        setUserToReport(null);
+        setReportStep(0);
+        setSelectedMainReason(null);
+        setReportAdditionalInfo('');
+    }
+  };
+
   const filteredChats = chats.filter(chat => chat.chatUser.toLowerCase().includes(searchQuery.toLowerCase()));
 
   const formatTime = (dateString) => {
@@ -137,7 +187,6 @@ export default function MessagesList() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 30 }}
         showsVerticalScrollIndicator={false}
-        // 🟢 PINNED AI CHATBOT AT THE TOP OF THE LIST
         ListHeaderComponent={() => (
           <TouchableOpacity 
             style={[styles.chatCard, { backgroundColor: '#E8F5E9', borderColor: '#007C00', borderWidth: 1, marginBottom: 15 }]} 
@@ -162,7 +211,12 @@ export default function MessagesList() {
         renderItem={({ item }) => {
           const isUnread = item.unreadCount > 0;
           return (
-            <TouchableOpacity style={styles.chatCard} onPress={() => router.push({ pathname: '/chat', params: { chatUser: item.chatUser, postTitle: item.postTitle } })}>
+            <TouchableOpacity 
+              style={styles.chatCard} 
+              onPress={() => router.push({ pathname: '/chat', params: { chatUser: item.chatUser, postTitle: item.postTitle } })}
+              onLongPress={() => handleLongPressChat(item.chatUser)} // 🟢 DITO NATIN NILAGAY ANG LONG PRESS PARA MAG REPORT
+              delayLongPress={500} // Kalahating segundo lang ang diin lalabas na
+            >
               <Image source={{ uri: item.avatar }} style={styles.avatar} />
               <View style={{ flex: 1, justifyContent: 'center' }}>
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -186,6 +240,61 @@ export default function MessagesList() {
           );
         }}
       />
+
+      {/* 🟢 REPORT USER MODAL */}
+      <Modal visible={reportModalVisible} animationType="slide" transparent={true} onRequestClose={() => setReportModalVisible(false)}>
+        <TouchableOpacity style={{flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end'}} activeOpacity={1} onPress={() => setReportModalVisible(false)}>
+          <TouchableOpacity activeOpacity={1} style={styles.darkModalSheet}>
+            <View style={{width: 40, height: 5, backgroundColor: '#555', borderRadius: 5, alignSelf: 'center', marginTop: 15, marginBottom: 20}} />
+            
+            {reportStep === 1 && (
+              <View style={{marginBottom: 15}}>
+                <Text style={{fontSize: 18, fontWeight: 'bold', color: '#fff', marginBottom: 5, textAlign: 'center'}}>Report {userToReport}</Text>
+                <Text style={{fontSize: 13, color: '#aaa', marginBottom: 15, textAlign: 'center'}}>Why are you reporting this user?</Text>
+                
+                {userReportReasons.map((reason, index) => (
+                  <TouchableOpacity key={index} style={styles.darkMenuItem} onPress={() => { setSelectedMainReason(reason); setReportStep(2); }}>
+                    <Text style={styles.darkMenuText}>{reason}</Text>
+                    <Ionicons name="chevron-forward" size={20} color="#555" />
+                  </TouchableOpacity>
+                ))}
+                <TouchableOpacity style={[styles.darkCancelBtn, {marginTop: 15}]} onPress={() => setReportModalVisible(false)}>
+                  <Text style={{color: '#fff', fontWeight: 'bold'}}>Cancel</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {reportStep === 2 && selectedMainReason && (
+              <View style={{marginBottom: 15}}>
+                <Text style={{fontSize: 18, fontWeight: 'bold', color: '#fff', marginBottom: 15, textAlign: 'center'}}>Confirm Report</Text>
+                <View style={{backgroundColor: '#2C2C2E', padding: 20, borderRadius: 15, marginBottom: 15}}>
+                    <Text style={{color: '#fff', fontSize: 16, fontWeight: 'bold'}}>{selectedMainReason}</Text>
+                </View>
+
+                <TextInput 
+                    style={styles.darkTextInput}
+                    placeholder="Add additional details (optional)..."
+                    placeholderTextColor="#888"
+                    multiline={true}
+                    returnKeyType="done"
+                    blurOnSubmit={true}
+                    onSubmitEditing={() => Keyboard.dismiss()}
+                    value={reportAdditionalInfo}
+                    onChangeText={setReportAdditionalInfo}
+                />
+
+                <TouchableOpacity style={{backgroundColor: '#FF3B30', padding: 18, borderRadius: 15, alignItems: 'center'}} onPress={() => submitUserReport(selectedMainReason)}>
+                  <Text style={{color: 'white', fontWeight: 'bold', fontSize: 16}}>Submit Report</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.darkCancelBtn, {marginTop: 10}]} onPress={() => setReportStep(1)}>
+                  <Text style={{color: '#fff', fontWeight: 'bold'}}>Back</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 }
@@ -206,5 +315,11 @@ const styles = StyleSheet.create({
   unreadText: { fontWeight: '900', color: '#000' },
   unreadDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#007C00', marginLeft: 8 },
   inquiryBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#E8F5E9', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, alignSelf: 'flex-start', marginTop: 4, gap: 4 },
-  inquiryText: { fontSize: 10, color: '#007C00', fontWeight: 'bold' }
+  inquiryText: { fontSize: 10, color: '#007C00', fontWeight: 'bold' },
+  // 🟢 MGA STYLES PARA SA MODAL
+  darkModalSheet: { backgroundColor: '#1C1C1E', borderTopLeftRadius: 25, borderTopRightRadius: 25, paddingHorizontal: 20, paddingBottom: 35 },
+  darkMenuItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 18, borderBottomWidth: 1, borderBottomColor: '#3A3A3C', backgroundColor: '#2C2C2E' },
+  darkMenuText: { fontSize: 16, color: '#fff' },
+  darkCancelBtn: { padding: 18, backgroundColor: '#2C2C2E', borderRadius: 15, alignItems: 'center' },
+  darkTextInput: { backgroundColor: '#2C2C2E', color: 'white', borderRadius: 12, padding: 15, height: 90, textAlignVertical: 'top', marginBottom: 20, borderWidth: 1, borderColor: '#3A3A3C', fontSize: 15 }
 });
