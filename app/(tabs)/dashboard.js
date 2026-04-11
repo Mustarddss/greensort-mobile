@@ -2,11 +2,14 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router'; 
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Image, Keyboard, KeyboardAvoidingView, Modal, Platform, RefreshControl, ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { ActivityIndicator, Alert, Image, Keyboard, KeyboardAvoidingView, Modal, Platform, RefreshControl, ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View, Dimensions } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
 import { LinearGradient } from 'expo-linear-gradient';
 import MapView, { Marker } from 'react-native-maps';
 import * as Location from 'expo-location';
+
+const screenWidth = Dimensions.get('window').width;
 
 export default function Dashboard() {
   const router = useRouter();
@@ -27,7 +30,9 @@ export default function Dashboard() {
   const [isModerating, setIsModerating] = useState(false);
 
   const [userData, setUserData] = useState({ name: 'Loading...', kgRecycled: 0, submissions: 0, upcycleProjects: 0, bankedPoints: 0, avatar: null });
-  const [form, setForm] = useState({ type: 'For Sale', title: '', desc: '', category: '', price: '', lookingFor: '', location: '', latitude: null, longitude: null, imageUri: null });
+  // 🟢 UPDATED: imageUri is now imageUris (Array)
+  const [form, setForm] = useState({ type: 'For Sale', title: '', desc: '', category: '', price: '', lookingFor: '', location: '', latitude: null, longitude: null, imageUris: [] });
+  
   const [newComment, setNewComment] = useState('');
   const [replyingTo, setReplyingTo] = useState(null);
   const [editingCommentId, setEditingCommentId] = useState(null); 
@@ -48,12 +53,11 @@ export default function Dashboard() {
   const [isBankedModalVisible, setBankedModalVisible] = useState(false);
   const [bankedDetails, setBankedDetails] = useState([]);
 
-  // 🟢 STATES PARA SA NESTED REPORTING & ADDITIONAL INFO
   const [selectedMainReason, setSelectedMainReason] = useState(null);
   const [selectedReportReason, setSelectedReportReason] = useState(null); 
   const [selectedMainCommentReason, setSelectedMainCommentReason] = useState(null);
   const [selectedCommentSubReason, setSelectedCommentSubReason] = useState(null);
-  const [reportAdditionalInfo, setReportAdditionalInfo] = useState(''); // 🟢 BAGONG STATE PARA SA TEXTBOX
+  const [reportAdditionalInfo, setReportAdditionalInfo] = useState(''); 
 
   const reportReasons = [
     { 
@@ -126,7 +130,6 @@ export default function Dashboard() {
         const { data: { user } } = await supabase.auth.getUser();
         
         if (user) {
-            // Siguraduhing pareho ang pangalan ng channel ('app-presence') sa admin mo
             presenceChannel = supabase.channel('app-presence');
             
             presenceChannel
@@ -135,7 +138,6 @@ export default function Dashboard() {
                 })
                 .subscribe(async (status) => {
                     if (status === 'SUBSCRIBED') {
-                        // Kapag nakapasok na sa channel, i-broadcast niya yung sarili niya!
                         await presenceChannel.track({
                             user_id: user.id,
                             online_at: new Date().toISOString(),
@@ -171,22 +173,18 @@ export default function Dashboard() {
       let bankedKg = 0;
       let bankedGroup = {};
 
-      // 🟢 DITO NATIN ILALAGAY ANG UPDATE LAST LOGIN
-      // Ina-update natin ang profiles table para malaman ng Admin Dashboard na active siya ngayon
       try {
           const { error: updateError } = await supabase
               .from('profiles')
               .update({ last_login: new Date().toISOString() })
-              .eq('email', userEmail); // Ginamit natin ang email bilang identifier para safe
+              .eq('email', userEmail); 
           if (updateError) console.log("Failed to update last login:", updateError.message);
       } catch (err) {
           console.log("Error updating last login:", err);
       }
-      // 🟢 END OF UPDATE LAST LOGIN
 
       try {
           const { data: logs, error } = await supabase.from('surrender_logs').select('*').eq('resident_email', userEmail);
-          // ... (Ang susunod na lines ay yung existing code mo para sa surrender_logs)
           if (logs && !error) {
               totalSubmissions = logs.length;
               logs.forEach(log => {
@@ -266,7 +264,22 @@ export default function Dashboard() {
     const post = selectedPostForOptions;
     setOptionsModalVisible(false);
     setEditingPostId(post.id);
-    setForm({ type: post.type, title: post.title, desc: post.desc, category: 'Other', price: post.price.replace('₱','').replace('Trade: ',''), lookingFor: post.price.includes('Trade') ? post.price.replace('Trade: ','') : '', location: post.location, latitude: post.latitude, longitude: post.longitude, imageUri: post.image });
+    
+    // 🟢 String to Array para mag-load yung existing images sa edit mode
+    const existingImages = post.image ? post.image.split(',') : [];
+
+    setForm({ 
+        type: post.type, 
+        title: post.title, 
+        desc: post.desc, 
+        category: 'Other', 
+        price: post.price.replace('₱','').replace('Trade: ',''), 
+        lookingFor: post.price.includes('Trade') ? post.price.replace('Trade: ','') : '', 
+        location: post.location, 
+        latitude: post.latitude, 
+        longitude: post.longitude, 
+        imageUris: existingImages 
+    });
     setIsCreating(true);
   };
 
@@ -295,9 +308,49 @@ export default function Dashboard() {
     ]);
   };
 
+  // 🟢 UPDATED: Allows multiple selection, no cropping, 250mb size limit
   const handleImagePick = async () => {
-    let result = await ImagePicker.launchImageLibraryAsync({ allowsEditing: true, aspect: [4, 3], quality: 0.3 });
-    if (!result.canceled) setForm({ ...form, imageUri: result.assets[0].uri });
+    try {
+        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (status !== 'granted') { Alert.alert('Permission needed', 'We need access to your gallery!'); return; }
+        
+        let result = await ImagePicker.launchImageLibraryAsync({ 
+            mediaTypes: ['images'], 
+            allowsMultipleSelection: true, 
+            selectionLimit: 5 - form.imageUris.length, // Limit based on how many are already added
+            allowsEditing: false, // NO CROPPING ALLOWED
+            quality: 0.8, 
+            base64: true 
+        });
+
+        if (!result.canceled && result.assets) {
+            let validUris = [];
+            for (let i = 0; i < result.assets.length; i++) {
+                const asset = result.assets[i];
+                // Estimate file size in MB based on base64 length
+                const fileSizeInMB = (asset.base64 ? asset.base64.length * 0.75 : 0) / (1024 * 1024);
+                
+                if (fileSizeInMB > 250) {
+                    Alert.alert("File Too Large", `An image exceeds 250MB and was skipped.`);
+                } else {
+                    validUris.push(asset.uri);
+                }
+            }
+
+            setForm(prev => {
+                const combined = [...prev.imageUris, ...validUris];
+                const capped = combined.slice(0, 5); // STRICTLY 5 MAX
+                return { ...prev, imageUris: capped };
+            });
+        }
+    } catch (error) { Alert.alert("Error", "Could not open gallery."); }
+  };
+
+  const removeImage = (indexToRemove) => {
+      setForm(prev => ({
+          ...prev,
+          imageUris: prev.imageUris.filter((_, index) => index !== indexToRemove)
+      }));
   };
 
   const handleMapPress = async (e) => {
@@ -317,7 +370,7 @@ export default function Dashboard() {
   };
 
   const handlePostSubmit = async () => {
-    if (!form.imageUri) return Alert.alert("Photo Required", "Please upload a photo for your post.");
+    if (form.imageUris.length === 0) return Alert.alert("Photo Required", "Please upload at least one photo for your post.");
     if (!form.title || !form.desc || !form.location) return Alert.alert("Wait!", "Please fill in all general details (Title, Desc, Location).");
     if (!form.latitude || !form.longitude) return Alert.alert("Location Pin Required", "Please tap on the map to set a meet-up spot.");
     if (form.type === 'For Sale' && (!form.price || form.price.trim() === '')) return Alert.alert("Wait!", "Please enter a price for your item.");
@@ -376,18 +429,34 @@ export default function Dashboard() {
 
     setIsModerating(false);
     setIsUploading(true);
-    let uploadedImageUrl = form.imageUri;
-
-    if (form.imageUri && !form.imageUri.startsWith('http')) {
-        try {
-            const formData = new FormData();
-            formData.append('file', { uri: form.imageUri, name: `img_${Date.now()}.jpg`, type: 'image/jpeg' });
-            const { data, error } = await supabase.storage.from('post_images').upload(`public/${Date.now()}.jpg`, formData);
-            if (!error) { const { data: urlData } = supabase.storage.from('post_images').getPublicUrl(data.path); uploadedImageUrl = urlData.publicUrl; }
-        } catch(e) { console.log(e); }
+    
+    // 🟢 UPLOAD MULTIPLE IMAGES
+    let uploadedImageUrls = [];
+    
+    for (let i = 0; i < form.imageUris.length; i++) {
+        const uri = form.imageUris[i];
+        
+        // Kung nage-edit at url na siya sa database, keep it
+        if (uri.startsWith('http')) {
+            uploadedImageUrls.push(uri);
+        } else {
+            try {
+                const formData = new FormData();
+                formData.append('file', { uri: uri, name: `img_${Date.now()}_${i}.jpg`, type: 'image/jpeg' });
+                const { data, error } = await supabase.storage.from('post_images').upload(`public/${Date.now()}_${i}.jpg`, formData);
+                
+                if (!error) { 
+                    const { data: urlData } = supabase.storage.from('post_images').getPublicUrl(data.path); 
+                    uploadedImageUrls.push(urlData.publicUrl); 
+                }
+            } catch(e) { console.log(e); }
+        }
     }
     
-    const postData = { user: userData.name, avatar: userData.avatar, type: form.type, title: form.title, desc: form.desc, price: form.type === 'Free' ? 'Free' : form.type === 'Trade' ? `Trade: ${form.lookingFor}` : `₱${form.price}`, location: form.location, latitude: form.latitude, longitude: form.longitude, image: uploadedImageUrl, status: aiStatus, ai_reason: aiReason };
+    // 🟢 Pagsamahin ang mga links using comma
+    const imagesToSave = uploadedImageUrls.join(',');
+    
+    const postData = { user: userData.name, avatar: userData.avatar, type: form.type, title: form.title, desc: form.desc, price: form.type === 'Free' ? 'Free' : form.type === 'Trade' ? `Trade: ${form.lookingFor}` : `₱${form.price}`, location: form.location, latitude: form.latitude, longitude: form.longitude, image: imagesToSave, status: aiStatus, ai_reason: aiReason };
     let dbError = null;
 
     if (editingPostId) { 
@@ -407,7 +476,7 @@ export default function Dashboard() {
 
     setEditingPostId(null);
     setIsCreating(false);
-    setForm({ type: 'For Sale', title: '', desc: '', category: '', price: '', lookingFor: '', location: '', latitude: null, longitude: null, imageUri: null });
+    setForm({ type: 'For Sale', title: '', desc: '', category: '', price: '', lookingFor: '', location: '', latitude: null, longitude: null, imageUris: [] });
     fetchPosts(); 
 
     if (aiStatus === 'flagged') {
@@ -528,13 +597,11 @@ export default function Dashboard() {
   const handleOtherPostOptions = (post) => {
     setPostToReport(post);
     setReportStep(0); 
-    setReportAdditionalInfo(''); // 🟢 Reset text box
+    setReportAdditionalInfo(''); 
     setReportModalVisible(true);
   };
 
-  // 🟢 UPDATED SUBMIT REPORT FOR POSTS (Appends the comment to the reason)
   const submitReport = async (baseReason) => {
-    // Kung may dinagdag na text, idudugtong natin sa huli
     const fullReasonString = reportAdditionalInfo.trim() 
         ? `${baseReason} - Details: ${reportAdditionalInfo}` 
         : baseReason;
@@ -569,7 +636,7 @@ export default function Dashboard() {
       setReportStep(0); 
       setSelectedMainReason(null);
       setSelectedReportReason(null);
-      setReportAdditionalInfo(''); // 🟢 Reset after submit
+      setReportAdditionalInfo(''); 
     }
   };
 
@@ -587,21 +654,19 @@ export default function Dashboard() {
   const handleReportCommentAction = () => { 
       setCommentOptionsModalVisible(false); 
       setCommentReportStep(0); 
-      setReportAdditionalInfo(''); // 🟢 Reset text box
+      setReportAdditionalInfo(''); 
       setCommentReportModalVisible(true); 
   };
   
-  // 🟢 UPDATED SUBMIT REPORT FOR COMMENTS (Naka-connect na sa Supabase)
-  const submitCommentReport = async (baseReason) => { // ⚠️ WAG KALIMUTAN YUNG 'async'
+  const submitCommentReport = async (baseReason) => { 
     const fullReasonString = reportAdditionalInfo.trim() 
         ? `${baseReason} - Details: ${reportAdditionalInfo}` 
         : baseReason;
         
     try {
-      // 🟢 I-insert sa bagong 'comment_reports' table
       const { error } = await supabase.from('comment_reports').insert([{ 
           comment_id: selectedCommentForOptions.id, 
-          reporter_email: userData.name, // Gamit natin name mo as reporter base sa post_reports logic mo
+          reporter_email: userData.name, 
           reason: fullReasonString, 
           status: 'Pending' 
       }]);
@@ -638,6 +703,9 @@ export default function Dashboard() {
     const mainComments = postComments.filter(c => !c.parent_id);
     const getReplies = (parentId) => postComments.filter(c => c.parent_id === parentId);
     
+    // Convert string separated images to array
+    const postImagesArray = selectedPost.image ? selectedPost.image.split(',') : [];
+
     return (
       <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
         <StatusBar barStyle="light-content" backgroundColor="#007C00" translucent={true} />
@@ -657,10 +725,24 @@ export default function Dashboard() {
         <KeyboardAvoidingView style={{flex: 1}} behavior={Platform.OS === "ios" ? "padding" : "height"} keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}>
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{paddingBottom: 20}} keyboardShouldPersistTaps="handled">
                 <View style={{position: 'relative'}}>
-                    <Image source={{ uri: selectedPost.image }} style={{width: '100%', height: 350, resizeMode: 'cover', backgroundColor: '#eee'}} />
+                    {/* 🟢 HORIZONTAL SCROLL PARA SA MULTIPLE IMAGES SA POST DETAILS */}
+                    <ScrollView horizontal pagingEnabled showsHorizontalScrollIndicator={false} style={{width: screenWidth, height: 350}}>
+                        {postImagesArray.map((imgUrl, idx) => (
+                            <Image key={idx} source={{ uri: imgUrl }} style={{width: screenWidth, height: 350, resizeMode: 'cover', backgroundColor: '#eee'}} />
+                        ))}
+                    </ScrollView>
+                    
                     <View style={{position: 'absolute', top: 15, left: 15, backgroundColor: '#007AFF', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, elevation: 3}}>
                         <Text style={{color: 'white', fontWeight: 'bold', fontSize: 12}}>{selectedPost.type}</Text>
                     </View>
+                    
+                    {/* 🟢 SHOW IMAGE COUNTER IF MULTIPLE */}
+                    {postImagesArray.length > 1 && (
+                         <View style={{position: 'absolute', bottom: 15, right: 15, backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12, flexDirection: 'row', alignItems: 'center'}}>
+                             <MaterialCommunityIcons name="layers-outline" size={14} color="white" style={{marginRight: 4}}/>
+                             <Text style={{color: 'white', fontSize: 11, fontWeight: 'bold'}}>{postImagesArray.length} Photos</Text>
+                         </View>
+                    )}
                 </View>
 
                 <View style={{padding: 20}}>
@@ -841,7 +923,6 @@ export default function Dashboard() {
           </TouchableOpacity>
         </Modal>
 
-        {/* 🟢 NESTED COMMENT REPORT MODAL (WITH COMMENT BOX) */}
         <Modal visible={commentReportModalVisible} animationType="slide" transparent={true} onRequestClose={() => setCommentReportModalVisible(false)}>
           <TouchableOpacity style={{flex: 1, backgroundColor: 'transparent', justifyContent: 'flex-end'}} activeOpacity={1} onPress={() => setCommentReportModalVisible(false)}>
             <TouchableOpacity activeOpacity={1} style={styles.darkModalSheet}>
@@ -877,7 +958,6 @@ export default function Dashboard() {
                 </View>
               )}
 
-              {/* 🟢 STEP 3: COMMENT CONFIRMATION (May TextBox) */}
               {commentReportStep === 3 && selectedCommentSubReason && (
                 <View style={{marginBottom: 15}}>
                   <Text style={{fontSize: 18, fontWeight: 'bold', color: '#fff', marginBottom: 15, textAlign: 'center'}}>Confirm Report</Text>
@@ -891,9 +971,9 @@ export default function Dashboard() {
                       placeholder="Add additional details (optional)..."
                       placeholderTextColor="#888"
                       multiline={true}
-                      returnKeyType="done" // 🟢 ITO ANG MAGPAPALIT SA "ENTER" MAGING "DONE/CHECK"
-                      blurOnSubmit={true} // 🟢 PARA BUMABA YUNG KEYBOARD PAGKAPINDOT
-                      onSubmitEditing={() => Keyboard.dismiss()} // 🟢 EXTRA SAFETY PARA MATAGO ANG KEYBOARD
+                      returnKeyType="done" 
+                      blurOnSubmit={true} 
+                      onSubmitEditing={() => Keyboard.dismiss()} 
                       value={reportAdditionalInfo}
                       onChangeText={setReportAdditionalInfo}
                   />
@@ -935,8 +1015,8 @@ export default function Dashboard() {
               <Text style={styles.label}>Post Type</Text>
               <View style={styles.typeRow}>{['For Sale', 'Trade', 'Free'].map(type => (<TouchableOpacity key={type} style={[styles.typeBtn, form.type === type && styles.typeBtnActive, {borderColor: form.type === type ? '#007C00' : '#E0E0E0'}]} onPress={() => setForm({...form, type: type})}><Text style={[styles.typeBtnText, form.type === type && {color: '#007C00'}]}>{type}</Text></TouchableOpacity>))}</View>
               
-              <Text style={styles.label}>Title</Text><TextInput style={styles.input} placeholder="Title" value={form.title} onChangeText={(t) => setForm({...form, title: t})} />
-              <Text style={styles.label}>Description</Text><TextInput style={[styles.input, {height: 80}]} placeholder="Desc" multiline value={form.desc} onChangeText={(t) => setForm({...form, desc: t})} />
+              <Text style={styles.label}>Name of your Item</Text><TextInput style={styles.input} placeholder="Title" value={form.title} onChangeText={(t) => setForm({...form, title: t})} />
+              <Text style={styles.label}>Description of your Item</Text><TextInput style={[styles.input, {height: 80}]} placeholder="Describe your item..." multiline value={form.desc} onChangeText={(t) => setForm({...form, desc: t})} />
               
               {form.type === 'For Sale' ? (<><Text style={styles.label}>Price *</Text><View style={styles.inputIconWrap}><Text style={{color: '#999', marginRight: 5}}>₱</Text><TextInput style={{flex: 1}} placeholder="0.00" keyboardType="numeric" value={form.price} onChangeText={(t) => setForm({...form, price: t})}/></View></>) : null}
               {form.type === 'Trade' ? (<><Text style={styles.label}>Looking For *</Text><TextInput style={styles.input} placeholder="e.g. Glass bottles..." value={form.lookingFor} onChangeText={(t) => setForm({...form, lookingFor: t})}/></>) : null}
@@ -944,8 +1024,8 @@ export default function Dashboard() {
               <Text style={styles.label}>Location Details</Text>
               <TextInput style={styles.input} placeholder="Barangay, City" value={form.location} onChangeText={(t) => setForm({...form, location: t})} />
               
-              <Text style={[styles.label, {marginTop: 15}]}>Pin Meet-up Spot *</Text>
-              <Text style={{fontSize: 12, color: '#666', marginBottom: 10}}>Tap the map to place a pin. The location field will automatically update!</Text>
+              <Text style={[styles.label, {marginTop: 15}]}>Pin your Location *</Text>
+              <Text style={{fontSize: 12, color: '#666', marginBottom: 10}}>Move/drag the map below if the pinned location is incorrect.</Text>
               
               <View style={styles.mapBox}>
                   <MapView
@@ -957,7 +1037,29 @@ export default function Dashboard() {
                   </MapView>
               </View>
 
-              <Text style={styles.label}>Upload Photo</Text><TouchableOpacity style={styles.imageUploadBox} onPress={handleImagePick}>{form.imageUri ? (<Image source={{ uri: form.imageUri }} style={{width: '100%', aspectRatio: 16/9, borderRadius: 12}} resizeMode="cover" />) : (<MaterialCommunityIcons name="camera-plus" size={30} color="#999" />)}</TouchableOpacity>
+              {/* 🟢 NEW UPLOAD UI FOR UP TO 5 IMAGES */}
+              <View style={{flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 15, marginBottom: 5}}>
+                  <Text style={[styles.label, {marginTop: 0, marginBottom: 0}]}>Upload Photos *</Text>
+                  <Text style={{fontSize: 12, color: '#666'}}>{form.imageUris.length}/5</Text>
+              </View>
+              
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{gap: 10, paddingVertical: 10}}>
+                  {form.imageUris.map((uri, index) => (
+                      <View key={index} style={{position: 'relative'}}>
+                          <Image source={{ uri: uri }} style={{width: 120, height: 120, borderRadius: 12, backgroundColor: '#eee'}} resizeMode="cover" />
+                          <TouchableOpacity style={{position: 'absolute', top: -5, right: -5, backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 15, padding: 4}} onPress={() => removeImage(index)}>
+                              <Ionicons name="close" size={16} color="white" />
+                          </TouchableOpacity>
+                      </View>
+                  ))}
+                  
+                  {form.imageUris.length < 5 && (
+                      <TouchableOpacity style={{width: 120, height: 120, borderWidth: 1, borderColor: '#ddd', borderStyle: 'dashed', borderRadius: 12, justifyContent: 'center', alignItems: 'center', backgroundColor: '#FAFAFA'}} onPress={handleImagePick}>
+                          <MaterialCommunityIcons name="camera-plus" size={30} color="#999" />
+                          <Text style={{fontSize: 10, color: '#999', marginTop: 5}}>Add Photo</Text>
+                      </TouchableOpacity>
+                  )}
+              </ScrollView>
               
               <TouchableOpacity style={styles.submitBtn} onPress={handlePostSubmit} disabled={isModerating || isUploading}>
                   {isModerating ? (<Text style={{color: 'white', fontWeight: 'bold'}}>AI is checking your post...</Text>) : 
@@ -1034,6 +1136,9 @@ export default function Dashboard() {
         {filteredPosts.length === 0 ? (<Text style={{textAlign: 'center', marginTop: 50, color: '#999'}}>No posts found.</Text>) : (
             filteredPosts.map((post) => {
                 const isOwner = post.user === userData.name;
+                
+                // 🟢 Safe split array para sa Feed image
+                const firstImageUrl = post.image ? post.image.split(',')[0] : null;
 
                 if (post.status === 'flagged' && isOwner) {
                     return (
@@ -1066,7 +1171,25 @@ export default function Dashboard() {
                             <View style={[styles.typeBadge, {backgroundColor: '#E8F5E9'}]}><Text style={{color: '#007C00', fontSize: 10, fontWeight: 'bold'}}>{post.type}</Text></View>
                             <TouchableOpacity onPress={() => isOwner ? handlePostOptions(post) : handleOtherPostOptions(post)} style={{padding: 5, marginLeft: 10}}><Ionicons name="ellipsis-vertical" size={20} color="#999" /></TouchableOpacity>
                         </View>
-                        <TouchableOpacity onPress={() => openPostDetails(post)}><Text style={styles.postTitle}>{post.title}</Text><Text style={styles.postDesc} numberOfLines={2}>{post.desc}</Text><Image source={{ uri: post.image }} style={styles.postImage} /></TouchableOpacity>
+                        
+                        <TouchableOpacity onPress={() => openPostDetails(post)}>
+                            <Text style={styles.postTitle}>{post.title}</Text>
+                            <Text style={styles.postDesc} numberOfLines={2}>{post.desc}</Text>
+                            
+                            {/* 🟢 FEED VIEW IMAGE */}
+                            <View style={{position: 'relative'}}>
+                                {firstImageUrl && <Image source={{ uri: firstImageUrl }} style={styles.postImage} />}
+                                
+                                {/* 🟢 MULTIPLE PHOTO BADGE KUNG HIGIT SA ISA YUNG LAMAN NG DB STRING */}
+                                {post.image && post.image.includes(',') && (
+                                    <View style={{position: 'absolute', top: 10, right: 10, backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 10, flexDirection: 'row', alignItems: 'center'}}>
+                                        <MaterialCommunityIcons name="layers-outline" size={14} color="white" style={{marginRight: 4}} />
+                                        <Text style={{color: 'white', fontSize: 11, fontWeight: 'bold'}}>{post.image.split(',').length}</Text>
+                                    </View>
+                                )}
+                            </View>
+                        </TouchableOpacity>
+                        
                         <View style={styles.postFooter}>
                             <View style={{flexDirection: 'row', gap: 15}}>
                                 <TouchableOpacity style={styles.iconRow} onPress={() => handleLike(post)}><Ionicons name={post.liked_by?.includes(userData.name) ? "heart" : "heart-outline"} size={24} color={post.liked_by?.includes(userData.name) ? "#FF1744" : "#666"} /><Text style={styles.iconText}>{post.likes}</Text></TouchableOpacity>
@@ -1127,7 +1250,6 @@ export default function Dashboard() {
         </TouchableOpacity>
       </Modal>
 
-      {/* 🟢 NESTED POST REPORT MODAL (WITH COMMENT BOX) */}
       <Modal visible={reportModalVisible} animationType="slide" transparent={true} onRequestClose={() => setReportModalVisible(false)}>
         <TouchableOpacity style={{flex: 1, backgroundColor: 'transparent', justifyContent: 'flex-end'}} activeOpacity={1} onPress={() => setReportModalVisible(false)}>
           <TouchableOpacity activeOpacity={1} style={styles.darkModalSheet}>
@@ -1173,7 +1295,6 @@ export default function Dashboard() {
               </View>
             )}
 
-            {/* 🟢 STEP 3: POST CONFIRMATION (May TextBox) */}
             {reportStep === 3 && selectedReportReason && (
               <View style={{marginBottom: 15}}>
                 <Text style={{fontSize: 18, fontWeight: 'bold', color: '#fff', marginBottom: 15, textAlign: 'center'}}>Confirm Report</Text>
@@ -1187,9 +1308,9 @@ export default function Dashboard() {
                       placeholder="Add additional details (optional)..."
                       placeholderTextColor="#888"
                       multiline={true}
-                      returnKeyType="done" // 🟢 ITO ANG MAGPAPALIT SA "ENTER" MAGING "DONE/CHECK"
-                      blurOnSubmit={true} // 🟢 PARA BUMABA YUNG KEYBOARD PAGKAPINDOT
-                      onSubmitEditing={() => Keyboard.dismiss()} // 🟢 EXTRA SAFETY PARA MATAGO ANG KEYBOARD
+                      returnKeyType="done" 
+                      blurOnSubmit={true} 
+                      onSubmitEditing={() => Keyboard.dismiss()} 
                       value={reportAdditionalInfo}
                       onChangeText={setReportAdditionalInfo}
                   />
@@ -1229,7 +1350,6 @@ const styles = StyleSheet.create({
   postCard: { backgroundColor: 'white', borderRadius: 16, padding: 15, marginBottom: 15, elevation: 2 }, myPostCardBorder: { backgroundColor: '#F1F8E9', borderWidth: 1, borderColor: '#C8E6C9' }, meBadge: { backgroundColor: '#007C00', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }, meBadgeText: { color: 'white', fontSize: 8, fontWeight: 'bold' },
   postHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 }, postAvatar: { width: 40, height: 40, borderRadius: 20 }, postUser: { fontWeight: 'bold', fontSize: 14, color: '#333' }, postTime: { fontSize: 11, color: '#999' }, typeBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10 }, postTitle: { fontSize: 16, fontWeight: 'bold', color: '#333', marginBottom: 5 }, postDesc: { fontSize: 13, color: '#666', marginBottom: 10 }, postImage: { width: '100%', aspectRatio: 16 / 9, borderRadius: 12, marginBottom: 15, resizeMode: 'cover', backgroundColor: '#f0f0f0' }, postFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, iconRow: { flexDirection: 'row', alignItems: 'center', gap: 5, padding: 5 }, iconText: { fontSize: 14, color: '#666' }, postPrice: { fontSize: 16, fontWeight: 'bold', color: '#007C00' }, contactBtn: { backgroundColor: '#007C00', paddingHorizontal: 15, paddingVertical: 8, borderRadius: 8 }, contactText: { color: 'white', fontWeight: 'bold', fontSize: 12 }, footerInput: { padding: 15, backgroundColor: 'white', borderTopWidth: 1, borderTopColor: '#eee', flexDirection: 'row', alignItems: 'flex-end', gap: 10 }, statusBanner: { backgroundColor: '#E8F5E9', padding: 8, paddingHorizontal: 15, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, inputField: { flex: 1, backgroundColor: '#F5F5F5', borderRadius: 20, paddingHorizontal: 15, paddingVertical: 10, maxHeight: 100 }, sendBtn: { width: 40, height: 40, backgroundColor: '#007C00', borderRadius: 20, justifyContent: 'center', alignItems: 'center', marginBottom: 2 }, createContent: { padding: 20 }, label: { fontSize: 14, fontWeight: '700', color: '#333', marginBottom: 4, marginTop: 15 }, input: { backgroundColor: '#F5F7FA', borderRadius: 10, padding: 15, borderWidth: 1, borderColor: '#F0F0F0' }, inputIconWrap: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F5F7FA', borderRadius: 10, paddingHorizontal: 15, paddingVertical: 12, borderWidth: 1, borderColor: '#F0F0F0' }, typeRow: { flexDirection: 'row', gap: 10 }, typeBtn: { flex: 1, paddingVertical: 15, borderRadius: 12, borderWidth: 1, alignItems: 'center', borderColor: '#E0E0E0' }, typeBtnActive: { borderColor: '#007C00', backgroundColor: '#E8F5E9' }, typeBtnText: { fontSize: 12, fontWeight: '600', color: '#666' }, imageUploadBox: { width: '100%', aspectRatio: 16 / 9, borderWidth: 1, borderColor: '#ddd', borderStyle: 'dashed', borderRadius: 12, justifyContent: 'center', alignItems: 'center', backgroundColor: '#FAFAFA', marginTop: 15 }, submitBtn: { padding: 15, borderRadius: 12, backgroundColor: '#007C00', alignItems: 'center', marginTop: 30 },
   darkModalSheet: { backgroundColor: '#1C1C1E', borderTopLeftRadius: 25, borderTopRightRadius: 25, paddingHorizontal: 20, paddingBottom: 35, shadowColor: '#000', shadowOffset: { width: 0, height: -2 }, shadowOpacity: 0.2, shadowRadius: 10, elevation: 15 }, darkMenuContainer: { backgroundColor: '#2C2C2E', borderRadius: 15, overflow: 'hidden', marginBottom: 15 }, darkMenuItem: { flexDirection: 'row', alignItems: 'center', padding: 18, borderBottomWidth: 1, borderBottomColor: '#3A3A3C' }, darkMenuText: { fontSize: 16, color: '#fff' }, darkCancelBtn: { padding: 18, backgroundColor: '#2C2C2E', borderRadius: 15, alignItems: 'center' },
-  // 🟢 BAGONG STYLE PARA SA REPORT TEXTBOX
   darkTextInput: { backgroundColor: '#2C2C2E', color: 'white', borderRadius: 12, padding: 15, height: 90, textAlignVertical: 'top', marginBottom: 20, borderWidth: 1, borderColor: '#3A3A3C', fontSize: 15 },
   modalOverlayDark: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 20 }, bankedModalCard: { width: '100%', maxHeight: '80%', backgroundColor: '#F4F6F8', borderRadius: 20, overflow: 'hidden', elevation: 10 }, bankedModalHeader: { backgroundColor: '#007C00', padding: 20, flexDirection: 'row', alignItems: 'center' }, bankedModalTitle: { color: 'white', fontSize: 18, fontWeight: 'bold' }, bankedModalContent: { padding: 20 }, bankedModalDesc: { fontSize: 13, color: '#666', marginBottom: 20, lineHeight: 18 }, bankedCenterCard: { backgroundColor: 'white', borderRadius: 12, padding: 15, marginBottom: 15, elevation: 2 }, bankedCenterHeader: { flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: '#eee', paddingBottom: 10, marginBottom: 10 }, bankedCenterName: { fontWeight: 'bold', color: '#333', fontSize: 14, marginLeft: 8 }, bankedMaterialsList: { paddingHorizontal: 5 }, bankedMaterialRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 0.5, borderBottomColor: '#f0f0f0' }, bankedMaterialType: { color: '#333', fontSize: 14, fontWeight: '600' }, bankedMaterialKg: { fontWeight: 'bold', color: '#007C00', fontSize: 14 },
   mapBox: { width: '100%', height: 200, borderRadius: 12, overflow: 'hidden', marginTop: 10, borderWidth: 1, borderColor: '#ddd' }, map: { width: '100%', height: '100%' }

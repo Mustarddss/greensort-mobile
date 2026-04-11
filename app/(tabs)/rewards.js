@@ -313,23 +313,23 @@ export default function Rewards() {
 
                     {hasSearched && (
                         <View style={{ marginTop: 20 }}>
-                            <Text style={[styles.sectionHeader, {color: '#007C00'}]}>RECOMMENDED LOCATIONS (AI RESEARCH)</Text>
+                            <Text style={[styles.sectionHeader, {color: '#007C00'}]}>Can’t find anything nearby? Check out our recommended places based on our research in your area.</Text>
                             
                             {isAiLoading ? (
                                 <View style={{padding: 20, alignItems: 'center'}}>
                                     <ActivityIndicator size="large" color="#007C00" />
-                                    <Text style={{color: '#666', marginTop: 10, fontSize: 12}}>GreenSort AI is scanning locations near you...</Text>
+                                    <Text style={{color: '#666', marginTop: 10, fontSize: 12}}>GreenSort is scanning locations near you...</Text>
                                 </View>
                             ) : aiResultText ? (
                                 <View style={styles.aiCard}>
                                     <View style={styles.aiHeader}>
                                         <Ionicons name="sparkles" size={18} color="#007C00" />
-                                        <Text style={styles.aiLocName}>GreenSort AI Suggestions</Text>
+                                        <Text style={styles.aiLocName}>GreenSort Suggestions</Text>
                                     </View>
                                     <Text style={styles.aiDetails} selectable={true}>{aiResultText}</Text>
                                 </View>
                             ) : (
-                                !loading && <Text style={styles.noResults}>AI could not find external locations at this moment.</Text>
+                                !loading && <Text style={styles.noResults}>GreenSort could not find external locations at this moment.</Text>
                             )}
                         </View>
                     )}

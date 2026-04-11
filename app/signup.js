@@ -136,10 +136,10 @@ export default function Signup() {
             <Text style={styles.label}>Email</Text>
             <TextInput style={styles.input} placeholder="email@gmail.com" keyboardType="email-address" autoCapitalize="none" value={email} onChangeText={setEmail} />
 
-            <Text style={styles.label}>Phone Number</Text>
+            <Text style={styles.label}>Mobile Number</Text>
             <TextInput style={styles.input} placeholder="09123456789" keyboardType="phone-pad" value={phone} onChangeText={setPhone} />
 
-            <Text style={styles.label}>Barangay Address</Text>
+            <Text style={styles.label}>Address</Text>
             <TextInput style={styles.input} placeholder="e.g. Brgy. Sampaloc I" value={address} onChangeText={setAddress} />
 
             <Text style={styles.label}>Password</Text>

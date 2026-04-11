@@ -48,6 +48,7 @@ export default function ScanPage() {
   }, [loading]);
 
   const fetchGPTAnalysis = async (base64Image, textInput) => {
+    // 🟢 SUPER STRICT PROMPT: Literal nating nilagay yung 7 objects para pilitin siyang punuin!
     const promptText = `Analyze the provided image carefully. Identify the MAIN, largest waste item. Ignore minor accessories. Distinguish carefully between materials.
 
     CRITICAL RULE FOR MONEY/BANKNOTES: If the image contains actual money, legal tender, or official banknotes (e.g., Philippine Peso), YOU MUST classify it as "Not allowed to dispose or use for recycling". However, if you are CERTAIN it is fake "Play Money" (toy money), treat it as Recyclable Paper/Plastic.
@@ -58,10 +59,12 @@ export default function ScanPage() {
 
     CRITICAL RULE FOR PERSON DETECTED: If the image contains a person holding an item, FOCUS on the item and not the person. Do NOT classify the person as part of the waste. Only classify the item they are holding.
 
-    CRITICAL RULE IF MANY ITEMS: If there are multiple waste items, identify the MAIN one (largest or most central). You can mention the others in the recycling tip but only classify one main item.
-    
+    CRITICAL RULE IF MANY ITEMS: If there are multiple waste items, identify the MAIN one (largest or most central). You can mention the others in the recycling tip but only classify one main item.    
     CRITICAL RULE IF IT IS A GENERIC CONTAINER: If the image shows a generic container (like a plain black box, unbranded bottle, or generic bag) and you cannot identify the material, classify it as "General Waste" with a low accuracy score (40-60). In the recycling tip, advise the user to check for any labels or markings to better identify the material for proper disposal.
-
+    CRITICAL RULE IF IT IS A BRAND-NEW UNOPENED ITEM: If the image shows a brand-new, unopened product (like a sealed water bottle, packaged snack, or boxed item), classify it based on the packaging material (e.g., "Recyclable Plastic" for a plastic bottle) but include in the recycling tips that the user should remove any non-recyclable components (like caps, labels, or wrappers) before recycling.
+    CRITICAL RULE IF IT IS A FOOD ITEM: If the image contains food waste, classify it as "Organic Waste" and in the recycling tips, suggest composting if possible, or proper disposal methods if not.
+    CRITICAL RULE IF IT IS A MIXED MATERIAL ITEM: If the item is made of mixed materials (like a juice box with plastic and aluminum), classify it based on the dominant material but include in the recycling tips that the user should separate components if possible for better recycling.
+    CRITICAL RULE IF IT IS A DAMAGED ITEM: If the item is heavily damaged (like a crushed plastic bottle or torn cardboard), classify it based on the original material but assign a lower accuracy score (40-60) and include in the recycling tips that damaged items may not be accepted by all recycling programs and to check local guidelines.
     CRITICAL RULE IF IT IS ONLY A PERSON WITHOUT ANY CLEAR ITEM: If the image ONLY shows a person (or body parts like a hand/face) without any clear waste item, YOU MUST classify it exactly like this:
     - detected: "Person / Not a Waste Item"
     - category: "Not a Waste"
@@ -81,11 +84,13 @@ export default function ScanPage() {
          "Crush bottles to save space"
       ], 
       "projects": [
-        {
-          "title": "Pen Holder",
-          "difficulty": "Easy",
-          "youtubeLink": "https://www.youtube.com/results?search_query=diy+plastic+bottle+pen+holder"
-        }
+        { "title": "Creative Easy Idea 1", "difficulty": "Easy", "youtubeLink": "https://www.youtube.com/results?search_query=..." },
+        { "title": "Creative Easy Idea 2", "difficulty": "Easy", "youtubeLink": "https://www.youtube.com/results?search_query=..." },
+        { "title": "Creative Easy Idea 3", "difficulty": "Easy", "youtubeLink": "https://www.youtube.com/results?search_query=..." },
+        { "title": "Creative Medium Idea 1", "difficulty": "Medium", "youtubeLink": "https://www.youtube.com/results?search_query=..." },
+        { "title": "Creative Medium Idea 2", "difficulty": "Medium", "youtubeLink": "https://www.youtube.com/results?search_query=..." },
+        { "title": "Creative Hard Idea 1", "difficulty": "Hard", "youtubeLink": "https://www.youtube.com/results?search_query=..." },
+        { "title": "Creative Hard Idea 2", "difficulty": "Hard", "youtubeLink": "https://www.youtube.com/results?search_query=..." }
       ] 
     }`;
 
@@ -111,8 +116,8 @@ export default function ScanPage() {
         body: JSON.stringify({
           model: 'gpt-5.4', 
           messages: [{ role: 'user', content: messagesContent }],
-          temperature: 0.5,
-          max_completion_tokens: 800,
+          temperature: 0.7, // 🟢 Tinaasan ang creativity para makaisip ng maraming ideas
+          max_completion_tokens: 1500, // 🟢 TINAASAN ANG TOKENS PARA HINDI MAPUTOL ANG 7 IDEAS
         })
       });
 
@@ -161,8 +166,23 @@ export default function ScanPage() {
     try {
         const { status } = await ImagePicker.requestCameraPermissionsAsync();
         if (status !== 'granted') { Alert.alert('Permission needed', 'We need access to your camera!'); return; }
-        let pickerResult = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.3, allowsEditing: true, aspect: [1, 1], base64: true });
-        if (!pickerResult.canceled) handleAnalysis(pickerResult.assets[0].uri, pickerResult.assets[0].base64, null);
+        
+        let pickerResult = await ImagePicker.launchCameraAsync({ 
+            mediaTypes: ['images'], 
+            quality: 0.3, 
+            allowsEditing: false, 
+            base64: true 
+        });
+        
+        if (!pickerResult.canceled) {
+            const asset = pickerResult.assets[0];
+            const fileSizeInMB = (asset.base64.length * 0.75) / (1024 * 1024);
+            if (fileSizeInMB > 250) {
+                Alert.alert("File Too Large", "Please select an image smaller than 250MB.");
+                return;
+            }
+            handleAnalysis(asset.uri, asset.base64, null);
+        }
     } catch (error) { Alert.alert("Error", "Could not open camera."); }
   };
 
@@ -170,8 +190,23 @@ export default function ScanPage() {
     try {
         const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
         if (status !== 'granted') { Alert.alert('Permission needed', 'We need access to your gallery!'); return; }
-        let pickerResult = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.3, allowsEditing: true, aspect: [1, 1], base64: true });
-        if (!pickerResult.canceled) handleAnalysis(pickerResult.assets[0].uri, pickerResult.assets[0].base64, null);
+        
+        let pickerResult = await ImagePicker.launchImageLibraryAsync({ 
+            mediaTypes: ['images'], 
+            quality: 0.3, 
+            allowsEditing: false, 
+            base64: true 
+        });
+        
+        if (!pickerResult.canceled) {
+            const asset = pickerResult.assets[0];
+            const fileSizeInMB = (asset.base64.length * 0.75) / (1024 * 1024);
+            if (fileSizeInMB > 250) {
+                Alert.alert("File Too Large", "Please select an image smaller than 250MB.");
+                return;
+            }
+            handleAnalysis(asset.uri, asset.base64, null);
+        }
     } catch (error) { Alert.alert("Error", "Could not open gallery."); }
   };
 
@@ -263,7 +298,6 @@ export default function ScanPage() {
       <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
         <View style={styles.bodyContent}>
         
-          {/* 🟢 CARD BOARD CONTAINER */}
           <View style={styles.cameraContainer}>
               {loading ? (
                    <View style={styles.loadingContainer}>
@@ -282,7 +316,6 @@ export default function ScanPage() {
               )}
           </View>
 
-          {/* 🟢 SA ILALIM MISMO NG CARD BOARD YUNG DID YOU KNOW */}
           {loading && (
              <View style={styles.funFactCard}>
                  <View style={styles.funFactHeader}>
@@ -543,13 +576,11 @@ const styles = StyleSheet.create({
   headerSubtitle: { color: 'rgba(255,255,255,0.9)', fontSize: 12, marginTop: 2 },
   bodyContent: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 20 }, 
   
-  // 🟢 CAMERA CONTAINER / CARD BOARD
   cameraContainer: { width: '100%', height: 250, borderRadius: 20, overflow: 'hidden', backgroundColor: '#fff', elevation: 4, justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOffset: {width: 0, height: 2}, shadowOpacity: 0.1, shadowRadius: 4 },
   cameraImage: { width: '100%', height: '100%', resizeMode: 'contain' },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#fff', width: '100%' },
   loadingText: { marginTop: 10, color: '#007C00', fontWeight: 'bold', fontSize: 14 },
   
-  // 🟢 NAKA-POSITION SA ILALIM NG CARD BOARD
   funFactCard: { backgroundColor: '#E8F5E9', padding: 15, borderRadius: 15, borderWidth: 1, borderColor: '#C8E6C9', width: '100%', marginTop: 15 },
   funFactHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 8, justifyContent: 'center' },
   funFactTitle: { fontSize: 14, fontWeight: 'bold', color: '#007C00', marginLeft: 6 },
