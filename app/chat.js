@@ -2,12 +2,14 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, Image, KeyboardAvoidingView, Platform, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, Image, KeyboardAvoidingView, Platform, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View, Dimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../lib/supabase';
 
+const screenWidth = Dimensions.get('window').width;
+
 export default function ChatScreen() {
-  const { chatUser } = useLocalSearchParams(); 
+  const { chatUser, postTitle, postType, postDesc, postPrice, postLocation, postImage } = useLocalSearchParams(); 
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const flatListRef = useRef(null); 
@@ -26,6 +28,8 @@ export default function ChatScreen() {
   const [replyingTo, setReplyingTo] = useState(null); 
   const [isUploading, setIsUploading] = useState(false); 
   const [isBotTyping, setIsBotTyping] = useState(false); 
+  
+  const [hasSentInquiry, setHasSentInquiry] = useState(false);
 
   useEffect(() => { 
     let currentUser = '';
@@ -89,11 +93,26 @@ export default function ChatScreen() {
   }, [chatUser]);
 
   const handleSend = async (overrideText = null) => {
-    const textToSend = overrideText || newMessage;
+    let textToSend = overrideText || newMessage;
     if (!textToSend.trim()) return;
+
+    let finalPayload = textToSend;
+
+    if (postTitle && !hasSentInquiry && !overrideText) {
+        const contextObj = {
+            title: postTitle,
+            type: postType || 'Item',
+            desc: postDesc || '',
+            price: postPrice || '',
+            location: postLocation || '',
+            image: postImage || ''
+        };
+        finalPayload = `${textToSend}|||INQUIRY|||${JSON.stringify(contextObj)}`;
+        setHasSentInquiry(true);
+    }
     
     const msg = { 
-        sender_name: myName, receiver_name: chatUser, text: textToSend,
+        sender_name: myName, receiver_name: chatUser, text: finalPayload,
         reply_to_text: replyingTo ? replyingTo.text : null, reply_to_sender: replyingTo ? replyingTo.sender_name : null, is_read: false 
     };
     
@@ -209,18 +228,28 @@ export default function ChatScreen() {
 
   return (
     <KeyboardAvoidingView style={{ flex: 1, backgroundColor: '#F5F7FA' }} behavior={Platform.OS === "ios" ? "padding" : "padding"} keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}>
-      <StatusBar barStyle="dark-content" backgroundColor="white" />
+      {/* 🟢 INAYOS ANG KULAY NG STATUS BAR PARA BUMAGAY SA GREEN HEADER */}
+      <StatusBar barStyle="light-content" backgroundColor="#007C00" translucent={true} />
+      
+      {/* 🟢 INAYOS ANG HEADER PARA GAYAHIN YUNG NASA REFERENCE UI MO (Green, White Text, Outline sa Avatar) */}
       <View style={[styles.header, { paddingTop: Math.max(insets.top, 20) + 15 }]}>
-        <TouchableOpacity onPress={() => router.back()} style={{ marginRight: 15 }}><Ionicons name="arrow-back" size={24} color="#333" /></TouchableOpacity>
+        <TouchableOpacity onPress={() => router.back()} style={{ marginRight: 15 }}>
+            <Ionicons name="arrow-back" size={24} color="white" />
+        </TouchableOpacity>
+        
         <View style={{position: 'relative'}}>
-            <Image source={{uri: chatUserAvatar}} style={{width: 36, height: 36, borderRadius: 18, marginRight: 10}} />
+            <Image source={{uri: chatUserAvatar}} style={{width: 40, height: 40, borderRadius: 20, marginRight: 12, backgroundColor: '#e0e0e0', borderWidth: 1.5, borderColor: 'white'}} />
             {isBot && <View style={{position: 'absolute', bottom: -2, right: 8, backgroundColor: 'white', borderRadius: 6, padding: 1}}><Ionicons name="sparkles" size={10} color="#007C00" /></View>}
         </View>
+        
         <View style={{flex: 1}}>
             <Text style={styles.headerTitle}>{chatUser}</Text>
-            <Text style={{fontSize: 12, color: isOnline ? '#007C00' : '#999', fontWeight: isOnline ? 'bold' : 'normal'}}>{isOnline ? 'Active now' : 'Offline'}</Text>
+            <Text style={{fontSize: 12, color: 'rgba(255,255,255,0.8)', fontWeight: isOnline ? 'bold' : 'normal'}}>{isOnline ? 'Active' : 'Offline'}</Text>
         </View>
-        <TouchableOpacity><Ionicons name="ellipsis-vertical" size={24} color="#333" /></TouchableOpacity>
+        
+        <TouchableOpacity>
+            <Ionicons name="ellipsis-vertical" size={24} color="white" />
+        </TouchableOpacity>
       </View>
 
       <FlatList
@@ -256,12 +285,26 @@ export default function ChatScreen() {
           const timeDiffMins = prevItem ? (new Date(item.created_at) - new Date(prevItem.created_at)) / 60000 : 999;
           const timeDiffNextMins = nextItem ? (new Date(nextItem.created_at) - new Date(item.created_at)) / 60000 : 999;
           
-          const showTimeHeader = !isSameSenderAsPrev || timeDiffMins > 1; 
+          const textParts = item.text ? item.text.split('|||INQUIRY|||') : [''];
+          const actualText = textParts[0];
+          let inquiryContext = null;
+          if (textParts.length > 1) {
+              try { inquiryContext = JSON.parse(textParts[1]); } catch(e){}
+          }
+
+          const showTimeHeader = !isSameSenderAsPrev || timeDiffMins > 1 || inquiryContext; 
           const showAvatar = !isMe && (!isSameSenderAsNext || timeDiffNextMins > 1);
 
           return (
             <View style={{marginBottom: isSameSenderAsNext && timeDiffNextMins <= 1 ? 2 : 15}}>
+                
                 {showTimeHeader ? (<Text style={{textAlign: 'center', fontSize: 11, color: '#999', marginVertical: 10}}>{formatSmartTime(item.created_at)}</Text>) : null}
+                
+                {inquiryContext && !isMe && (
+                    <Text style={{ textAlign: 'center', color: '#888', fontSize: 12, marginBottom: 15, paddingHorizontal: 20 }}>
+                        <Text style={{ fontWeight: 'bold', color: '#333' }}>{item.sender_name}</Text> is contacting you about your {inquiryContext.type?.toLowerCase() || 'post'} in the community feed.
+                    </Text>
+                )}
                 
                 <View style={[styles.messageRow, isMe ? { justifyContent: 'flex-end' } : { justifyContent: 'flex-start' }]}>
                     {!isMe ? (
@@ -270,25 +313,70 @@ export default function ChatScreen() {
                         </View>
                     ) : null}
                     
-                    <TouchableOpacity activeOpacity={0.8} onLongPress={() => setReplyingTo(item)} style={[styles.bubble, isMe ? styles.myBubble : styles.theirBubble, (item.text === '👍' || item.image_url) ? {backgroundColor: 'transparent', padding: 0, borderWidth: 0, elevation: 0} : null]}>
-                        
-                        {item.reply_to_text ? (
-                            <View style={[styles.replyBoxRendered, isMe ? {backgroundColor: '#007C00'} : {backgroundColor: '#f0f0f0'}, item.image_url ? {backgroundColor: '#eee'} : null]}>
-                                <Text style={{fontSize: 10, fontWeight: 'bold', color: isMe && !item.image_url ? '#e0e0e0' : '#007C00', marginBottom: 2}}>Replying to {item.reply_to_sender === myName ? 'yourself' : item.reply_to_sender}</Text>
-                                <Text style={{fontSize: 12, color: isMe && !item.image_url ? '#fff' : '#666'}} numberOfLines={1}>{item.reply_to_text}</Text>
-                            </View>
-                        ) : null}
-                        
-                        {item.image_url ? (
-                            <Image source={{uri: item.image_url}} style={{width: 200, height: 250, borderRadius: 15, marginBottom: item.text !== 'Sent an image' ? 5 : 0}} resizeMode="cover" />
-                        ) : null}
+                    {/* 🟢 INAYOS: Nilagyan ng flex: 1 ang container para hindi mapiga (squish) yung chat bubbles */}
+                    <View style={{flex: 1, flexDirection: 'column', alignItems: isMe ? 'flex-end' : 'flex-start'}}>
+                        <TouchableOpacity activeOpacity={0.8} onLongPress={() => setReplyingTo(item)} style={[styles.bubble, isMe ? styles.myBubble : styles.theirBubble, (actualText === '👍' || item.image_url) ? {backgroundColor: 'transparent', padding: 0, borderWidth: 0, elevation: 0} : null]}>
+                            
+                            {item.reply_to_text ? (
+                                <View style={[styles.replyBoxRendered, isMe ? {backgroundColor: '#007C00'} : {backgroundColor: '#f0f0f0'}, item.image_url ? {backgroundColor: '#eee'} : null]}>
+                                    <Text style={{fontSize: 10, fontWeight: 'bold', color: isMe && !item.image_url ? '#e0e0e0' : '#007C00', marginBottom: 2}}>Replying to {item.reply_to_sender === myName ? 'yourself' : item.reply_to_sender}</Text>
+                                    <Text style={{fontSize: 12, color: isMe && !item.image_url ? '#fff' : '#666'}} numberOfLines={1}>{item.reply_to_text.split('|||')[0]}</Text>
+                                </View>
+                            ) : null}
+                            
+                            {item.image_url ? (
+                                <Image source={{uri: item.image_url}} style={{width: 200, height: 250, borderRadius: 15, marginBottom: actualText !== 'Sent an image' ? 5 : 0}} resizeMode="cover" />
+                            ) : null}
 
-                        {item.text === '👍' ? (
-                            <Text style={{fontSize: 45}}>👍</Text>
-                        ) : item.text !== 'Sent an image' ? (
-                            <Text style={[styles.msgText, isMe ? { color: 'white' } : { color: '#333' }]} selectable={true}>{item.text}</Text>
-                        ) : null}
-                    </TouchableOpacity>
+                            {actualText === '👍' ? (
+                                <Text style={{fontSize: 45}}>👍</Text>
+                            ) : actualText !== 'Sent an image' ? (
+                                <Text style={[styles.msgText, isMe ? { color: 'white' } : { color: '#333' }]} selectable={true}>{actualText}</Text>
+                            ) : null}
+                        </TouchableOpacity>
+
+                        {inquiryContext && (
+                            <View style={[styles.inquiryCard, isMe ? { alignSelf: 'flex-end' } : { alignSelf: 'flex-start' }]}>
+                                {inquiryContext.image ? (
+                                    <Image source={{ uri: inquiryContext.image }} style={styles.inquiryImage} />
+                                ) : (
+                                    <View style={[styles.inquiryImage, {justifyContent: 'center', alignItems: 'center', backgroundColor: '#e0e0e0'}]}>
+                                        <MaterialCommunityIcons name="image-off-outline" size={24} color="#999" />
+                                    </View>
+                                )}
+                                
+                                <View style={styles.inquiryDetails}>
+                                    <Text style={styles.inquiryText} numberOfLines={1}>
+                                        <Text style={{fontWeight: '900', color: '#1C1C1E'}}>{inquiryContext.type}: </Text>
+                                        <Text style={{color: '#333'}}>{inquiryContext.title}</Text>
+                                    </Text>
+                                    
+                                    <Text style={styles.inquiryText} numberOfLines={2}>
+                                        <Text style={{fontWeight: '900', color: '#1C1C1E'}}>Description: </Text>
+                                        <Text style={{color: '#444'}}>{inquiryContext.desc}</Text>
+                                    </Text>
+
+                                    {inquiryContext.type === 'Trade' && inquiryContext.price ? (
+                                        <Text style={styles.inquiryText} numberOfLines={1}>
+                                            <Text style={{fontWeight: '900', color: '#1C1C1E'}}>Looking For: </Text>
+                                            <Text style={{color: '#444'}}>{inquiryContext.price.replace('Trade: ', '')}</Text>
+                                        </Text>
+                                    ) : inquiryContext.price && inquiryContext.type !== 'Free' ? (
+                                        <Text style={styles.inquiryText} numberOfLines={1}>
+                                            <Text style={{fontWeight: '900', color: '#1C1C1E'}}>Price: </Text>
+                                            <Text style={{color: '#444'}}>{inquiryContext.price}</Text>
+                                        </Text>
+                                    ) : null}
+
+                                    <Text style={styles.inquiryText} numberOfLines={1}>
+                                        <Text style={{fontWeight: '900', color: '#1C1C1E'}}>Location: </Text>
+                                        <Text style={{color: '#444'}}>{inquiryContext.location}</Text>
+                                    </Text>
+                                </View>
+                            </View>
+                        )}
+                    </View>
+
                 </View>
             </View>
           );
@@ -300,7 +388,7 @@ export default function ChatScreen() {
               <View style={styles.replyBanner}>
                   <View style={{flex: 1}}>
                       <Text style={{fontSize: 12, color: '#007C00', fontWeight: 'bold'}}>Replying to {replyingTo.sender_name === myName ? 'yourself' : replyingTo.sender_name}</Text>
-                      <Text style={{fontSize: 13, color: '#666', marginTop: 2}} numberOfLines={1}>{replyingTo.text}</Text>
+                      <Text style={{fontSize: 13, color: '#666', marginTop: 2}} numberOfLines={1}>{replyingTo.text.split('|||')[0]}</Text>
                   </View>
                   <TouchableOpacity onPress={() => setReplyingTo(null)} style={{padding: 5}}><MaterialCommunityIcons name="close-circle" size={20} color="#ccc" /></TouchableOpacity>
               </View>
@@ -349,15 +437,43 @@ export default function ChatScreen() {
 }
 
 const styles = StyleSheet.create({
-  header: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'white', paddingBottom: 15, paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: '#eee', elevation: 2 }, 
-  headerTitle: { fontSize: 18, fontWeight: 'bold', color: '#333' }, 
+  // 🟢 HEADER STYLES INAYOS PARA MAGING GREEN AT WHITE ANG TEXT/ICONS
+  header: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#007C00', paddingBottom: 15, paddingHorizontal: 20, elevation: 4 }, 
+  headerTitle: { fontSize: 18, fontWeight: 'bold', color: 'white' }, 
+  
   messageRow: { flexDirection: 'row', width: '100%', alignItems: 'flex-end' }, 
-  bubble: { maxWidth: '80%', paddingVertical: 10, paddingHorizontal: 15, borderRadius: 20 }, 
+  // 🟢 INAYOS ANG MAX WIDTH PARA 85% PARA MAS MALUWAG
+  bubble: { maxWidth: '85%', paddingVertical: 10, paddingHorizontal: 15, borderRadius: 20 }, 
   myBubble: { backgroundColor: '#007C00', borderBottomRightRadius: 4 }, 
   theirBubble: { backgroundColor: '#E4E6EB', borderBottomLeftRadius: 4, elevation: 1, borderWidth: 1, borderColor: '#eee' }, 
   msgText: { fontSize: 15, lineHeight: 22 }, 
   replyBanner: { flexDirection: 'row', backgroundColor: '#F5F7FA', padding: 10, paddingHorizontal: 15, borderLeftWidth: 4, borderLeftColor: '#007C00', alignItems: 'center' }, 
   replyBoxRendered: { padding: 8, borderRadius: 8, marginBottom: 8, borderLeftWidth: 3, borderLeftColor: '#fff', opacity: 0.9 }, 
   inputContainer: { flexDirection: 'row', alignItems: 'flex-end', padding: 10, backgroundColor: 'white', paddingBottom: Platform.OS === 'ios' ? 25 : 10 }, 
-  input: { flex: 1, backgroundColor: '#F0F2F5', borderRadius: 20, paddingHorizontal: 15, paddingTop: 10, paddingBottom: 10, fontSize: 16, maxHeight: 100 }
+  input: { flex: 1, backgroundColor: '#F0F2F5', borderRadius: 20, paddingHorizontal: 15, paddingTop: 10, paddingBottom: 10, fontSize: 16, maxHeight: 100 },
+  
+  inquiryCard: {
+      flexDirection: 'row',
+      backgroundColor: '#E2E3E5',
+      borderRadius: 12,
+      padding: 12,
+      marginTop: 8,
+      width: screenWidth * 0.65, 
+  },
+  inquiryImage: {
+      width: 50,
+      height: 70,
+      borderRadius: 6,
+      marginRight: 10,
+      backgroundColor: '#fff'
+  },
+  inquiryDetails: {
+      flex: 1,
+      justifyContent: 'center'
+  },
+  inquiryText: {
+      fontSize: 11,
+      marginBottom: 3,
+      lineHeight: 14
+  }
 });

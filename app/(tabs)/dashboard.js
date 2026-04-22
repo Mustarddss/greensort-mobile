@@ -75,7 +75,7 @@ export default function Dashboard() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications' }, () => { fetchUserSessionAndData(); })
       .subscribe();
 
-      let presenceChannel = null;
+    let presenceChannel = null;
     const setupPresence = async () => {
         const { data: { user } } = await supabase.auth.getUser();
         if (user) {
@@ -220,18 +220,38 @@ export default function Dashboard() {
   };
 
   const handlePostSubmit = async () => {
+    Keyboard.dismiss();
+
     if (form.imageUris.length === 0) return Alert.alert("Photo Required", "Please upload at least one photo for your post.");
     if (!form.title || !form.desc || !form.location) return Alert.alert("Wait!", "Please fill in all general details (Title, Desc, Location).");
     if (!form.latitude || !form.longitude) return Alert.alert("Location Pin Required", "Please tap on the map to set a meet-up spot.");
     if (form.type === 'For Sale' && (!form.price || form.price.trim() === '')) return Alert.alert("Wait!", "Please enter a price for your item.");
-    if (form.type === 'DIY Project' && (!form.price || form.price.trim() === '')) return Alert.alert("Wait!", "Please enter an estimated Market Value for your DIY Project.");
     if (form.type === 'Trade' && (!form.lookingFor || form.lookingFor.trim() === '')) return Alert.alert("Wait!", "Please specify what you are looking for to trade.");
     
     setIsModerating(true); let aiStatus = 'active'; let aiReason = '';
 
-    const moderationPrompt = `You are an AI moderator... Analyze this user post: Title: "${form.title}" Description: "${form.desc}" Type: "${form.type}" Price/Trade: "${form.price || form.lookingFor}" Respond strictly in pure JSON format: { "isApproved": true or false, "reason": "" }`;
+    const moderationPrompt = `You are a STRICT AI moderator for an eco-friendly recycling community app.
+    Analyze this user post:
+    Title: "${form.title}"
+    Description: "${form.desc}"
+    Type: "${form.type}"
+    Price/Trade: "${form.price || form.lookingFor}"
+
+    Rules for flagging (Flag if ANY of these are true):
+    1. Contains offensive, toxic, or inappropriate language.
+    2. Is a scam or spam (e.g., selling a common plastic bottle for an unrealistic price like ₱500).
+    3. Is completely unrelated to recycling, upcycling, eco-friendly living, or trading pre-loved/waste items.
+    4. Contains gibberish, random keystrokes (e.g., "asdfghjkl", "qweqwe"), test words, or non-sensical text.
+    5. Mismatch between Type and Content: The selected Type MUST logically match the Title and Description. If the Type does not make sense for the given Title and Description, it MUST be flagged.
+
+    Respond strictly in pure JSON format:
+    {
+      "isApproved": true or false,
+      "reason": "If false, explain why in 1 short sentence. If true, leave empty."
+    }`;
+
     try {
-        const aiRes = await fetch('https://api.openai.com/v1/chat/completions', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.EXPO_PUBLIC_OPENAI_API_KEY}` }, body: JSON.stringify({ model: 'gpt-5.4', messages: [{ role: 'user', content: moderationPrompt }], temperature: 0.5, max_completion_tokens: 150 }) });
+        const aiRes = await fetch('https://api.openai.com/v1/chat/completions', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.EXPO_PUBLIC_OPENAI_API_KEY}` }, body: JSON.stringify({ model: 'gpt-5.4', messages: [{ role: 'user', content: moderationPrompt }], temperature: 0.3, max_completion_tokens: 150 }) });
         const aiData = await aiRes.json();
         if (aiData.choices && aiData.choices.length > 0) { const content = aiData.choices[0].message.content; const jsonMatch = content.match(/\{[\s\S]*\}/); if (jsonMatch) { const modResult = JSON.parse(jsonMatch[0]); if (!modResult.isApproved) { aiStatus = 'flagged'; aiReason = modResult.reason; } } }
     } catch (e) { }
@@ -249,7 +269,6 @@ export default function Dashboard() {
     let finalPriceDisplay = '';
     if (form.type === 'Free') finalPriceDisplay = 'Free';
     else if (form.type === 'Trade') finalPriceDisplay = `Trade: ${form.lookingFor}`;
-    else if (form.type === 'DIY Project') finalPriceDisplay = `Market Value: ₱${form.price}`;
     else finalPriceDisplay = `₱${form.price}`;
 
     const postData = { user: userData.name, avatar: userData.avatar, type: form.type, title: form.title, desc: form.desc, price: finalPriceDisplay, location: form.location, latitude: form.latitude, longitude: form.longitude, image: imagesToSave, status: aiStatus, ai_reason: aiReason };
@@ -288,10 +307,23 @@ export default function Dashboard() {
     await supabase.from('comments').update({ likes: newLikes, liked_by: newLikedBy }).eq('id', comment.id); openPostDetails(selectedPost); 
   };
 
+  // 🟢 IPAPASA YUNG POST DATA SA CHATSCREEN
   const handleContact = async (post) => {
     if (post.user === userData.name) return Alert.alert("Oops!", "You can't contact yourself.");
     try { await supabase.from('notifications').insert([{ owner_name: post.user, actor_name: userData.name, actor_avatar: userData.avatar, action: 'wants to contact you about', post_title: post.title || 'an item', is_read: false }]); } catch (e) { }
-    router.push({ pathname: '/chat', params: { chatUser: post.user, postTitle: post.title || 'an item' } });
+    
+    router.push({ 
+        pathname: '/chat', 
+        params: { 
+            chatUser: post.user, 
+            postTitle: post.title || 'an item',
+            postType: post.type || '',
+            postDesc: post.desc || '',
+            postPrice: post.price || '',
+            postLocation: post.location || '',
+            postImage: post.image ? post.image.split(',')[0] : ''
+        } 
+    });
   };
 
   const handleSavePost = async (post) => {
@@ -377,7 +409,7 @@ export default function Dashboard() {
             </View>
         </View>
 
-        <KeyboardAvoidingView style={{flex: 1}} behavior={Platform.OS === "ios" ? "padding" : "height"} keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}>
+        <KeyboardAvoidingView style={{flex: 1}} behavior={Platform.OS === "ios" ? "padding" : undefined} keyboardVerticalOffset={Platform.OS === "ios" ? 40 : 0}>
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{paddingBottom: 20}} keyboardShouldPersistTaps="handled">
                 <View style={{position: 'relative'}}>
                     <ScrollView 
@@ -410,7 +442,6 @@ export default function Dashboard() {
                 </View>
 
                 <View style={{padding: 20}}>
-                    {/* 🟢 HEADER NG USER & BUTTON ILILIPAT DITO SA ROW NA ITO */}
                     <View style={{flexDirection: 'row', alignItems: 'center', marginBottom: 20}}>
                         <Image source={{ uri: selectedPost.avatar }} style={{width: 50, height: 50, borderRadius: 25, marginRight: 15, backgroundColor: '#f0f0f0'}} />
                         <View style={{flex: 1}}>
@@ -424,7 +455,6 @@ export default function Dashboard() {
                             </View>
                         </View>
 
-                        {/* 🟢 BUTTON PARA SA CONTACT O SAVE */}
                         {selectedPost.user !== userData.name && (
                             isDIY ? (
                                 <TouchableOpacity style={{backgroundColor: '#FF9800', paddingHorizontal: 15, paddingVertical: 8, borderRadius: 20, flexDirection: 'row', alignItems: 'center', elevation: 2}} onPress={() => handleSavePost(selectedPost)}>
@@ -442,11 +472,9 @@ export default function Dashboard() {
 
                     <Text style={{fontSize: 24, fontWeight: 'bold', color: '#1C1C1E', marginBottom: 15, lineHeight: 32}}>{selectedPost.title}</Text>
 
-                    {/* 🟢 DITO NA YUNG PRICE, FULL WIDTH NA SIYA, WALANG HARANG SA KANAN */}
                     <View style={{flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 25}}>
                         <View style={{flex: 1, paddingRight: 10}}>
                             {isDIY && <Text style={{fontSize: 12, color: '#00A86B', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: 1}}>Market Value:</Text>}
-                            {/* Inalis yung numberOfLines={1} para di maputol ang trade text */}
                             <Text style={{fontSize: isDIY ? 28 : 32, fontWeight: 'bold', color: '#00A86B'}}>{selectedPost.price.replace('Market Value: ', '')}</Text>
                             <Text style={{fontSize: 14, color: '#8E8E93', marginTop: 2}}>{selectedPost.likes || 0} people liked this</Text>
                         </View>
@@ -610,28 +638,29 @@ export default function Dashboard() {
               )}
               
               {commentReportStep === 1 && (
-                <View style={{marginBottom: 15}}><Text style={{fontSize: 18, fontWeight: 'bold', color: '#fff', marginBottom: 15, textAlign: 'center'}}>Why report this comment?</Text>
-                    {reportReasons.map((reason, index) => (
-                      <TouchableOpacity key={index} style={styles.darkMenuItem} onPress={() => { setSelectedMainCommentReason(reason); setCommentReportStep(2); }}>
-                        <Text style={styles.darkMenuText}>{reason.title}</Text>
-                        <Ionicons name="chevron-forward" size={20} color="#555" />
-                      </TouchableOpacity>
-                    ))}
-                    <TouchableOpacity style={[styles.darkCancelBtn, {marginTop: 15}]} onPress={() => setCommentReportStep(0)}><Text style={{color: '#fff', fontWeight: 'bold'}}>Back</Text></TouchableOpacity>
+                <View style={{marginBottom: 15}}>
+                  <Text style={{fontSize: 18, fontWeight: 'bold', color: '#fff', marginBottom: 15, textAlign: 'center'}}>Why report this comment?</Text>
+                  {reportReasons.map((item, index) => (
+                    <TouchableOpacity key={index} style={styles.darkMenuItem} onPress={() => { setSelectedMainCommentReason(item); setCommentReportStep(2); }}>
+                      <Text style={styles.darkMenuText}>{item.title}</Text>
+                      <Ionicons name="chevron-forward" size={20} color="#555" />
+                    </TouchableOpacity>
+                  ))}
+                  <TouchableOpacity style={[styles.darkCancelBtn, {marginTop: 15}]} onPress={() => setCommentReportStep(0)}><Text style={{color: '#fff', fontWeight: 'bold'}}>Cancel</Text></TouchableOpacity>
                 </View>
               )}
 
               {commentReportStep === 2 && selectedMainCommentReason && (
                 <View style={{marginBottom: 15}}>
-                    <Text style={{fontSize: 18, fontWeight: 'bold', color: '#fff', marginBottom: 15, textAlign: 'center'}}>{selectedMainCommentReason.title}</Text>
-                    <Text style={{color: '#aaa', textAlign: 'center', marginBottom: 15, paddingHorizontal: 20}}>Please specify the exact issue:</Text>
-                    {selectedMainCommentReason.subCategories.map((sub, index) => (
-                        <TouchableOpacity key={index} style={styles.darkMenuItem} onPress={() => { setSelectedCommentSubReason(sub); setCommentReportStep(3); }}>
-                            <Text style={styles.darkMenuText}>{sub.title}</Text>
-                            <Ionicons name="chevron-forward" size={20} color="#555" />
-                        </TouchableOpacity>
-                    ))}
-                    <TouchableOpacity style={[styles.darkCancelBtn, {marginTop: 15}]} onPress={() => setCommentReportStep(1)}><Text style={{color: '#fff', fontWeight: 'bold'}}>Back</Text></TouchableOpacity>
+                  <Text style={{fontSize: 18, fontWeight: 'bold', color: '#fff', marginBottom: 15, textAlign: 'center'}}>{selectedMainCommentReason.title}</Text>
+                  <Text style={{color: '#aaa', textAlign: 'center', marginBottom: 15, paddingHorizontal: 20}}>Please specify the exact issue:</Text>
+                  {selectedMainCommentReason.subCategories.map((sub, index) => (
+                    <TouchableOpacity key={index} style={styles.darkMenuItem} onPress={() => { setSelectedCommentSubReason(sub); setCommentReportStep(3); }}>
+                      <Text style={styles.darkMenuText}>{sub.title}</Text>
+                      <Ionicons name="chevron-forward" size={20} color="#555" />
+                    </TouchableOpacity>
+                  ))}
+                  <TouchableOpacity style={[styles.darkCancelBtn, {marginTop: 15}]} onPress={() => setCommentReportStep(1)}><Text style={{color: '#fff', fontWeight: 'bold'}}>Back</Text></TouchableOpacity>
                 </View>
               )}
 
@@ -642,28 +671,11 @@ export default function Dashboard() {
                       <Text style={{color: '#fff', fontSize: 16, fontWeight: 'bold', marginBottom: 8}}>{selectedMainCommentReason.title} - {selectedCommentSubReason.title}</Text>
                       <Text style={{color: '#aaa', fontSize: 14, lineHeight: 22}}>{selectedCommentSubReason.desc}</Text>
                   </View>
-                  
-                  <TextInput 
-                      style={styles.darkTextInput}
-                      placeholder="Add additional details (optional)..."
-                      placeholderTextColor="#888"
-                      multiline={true}
-                      returnKeyType="done" 
-                      blurOnSubmit={true} 
-                      onSubmitEditing={() => Keyboard.dismiss()} 
-                      value={reportAdditionalInfo}
-                      onChangeText={setReportAdditionalInfo}
-                  />
-
-                  <TouchableOpacity style={{backgroundColor: '#FF3B30', padding: 18, borderRadius: 15, alignItems: 'center'}} onPress={() => submitCommentReport(`${selectedMainCommentReason.title}: ${selectedCommentSubReason.title}`)}>
-                    <Text style={{color: 'white', fontWeight: 'bold', fontSize: 16}}>Submit Report</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={[styles.darkCancelBtn, {marginTop: 10}]} onPress={() => setCommentReportStep(2)}>
-                    <Text style={{color: '#fff', fontWeight: 'bold'}}>Back</Text>
-                  </TouchableOpacity>
+                  <TextInput style={styles.darkTextInput} placeholder="Add additional details (optional)..." placeholderTextColor="#888" multiline={true} returnKeyType="done" blurOnSubmit={true} onSubmitEditing={() => Keyboard.dismiss()} value={reportAdditionalInfo} onChangeText={setReportAdditionalInfo} />
+                  <TouchableOpacity style={{backgroundColor: '#FF3B30', padding: 18, borderRadius: 15, alignItems: 'center'}} onPress={() => submitCommentReport(`${selectedMainCommentReason.title}: ${selectedCommentSubReason.title}`)}><Text style={{color: 'white', fontWeight: 'bold', fontSize: 16}}>Submit Report</Text></TouchableOpacity>
+                  <TouchableOpacity style={[styles.darkCancelBtn, {marginTop: 10}]} onPress={() => setCommentReportStep(2)}><Text style={{color: '#fff', fontWeight: 'bold'}}>Back</Text></TouchableOpacity>
                 </View>
               )}
-
             </TouchableOpacity>
           </TouchableOpacity>
         </Modal>
@@ -688,15 +700,16 @@ export default function Dashboard() {
           </View>
 
           <KeyboardAvoidingView style={{flex: 1}} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-            <ScrollView contentContainerStyle={styles.createContent}>
+            <ScrollView contentContainerStyle={styles.createContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
               <Text style={styles.label}>Post Type</Text>
-              <View style={styles.typeRow}>{['For Sale', 'Trade', 'Free', 'DIY Project'].map(type => (<TouchableOpacity key={type} style={[styles.typeBtn, form.type === type && styles.typeBtnActive, {borderColor: form.type === type ? '#007C00' : '#E0E0E0'}]} onPress={() => setForm({...form, type: type})}><Text style={[styles.typeBtnText, form.type === type && {color: '#007C00'}]}>{type}</Text></TouchableOpacity>))}</View>
+              
+              {/* 🟢 TINANGGAL YUNG DIY PROJECT DITO */}
+              <View style={styles.typeRow}>{['For Sale', 'Trade', 'Free'].map(type => (<TouchableOpacity key={type} style={[styles.typeBtn, form.type === type && styles.typeBtnActive, {borderColor: form.type === type ? '#007C00' : '#E0E0E0'}]} onPress={() => setForm({...form, type: type})}><Text style={[styles.typeBtnText, form.type === type && {color: '#007C00'}]}>{type}</Text></TouchableOpacity>))}</View>
               
               <Text style={styles.label}>Name of your Item</Text><TextInput style={styles.input} placeholder="Title" value={form.title} onChangeText={(t) => setForm({...form, title: t})} />
               <Text style={styles.label}>Description of your Item</Text><TextInput style={[styles.input, {height: 80}]} placeholder="Describe your item..." multiline value={form.desc} onChangeText={(t) => setForm({...form, desc: t})} />
               
               {form.type === 'For Sale' ? (<><Text style={styles.label}>Price *</Text><View style={styles.inputIconWrap}><Text style={{color: '#999', marginRight: 5}}>₱</Text><TextInput style={{flex: 1}} placeholder="0.00" keyboardType="numeric" value={form.price} onChangeText={(t) => setForm({...form, price: t})}/></View></>) : null}
-              {form.type === 'DIY Project' ? (<><Text style={styles.label}>Estimated Market Value *</Text><View style={styles.inputIconWrap}><Text style={{color: '#999', marginRight: 5}}>₱</Text><TextInput style={{flex: 1}} placeholder="0.00" keyboardType="numeric" value={form.price} onChangeText={(t) => setForm({...form, price: t})}/></View></>) : null}
               {form.type === 'Trade' ? (<><Text style={styles.label}>Looking For *</Text><TextInput style={styles.input} placeholder="e.g. Glass bottles..." value={form.lookingFor} onChangeText={(t) => setForm({...form, lookingFor: t})}/></>) : null}
               
               <Text style={styles.label}>Location Details</Text>
@@ -720,7 +733,7 @@ export default function Dashboard() {
                   <Text style={{fontSize: 12, color: '#666'}}>{form.imageUris.length}/5</Text>
               </View>
               
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{gap: 10, paddingVertical: 10}}>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{gap: 10, paddingVertical: 10}} keyboardShouldPersistTaps="handled">
                   {form.imageUris.map((uri, index) => (
                       <View key={index} style={{position: 'relative'}}>
                           <Image source={{ uri: uri }} style={{width: 120, height: 120, borderRadius: 12, backgroundColor: '#eee'}} resizeMode="cover" />
@@ -801,7 +814,12 @@ export default function Dashboard() {
             <ImpactCard value={userData.upcycleProjects} unit="projects" icon="leaf" color="#AA00FF" bgColor="#F3E5F5" />
         </View>
 
-        <View style={styles.sectionHeader}><Text style={styles.sectionTitle}>Community Feed</Text><TouchableOpacity style={styles.addPostBtn} onPress={() => setIsCreating(true)}><MaterialCommunityIcons name="plus" size={20} color="white" /></TouchableOpacity></View>
+        <View style={[styles.sectionHeader, { zIndex: 10 }]}>
+            <Text style={styles.sectionTitle}>Community Feed</Text>
+            <TouchableOpacity style={[styles.addPostBtn, { zIndex: 100, elevation: 5 }]} onPress={() => setIsCreating(true)} hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}>
+                <MaterialCommunityIcons name="plus" size={24} color="white" />
+            </TouchableOpacity>
+        </View>
         
         <View style={styles.searchContainer}>
             <Ionicons name="search" size={20} color="#3f3e3e" style={{marginLeft: 10}} />
@@ -863,13 +881,16 @@ export default function Dashboard() {
                         </TouchableOpacity>
                         
                         <View style={styles.postFooter}>
-                            <View style={{flexDirection: 'row', gap: 15}}>
+                            <View style={{flexDirection: 'row', alignItems: 'center', gap: 15}}>
                                 <TouchableOpacity style={styles.iconRow} onPress={() => handleLike(post)}><Ionicons name={post.liked_by?.includes(userData.name) ? "heart" : "heart-outline"} size={24} color={post.liked_by?.includes(userData.name) ? "#FF1744" : "#666"} /><Text style={styles.iconText}>{post.likes}</Text></TouchableOpacity>
                                 <TouchableOpacity style={styles.iconRow} onPress={() => openPostDetails(post)}><Ionicons name="chatbubble-outline" size={22} color="#666" /><Text style={styles.iconText}>{post.comments}</Text></TouchableOpacity>
                             </View>
-                            <View style={{flexDirection: 'row', alignItems: 'center', gap: 10}}>
-                                {/* 🟢 KUNG NASA LABAS NA (Community Feed View) */}
-                                <Text style={styles.postPrice} numberOfLines={1}>{post.price.replace('Market Value: ', '')}</Text>
+                            
+                            {/* 🟢 DITO NA YUNG PRICE AT BUTTON (Flex layout issue fixed) */}
+                            <View style={{flexDirection: 'row', alignItems: 'center', flexShrink: 1, gap: 10, justifyContent: 'flex-end', flex: 1}}>
+                                <Text style={[styles.postPrice, { flexShrink: 1, textAlign: 'right' }]} numberOfLines={1}>
+                                    {post.price.replace('Market Value: ', '')}
+                                </Text>
                                 {!isOwner && (
                                     post.type === 'DIY Project' ? (
                                         <TouchableOpacity style={[styles.contactBtn, {backgroundColor: '#FF9800'}]} onPress={() => handleSavePost(post)}>
@@ -996,11 +1017,20 @@ const styles = StyleSheet.create({
   scrollView: { flex: 1 }, scrollContent: { paddingHorizontal: 20, paddingTop: 10 }, tipCard: { backgroundColor: '#FFF3E0', padding: 16, borderRadius: 16, marginBottom: 20, borderWidth: 1, borderColor: '#FFE0B2' }, tipHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 }, tipTitle: { fontSize: 14, fontWeight: 'bold', color: '#EF6C00', marginLeft: 8 }, tipText: { fontSize: 12, color: '#E65100', lineHeight: 18 }, 
   pointsBanner: { borderRadius: 16, padding: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15, elevation: 3 }, 
   pointsTitleWrap: { flexDirection: 'row', alignItems: 'center' }, pointsTitle: { color: 'white', fontSize: 16, fontWeight: '600', marginLeft: 8 }, pointsValue: { color: 'white', fontSize: 26, fontWeight: 'bold' },
-  impactRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 25, gap: 10 }, impactCard: { flex: 1, backgroundColor: 'white', paddingVertical: 18, borderRadius: 16, alignItems: 'center', elevation: 2 }, impactIconBg: { padding: 10, borderRadius: 12, marginBottom: 10 }, impactValue: { fontSize: 18, fontWeight: 'bold' }, impactUnit: { fontSize: 10, color: '#90A4AE', textAlign: 'center', marginTop: 2 }, sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, marginTop: 10 }, sectionTitle: { fontSize: 20, fontWeight: 'bold', color: '#263238' }, searchContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'white', borderRadius: 12, marginBottom: 15, paddingHorizontal: 10, borderWidth: 1, borderColor: '#eee' }, searchInput: { flex: 1, paddingVertical: 12, paddingHorizontal: 10, fontSize: 14, color: '#333' }, 
+  impactRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 25, gap: 10 }, impactCard: { flex: 1, backgroundColor: 'white', paddingVertical: 18, borderRadius: 16, alignItems: 'center', elevation: 2 }, impactIconBg: { padding: 10, borderRadius: 12, marginBottom: 10 }, impactValue: { fontSize: 18, fontWeight: 'bold' }, impactUnit: { fontSize: 10, color: '#90A4AE', textAlign: 'center', marginTop: 2 }, sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, marginTop: 15, zIndex: 10 }, sectionTitle: { fontSize: 20, fontWeight: 'bold', color: '#263238' }, searchContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'white', borderRadius: 12, marginBottom: 15, paddingHorizontal: 10, borderWidth: 1, borderColor: '#eee' }, searchInput: { flex: 1, paddingVertical: 12, paddingHorizontal: 10, fontSize: 14, color: '#333' }, 
   topMessageBtn: { justifyContent: 'center', alignItems: 'center', position: 'relative' }, badgeDot: { position: 'absolute', top: -5, right: -5, backgroundColor: '#FF1744', borderRadius: 10, paddingHorizontal: 5, paddingVertical: 2, minWidth: 20, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'white' }, badgeDotText: { color: 'white', fontSize: 10, fontWeight: 'bold' },
-  addPostBtn: { backgroundColor: '#007C00', width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center', elevation: 2 }, filterPill: { paddingHorizontal: 20, paddingVertical: 8, backgroundColor: 'white', borderRadius: 20, marginRight: 10, elevation: 1, borderWidth: 1, borderColor: '#eee' }, activePill: { backgroundColor: '#263238', borderColor: '#263238' }, filterText: { fontSize: 13, color: '#666', fontWeight: '600' }, activeFilterText: { color: 'white' }, 
+  addPostBtn: { backgroundColor: '#007C00', width: 48, height: 48, borderRadius: 24, justifyContent: 'center', alignItems: 'center', elevation: 6, shadowColor: '#000', shadowOffset: {width: 0, height: 2}, shadowOpacity: 0.3, shadowRadius: 3, zIndex: 100 }, 
+  filterPill: { paddingHorizontal: 20, paddingVertical: 8, backgroundColor: 'white', borderRadius: 20, marginRight: 10, elevation: 1, borderWidth: 1, borderColor: '#eee' }, activePill: { backgroundColor: '#263238', borderColor: '#263238' }, filterText: { fontSize: 13, color: '#666', fontWeight: '600' }, activeFilterText: { color: 'white' }, 
   postCard: { backgroundColor: 'white', borderRadius: 16, padding: 15, marginBottom: 15, elevation: 2 }, myPostCardBorder: { backgroundColor: '#F1F8E9', borderWidth: 1, borderColor: '#C8E6C9' }, meBadge: { backgroundColor: '#007C00', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }, meBadgeText: { color: 'white', fontSize: 8, fontWeight: 'bold' },
-  postHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 }, postAvatar: { width: 40, height: 40, borderRadius: 20 }, postUser: { fontWeight: 'bold', fontSize: 14, color: '#333' }, postTime: { fontSize: 11, color: '#999' }, typeBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10 }, postTitle: { fontSize: 16, fontWeight: 'bold', color: '#333', marginBottom: 5 }, postDesc: { fontSize: 13, color: '#666', marginBottom: 10 }, postImage: { width: '100%', aspectRatio: 16 / 9, borderRadius: 12, marginBottom: 15, resizeMode: 'cover', backgroundColor: '#f0f0f0' }, postFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, iconRow: { flexDirection: 'row', alignItems: 'center', gap: 5, padding: 5 }, iconText: { fontSize: 14, color: '#666' }, postPrice: { fontSize: 16, fontWeight: 'bold', color: '#007C00', flex: 1 }, contactBtn: { backgroundColor: '#007C00', paddingHorizontal: 15, paddingVertical: 8, borderRadius: 8 }, contactText: { color: 'white', fontWeight: 'bold', fontSize: 12 }, footerInput: { padding: 15, backgroundColor: 'white', borderTopWidth: 1, borderTopColor: '#eee', flexDirection: 'row', alignItems: 'flex-end', gap: 10 }, statusBanner: { backgroundColor: '#E8F5E9', padding: 8, paddingHorizontal: 15, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, inputField: { flex: 1, backgroundColor: '#F5F5F5', borderRadius: 20, paddingHorizontal: 15, paddingVertical: 10, maxHeight: 100 }, sendBtn: { width: 40, height: 40, backgroundColor: '#007C00', borderRadius: 20, justifyContent: 'center', alignItems: 'center', marginBottom: 2 }, createContent: { padding: 20 }, label: { fontSize: 14, fontWeight: '700', color: '#333', marginBottom: 4, marginTop: 15 }, input: { backgroundColor: '#F5F7FA', borderRadius: 10, padding: 15, borderWidth: 1, borderColor: '#F0F0F0' }, inputIconWrap: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F5F7FA', borderRadius: 10, paddingHorizontal: 15, paddingVertical: 12, borderWidth: 1, borderColor: '#F0F0F0' }, typeRow: { flexDirection: 'row', gap: 10 }, typeBtn: { flex: 1, paddingVertical: 15, borderRadius: 12, borderWidth: 1, alignItems: 'center', borderColor: '#E0E0E0' }, typeBtnActive: { borderColor: '#007C00', backgroundColor: '#E8F5E9' }, typeBtnText: { fontSize: 12, fontWeight: '600', color: '#666' }, imageUploadBox: { width: '100%', aspectRatio: 16 / 9, borderWidth: 1, borderColor: '#ddd', borderStyle: 'dashed', borderRadius: 12, justifyContent: 'center', alignItems: 'center', backgroundColor: '#FAFAFA', marginTop: 15 }, submitBtn: { padding: 15, borderRadius: 12, backgroundColor: '#007C00', alignItems: 'center', marginTop: 30 },
+  postHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 }, postAvatar: { width: 40, height: 40, borderRadius: 20 }, postUser: { fontWeight: 'bold', fontSize: 14, color: '#333' }, postTime: { fontSize: 11, color: '#999' }, typeBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10 }, postTitle: { fontSize: 16, fontWeight: 'bold', color: '#333', marginBottom: 5 }, postDesc: { fontSize: 13, color: '#666', marginBottom: 10 }, postImage: { width: '100%', aspectRatio: 16 / 9, borderRadius: 12, marginBottom: 15, resizeMode: 'cover', backgroundColor: '#f0f0f0' }, 
+  
+  // 🟢 DITO NAAYOS ANG LAYOUT NG PRICE AT BUTTON
+  postFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, 
+  iconRow: { flexDirection: 'row', alignItems: 'center', gap: 5, padding: 5 }, 
+  iconText: { fontSize: 14, color: '#666' }, 
+  postPrice: { fontSize: 16, fontWeight: 'bold', color: '#007C00' }, // tinanggal ang flex: 1
+  
+  contactBtn: { backgroundColor: '#007C00', paddingHorizontal: 15, paddingVertical: 8, borderRadius: 8 }, contactText: { color: 'white', fontWeight: 'bold', fontSize: 12 }, footerInput: { padding: 15, backgroundColor: 'white', borderTopWidth: 1, borderTopColor: '#eee', flexDirection: 'row', alignItems: 'flex-end', gap: 10 }, statusBanner: { backgroundColor: '#E8F5E9', padding: 8, paddingHorizontal: 15, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, inputField: { flex: 1, backgroundColor: '#F5F5F5', borderRadius: 20, paddingHorizontal: 15, paddingVertical: 10, maxHeight: 100 }, sendBtn: { width: 40, height: 40, backgroundColor: '#007C00', borderRadius: 20, justifyContent: 'center', alignItems: 'center', marginBottom: 2 }, createContent: { padding: 20 }, label: { fontSize: 14, fontWeight: '700', color: '#333', marginBottom: 4, marginTop: 15 }, input: { backgroundColor: '#F5F7FA', borderRadius: 10, padding: 15, borderWidth: 1, borderColor: '#F0F0F0' }, inputIconWrap: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F5F7FA', borderRadius: 10, paddingHorizontal: 15, paddingVertical: 12, borderWidth: 1, borderColor: '#F0F0F0' }, typeRow: { flexDirection: 'row', gap: 10 }, typeBtn: { flex: 1, paddingVertical: 15, borderRadius: 12, borderWidth: 1, alignItems: 'center', borderColor: '#E0E0E0' }, typeBtnActive: { borderColor: '#007C00', backgroundColor: '#E8F5E9' }, typeBtnText: { fontSize: 12, fontWeight: '600', color: '#666' }, imageUploadBox: { width: '100%', aspectRatio: 16 / 9, borderWidth: 1, borderColor: '#ddd', borderStyle: 'dashed', borderRadius: 12, justifyContent: 'center', alignItems: 'center', backgroundColor: '#FAFAFA', marginTop: 15 }, submitBtn: { padding: 15, borderRadius: 12, backgroundColor: '#007C00', alignItems: 'center', marginTop: 30 },
   darkModalSheet: { backgroundColor: '#1C1C1E', borderTopLeftRadius: 25, borderTopRightRadius: 25, paddingHorizontal: 20, paddingBottom: 35, shadowColor: '#000', shadowOffset: { width: 0, height: -2 }, shadowOpacity: 0.2, shadowRadius: 10, elevation: 15 }, darkMenuContainer: { backgroundColor: '#2C2C2E', borderRadius: 15, overflow: 'hidden', marginBottom: 15 }, darkMenuItem: { flexDirection: 'row', alignItems: 'center', padding: 18, borderBottomWidth: 1, borderBottomColor: '#3A3A3C' }, darkMenuText: { fontSize: 16, color: '#fff' }, darkCancelBtn: { padding: 18, backgroundColor: '#2C2C2E', borderRadius: 15, alignItems: 'center' },
   darkTextInput: { backgroundColor: '#2C2C2E', color: 'white', borderRadius: 12, padding: 15, height: 90, textAlignVertical: 'top', marginBottom: 20, borderWidth: 1, borderColor: '#3A3A3C', fontSize: 15 },
   modalOverlayDark: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 20 }, bankedModalCard: { width: '100%', maxHeight: '80%', backgroundColor: '#F4F6F8', borderRadius: 20, overflow: 'hidden', elevation: 10 }, bankedModalHeader: { backgroundColor: '#007C00', padding: 20, flexDirection: 'row', alignItems: 'center' }, bankedModalTitle: { color: 'white', fontSize: 18, fontWeight: 'bold' }, bankedModalContent: { padding: 20 }, bankedModalDesc: { fontSize: 13, color: '#666', marginBottom: 20, lineHeight: 18 }, bankedCenterCard: { backgroundColor: 'white', borderRadius: 12, padding: 15, marginBottom: 15, elevation: 2 }, bankedCenterHeader: { flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: '#eee', paddingBottom: 10, marginBottom: 10 }, bankedCenterName: { fontWeight: 'bold', color: '#333', fontSize: 14, marginLeft: 8 }, bankedMaterialsList: { paddingHorizontal: 5 }, bankedMaterialRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 0.5, borderBottomColor: '#f0f0f0' }, bankedMaterialType: { color: '#333', fontSize: 14, fontWeight: '600' }, bankedMaterialKg: { fontWeight: 'bold', color: '#007C00', fontSize: 14 },
