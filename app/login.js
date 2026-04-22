@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react'; 
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, Image, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, Image, KeyboardAvoidingView, Platform, ScrollView, Modal } from 'react-native';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar'; 
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 
 // 🟢 IMPORT SUPABASE
 import { supabase } from '../lib/supabase'; 
@@ -15,27 +16,29 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
+  // 🟢 2FA LOGIN STATES
+  const [showLoginOtpModal, setShowLoginOtpModal] = useState(false);
+  const [loginOtpCode, setLoginOtpCode] = useState('');
+  const [isVerifyingLogin, setIsVerifyingLogin] = useState(false);
+
   // 🟢 FORGOT PASSWORD STATES
-  const [forgotPassStep, setForgotPassStep] = useState(0); // 0 = Normal Login, 1 = Email, 2 = OTP, 3 = New Pass
+  const [forgotPassStep, setForgotPassStep] = useState(0); 
   const [otpCode, setOtpCode] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [isResetting, setIsResetting] = useState(false);
 
-  // 🟢 DEEP LINK LISTENER
+  // 🟢 INITIAL SESSION CHECK ONLY
   useEffect(() => {
-    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
-      // Wag mag-redirect kung nag-v-verify lang ng OTP para sa password recovery
-      if (event === 'SIGNED_IN' && session && forgotPassStep === 0) {
+    const checkSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
         router.replace('/(tabs)/dashboard'); 
       }
-    });
-
-    return () => {
-      authListener.subscription.unsubscribe();
     };
-  }, [forgotPassStep]);
+    checkSession();
+  }, []);
 
-  // 🟢 NORMAL LOGIN FUNCTION
+  // 🟢 NORMAL LOGIN FUNCTION (2FA Flow)
   const handleLogin = async () => {
     if (!email || !password) {
       Alert.alert('Error', 'Please fill in all fields');
@@ -43,20 +46,72 @@ export default function Login() {
     }
 
     setLoading(true);
-    const { error } = await supabase.auth.signInWithPassword({
-      email: email,
+    
+    // 1. I-verify muna natin kung tama ang Email at Password
+    const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+      email: email.trim(),
       password: password,
     });
+
+    if (signInError) {
+      setLoading(false);
+      Alert.alert('Login Failed', signInError.message);
+      return;
+    }
+
+    // 2. Kung tama ang password, I-LOGOUT NATIN AGAD para hingan ng OTP
+    await supabase.auth.signOut();
+
+    // 3. Mag-send ng OTP sa Email
+    const { error: otpError } = await supabase.auth.signInWithOtp({
+      email: email.trim(),
+      options: {
+        shouldCreateUser: false, // PREVENTS CREATING NEW ACCOUNTS
+      }
+    });
+
     setLoading(false);
 
-    if (error) {
-      Alert.alert('Login Failed', error.message);
+    if (otpError) {
+        if (otpError.message.includes('5 seconds') || otpError.message.includes('rate limit')) {
+             Alert.alert("Please Wait", "For security purposes, you can only request an OTP every few seconds. Please wait a moment and try again.");
+        } else {
+             Alert.alert("Error Sending OTP", otpError.message);
+        }
     } else {
-      router.replace('/(tabs)/dashboard');
+        // 4. Ipakita ang OTP Modal para sa Login
+        setShowLoginOtpModal(true);
     }
   };
 
-  // 🟢 STEP 1: SEND OTP TO EMAIL
+  // 🟢 VERIFY LOGIN 2FA OTP
+  const handleVerifyLoginOtp = async () => {
+    if (!loginOtpCode || loginOtpCode.length < 8) {
+        Alert.alert('Invalid Code', 'Please enter the 8-digit verification code.');
+        return;
+    }
+
+    setIsVerifyingLogin(true);
+
+    const { data, error } = await supabase.auth.verifyOtp({
+        email: email.trim(),
+        token: loginOtpCode,
+        type: 'email' 
+    });
+
+    setIsVerifyingLogin(false);
+
+    if (error) {
+        Alert.alert('Verification Failed ❌', error.message);
+    } else {
+        // MANUAL REDIRECT TO DASHBOARD
+        setShowLoginOtpModal(false);
+        setLoginOtpCode('');
+        router.replace('/(tabs)/dashboard');
+    }
+  };
+
+  // 🟢 STEP 1: SEND OTP TO EMAIL (FORGOT PASSWORD)
   const handleSendOTP = async () => {
     if (!email) {
       Alert.alert("Wait!", "Please enter your email address first.");
@@ -69,15 +124,15 @@ export default function Login() {
     if (error) {
       Alert.alert("Error", error.message);
     } else {
-      Alert.alert("OTP Sent", "Please check your email for the 6-digit recovery code.");
-      setForgotPassStep(2); // Proceed to OTP input
+      Alert.alert("OTP Sent", "Please check your email for the 8-digit recovery code.");
+      setForgotPassStep(2); 
     }
   };
 
-  // 🟢 STEP 2: VERIFY OTP
+  // 🟢 STEP 2: VERIFY OTP (FORGOT PASSWORD)
   const handleVerifyOTP = async () => {
-    if (!otpCode) {
-      Alert.alert("Error", "Please enter the OTP code.");
+    if (!otpCode || otpCode.length < 8) {
+      Alert.alert("Error", "Please enter the full 8-digit OTP code.");
       return;
     }
     setIsResetting(true);
@@ -91,14 +146,14 @@ export default function Login() {
     if (error) {
       Alert.alert("Invalid Code", error.message);
     } else {
-      setForgotPassStep(3); // Proceed to set new password
+      setForgotPassStep(3); 
     }
   };
 
-  // 🟢 STEP 3: SET NEW PASSWORD
+  // 🟢 STEP 3: SET NEW PASSWORD (FORGOT PASSWORD)
   const handleUpdatePassword = async () => {
-    if (!newPassword || newPassword.length < 6) {
-      Alert.alert("Wait!", "Password must be at least 6 characters.");
+    if (!newPassword || newPassword.length < 8) {
+      Alert.alert("Wait!", "Password must be at least 8 characters.");
       return;
     }
     setIsResetting(true);
@@ -111,14 +166,13 @@ export default function Login() {
       Alert.alert("Update Failed", error.message);
     } else {
       Alert.alert("Success!", "Your password has been successfully reset. You can now login.");
-      setForgotPassStep(0); // Bumalik sa normal login
+      setForgotPassStep(0); 
       setPassword('');
       setOtpCode('');
       setNewPassword('');
     }
   };
 
-  // 🟢 CANCEL RESET PROCESS
   const cancelReset = () => {
     setForgotPassStep(0);
     setOtpCode('');
@@ -135,7 +189,6 @@ export default function Login() {
               <Image source={require('../assets/images/logo.png')} style={styles.logoImage} resizeMode="contain" />
           </View>
 
-          {/* 🟢 DYNAMIC TITLES BASE SA CURRENT STEP */}
           <Text style={styles.title}>
             {forgotPassStep === 0 ? "Welcome Back!" : 
              forgotPassStep === 1 ? "Forgot Password" : 
@@ -144,7 +197,7 @@ export default function Login() {
           <Text style={styles.subtitle}>
             {forgotPassStep === 0 ? "Sign in to continue to GreenSort" : 
              forgotPassStep === 1 ? "Enter your email to receive a recovery code" : 
-             forgotPassStep === 2 ? `We sent a 6-digit code to ${email}` : "Enter your new secure password"}
+             forgotPassStep === 2 ? `We sent an 8-digit code to ${email}` : "Enter your new secure password"}
           </Text>
 
           <View style={styles.formContainer}>
@@ -198,15 +251,14 @@ export default function Login() {
             {forgotPassStep === 2 && (
               <>
                 <View style={styles.inputContainer}>
-                  {/* 🟢 Pinalitan ng 8-Digit */}
                   <Text style={styles.label}>8-Digit OTP Code</Text> 
                   <TextInput 
                     style={[styles.input, { letterSpacing: 5, textAlign: 'center', fontSize: 18 }]} 
-                    placeholder="00000000" // 🟢 Dinagdagan ng dalawang zero
+                    placeholder="00000000" 
                     value={otpCode} 
                     onChangeText={setOtpCode} 
                     keyboardType="numeric" 
-                    maxLength={8} // 👈 🟢 DITO: Ginawa nating 8 ang maximum length!
+                    maxLength={8} 
                   />
                 </View>
                 <TouchableOpacity style={styles.button} onPress={handleVerifyOTP} disabled={isResetting}>
@@ -234,6 +286,43 @@ export default function Login() {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* 🟢 2FA LOGIN OTP MODAL (NAKA-BALOT NA NGAYON SA KEYBOARD AVOIDING VIEW PARA UMANGAT) */}
+      <Modal visible={showLoginOtpModal} animationType="slide" transparent={true}>
+        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
+          <View style={styles.modalOverlay}>
+              <View style={styles.modalCard}>
+                  <View style={{alignItems: 'center', marginBottom: 20}}>
+                      <View style={styles.iconCircle}>
+                          <Ionicons name="mail" size={32} color="#007C00" />
+                      </View>
+                      <Text style={styles.modalTitle}>Verify your Email</Text>
+                      <Text style={styles.modalSub}>We sent an 8-digit verification code to <Text style={{fontWeight: 'bold', color: '#333'}}>{email}</Text></Text>
+                  </View>
+
+                  <TextInput 
+                      style={styles.otpInput} 
+                      placeholder="00000000" 
+                      placeholderTextColor="#999"
+                      keyboardType="number-pad" 
+                      maxLength={8} 
+                      value={loginOtpCode}
+                      onChangeText={setLoginOtpCode}
+                      textAlign="center"
+                  />
+
+                  <TouchableOpacity style={styles.verifyButton} onPress={handleVerifyLoginOtp} disabled={isVerifyingLogin}>
+                      {isVerifyingLogin ? <ActivityIndicator color="white" /> : <Text style={styles.buttonText}>VERIFY CODE</Text>}
+                  </TouchableOpacity>
+
+                  <TouchableOpacity style={styles.cancelBtn} onPress={() => { setShowLoginOtpModal(false); setLoginOtpCode(''); }} disabled={isVerifyingLogin}>
+                      <Text style={styles.cancelBtnText}>Cancel</Text>
+                  </TouchableOpacity>
+              </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
     </SafeAreaView>
   );
 }
@@ -253,8 +342,17 @@ const styles = StyleSheet.create({
   footer: { flexDirection: 'row', justifyContent: 'center', marginTop: 30 },
   link: { color: '#007C00', fontWeight: 'bold' },
   
-  // 🟢 MGA BAGONG STYLES PARA SA FORGOT PASSWORD
   forgotPasswordText: { color: '#007C00', fontSize: 13, fontWeight: 'bold', textAlign: 'right', marginTop: 10 },
   backButton: { padding: 15, alignItems: 'center', marginTop: 10 },
   backButtonText: { color: '#888', fontSize: 14, fontWeight: 'bold' },
+
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  modalCard: { backgroundColor: 'white', borderTopLeftRadius: 30, borderTopRightRadius: 30, padding: 30, elevation: 10, shadowColor: '#000', shadowOffset: {width: 0, height: -2}, shadowOpacity: 0.1, shadowRadius: 10 },
+  iconCircle: { width: 70, height: 70, borderRadius: 35, backgroundColor: '#E8F5E9', justifyContent: 'center', alignItems: 'center', marginBottom: 15 },
+  modalTitle: { fontSize: 20, fontWeight: 'bold', color: '#333', marginBottom: 5 },
+  modalSub: { fontSize: 13, color: '#666', textAlign: 'center', lineHeight: 20 },
+  otpInput: { backgroundColor: '#F5F5F5', paddingVertical: 16, borderRadius: 8, fontSize: 16, fontWeight: '600', color: '#333', borderWidth: 1, borderColor: '#E0E0E0', letterSpacing: 2, marginBottom: 20 },
+  verifyButton: { backgroundColor: '#007C00', paddingVertical: 16, borderRadius: 8, alignItems: 'center', width: '100%' },
+  cancelBtn: { paddingVertical: 15, alignItems: 'center', marginTop: 5 },
+  cancelBtnText: { color: '#666', fontSize: 14, fontWeight: 'bold' }
 });

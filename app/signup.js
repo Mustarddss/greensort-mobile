@@ -22,6 +22,18 @@ export default function Signup() {
   const [showOtpModal, setShowOtpModal] = useState(false);
   const [otpCode, setOtpCode] = useState('');
 
+  // 🟢 REAL-TIME FILTER PARA SA FULL NAME (Letters, space, dot, and comma ONLY)
+  const handleNameChange = (text) => {
+    const filteredText = text.replace(/[^a-zA-Z\s.,]/g, '');
+    setFullName(filteredText);
+  };
+
+  // 🟢 REAL-TIME FILTER PARA SA PHONE (Numbers ONLY)
+  const handlePhoneChange = (text) => {
+    const filteredText = text.replace(/[^0-9]/g, '');
+    setPhone(filteredText);
+  };
+
   const handleSignup = async () => {
     if (!fullName || !email || !phone || !address || !password || !confirmPassword) {
       Alert.alert('Missing Info', 'Please fill all text fields.');
@@ -52,12 +64,17 @@ export default function Signup() {
       password: password,
       options: {
         data: {
-          full_name: fullName, 
+          full_name: fullName.trim(), 
           address: address,     
           phone: phone         
         }
       }
     });
+
+    // 🟢 KUNG NAG-AUTO LOGIN SI SUPABASE, I-FORCE LOGOUT AGAD PARA DI MAPUNTA SA DASHBOARD
+    if (data?.session) {
+      await supabase.auth.signOut();
+    }
 
     setLoading(false);
 
@@ -98,18 +115,23 @@ export default function Signup() {
         return;
     } 
 
-    // 🟢 FIX 1: I-force logout AGAD-AGAD bago pa siya mapunta sa Dashboard
+    // 🟢 I-FORCE LOGOUT AGAD-AGAD PARA HINDI SIYA HILAHIN NG APP PAPUNTANG DASHBOARD
     await supabase.auth.signOut();
     
     setLoading(false);
     setShowOtpModal(false);
 
-    // 🟢 FIX 2: Delay para siguradong hindi mag-trigger ang auto-redirect
+    // 🟢 DELAY NANG KONTI PARA MANATILI SA SIGNUP SCREEN, TAPOS SA "OK" LANG LILIPAT SA LOGIN
     setTimeout(() => {
         Alert.alert(
             'Account Created! 🎉', 
-            'Your account is now created! You can log in your account now!', 
-            [{ text: 'Go', onPress: () => router.replace('/login') }]
+            'Your account is now verified! You can log in your account now.', 
+            [
+              { 
+                text: 'OK', 
+                onPress: () => router.replace('/login') // 🟢 DITO LANG SIYA LILIPAT SA LOGIN
+              }
+            ]
         );
     }, 500); 
   };
@@ -130,16 +152,31 @@ export default function Signup() {
           </View>
 
           <View style={styles.form}>
+            
             <Text style={styles.label}>Full Name</Text>
-            <TextInput style={styles.input} placeholder="Juan Dela Cruz" value={fullName} onChangeText={setFullName} />
+            <TextInput 
+              style={styles.input} 
+              placeholder="Juan Dela Cruz" 
+              value={fullName} 
+              onChangeText={handleNameChange} // 🟢 Gumamit ng real-time filter
+            />
+            <Text style={styles.noteText}>Note: You can't type numbers or any special characters except for dot (.) and comma (,).</Text>
 
             <Text style={styles.label}>Email</Text>
             <TextInput style={styles.input} placeholder="email@gmail.com" keyboardType="email-address" autoCapitalize="none" value={email} onChangeText={setEmail} />
 
             <Text style={styles.label}>Mobile Number</Text>
-            <TextInput style={styles.input} placeholder="09123456789" keyboardType="phone-pad" value={phone} onChangeText={setPhone} />
+            <TextInput 
+              style={styles.input} 
+              placeholder="09123456789 or 639123456789" 
+              keyboardType="number-pad" 
+              maxLength={12} // 🟢 Hanggang 12 digits lang
+              value={phone} 
+              onChangeText={handlePhoneChange} // 🟢 Tinatanggal ang non-numbers real-time
+            />
+            <Text style={styles.noteText}>PH based numbers only (Up to 12 digits).</Text>
 
-            <Text style={styles.label}>Address</Text>
+            <Text style={styles.label}>Home Address</Text>
             <TextInput style={styles.input} placeholder="e.g. Brgy. Sampaloc I" value={address} onChangeText={setAddress} />
 
             <Text style={styles.label}>Password</Text>
@@ -208,6 +245,7 @@ const styles = StyleSheet.create({
   form: { width: '100%' },
   label: { fontSize: 14, color: '#333', fontWeight: '500', marginBottom: 8, marginTop: 15 },
   input: { backgroundColor: '#F5F5F5', paddingVertical: 14, paddingHorizontal: 15, borderRadius: 8, fontSize: 14, color: '#333', borderWidth: 1, borderColor: '#EEEEEE' },
+  noteText: { fontSize: 11, color: '#888', marginTop: 4, fontStyle: 'italic' }, 
   button: { backgroundColor: '#007C00', paddingVertical: 16, borderRadius: 8, alignItems: 'center', marginTop: 30, marginBottom: 10, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 4, elevation: 3 },
   buttonText: { color: '#fff', fontSize: 16, fontWeight: 'bold', letterSpacing: 0.5 },
   footer: { flexDirection: 'row', justifyContent: 'center', marginTop: 15, marginBottom: 20 },

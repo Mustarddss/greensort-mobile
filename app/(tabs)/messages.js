@@ -1,7 +1,6 @@
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-// 🟢 Idinagdag natin ang Keyboard at Modal dito sa import
 import { FlatList, Image, Keyboard, Modal, RefreshControl, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
@@ -107,15 +106,13 @@ export default function MessagesList() {
     setRefreshing(true); await fetchChats(); setRefreshing(false);
   }, []);
 
-  // 🟢 FUNCTION PARA MAG-TRIGGER NG REPORT PAG NI-LONG PRESS
   const handleLongPressChat = (userName) => {
-    if (userName === 'GreenSort AI Assistant') return; // Bawal i-report yung bot!
+    if (userName === 'GreenSort AI Assistant') return; 
     setUserToReport(userName);
     setReportStep(1);
     setReportModalVisible(true);
   };
 
-  // 🟢 FUNCTION PARA MAG-SUBMIT SA SUPABASE (user_reports)
   const submitUserReport = async (reasonStr) => {
     const finalReason = reportAdditionalInfo.trim() ? `${reasonStr} - Details: ${reportAdditionalInfo}` : reasonStr;
     
@@ -187,6 +184,7 @@ export default function MessagesList() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 30 }}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled" // 🟢 ITO ANG PAPAYAG NA MA-CLICK AGAD KAHIT OPEN ANG KEYBOARD
         ListHeaderComponent={() => (
           <TouchableOpacity 
             style={[styles.chatCard, { backgroundColor: '#E8F5E9', borderColor: '#007C00', borderWidth: 1, marginBottom: 15 }]} 
@@ -213,9 +211,10 @@ export default function MessagesList() {
           return (
             <TouchableOpacity 
               style={styles.chatCard} 
-              onPress={() => router.push({ pathname: '/chat', params: { chatUser: item.chatUser, postTitle: item.postTitle } })}
-              onLongPress={() => handleLongPressChat(item.chatUser)} // 🟢 DITO NATIN NILAGAY ANG LONG PRESS PARA MAG REPORT
-              delayLongPress={500} // Kalahating segundo lang ang diin lalabas na
+              // 🟢 INAYOS: Ginawang empty string ('') imbes na null para hindi mag-error ang router
+              onPress={() => router.push({ pathname: '/chat', params: { chatUser: item.chatUser, postTitle: item.postTitle || '' } })}
+              onLongPress={() => handleLongPressChat(item.chatUser)} 
+              delayLongPress={500} 
             >
               <Image source={{ uri: item.avatar }} style={styles.avatar} />
               <View style={{ flex: 1, justifyContent: 'center' }}>
@@ -226,8 +225,10 @@ export default function MessagesList() {
 
                   {item.postTitle && (
                     <View style={styles.inquiryBadge}>
-                        <Ionicons name="leaf" size={10} color="#007C00" />
-                        <Text style={styles.inquiryText} numberOfLines={1}>Inquiring: {item.postTitle}</Text>
+                        <Ionicons name="leaf-outline" size={13} color="#007C00" />
+                        <Text style={styles.inquiryText} numberOfLines={1}>
+                            Inquiring: <Text style={{fontWeight: 'bold'}}>{item.postTitle}</Text>
+                        </Text>
                     </View>
                   )}
 
@@ -314,9 +315,8 @@ const styles = StyleSheet.create({
   timeText: { fontSize: 11, color: '#999' }, 
   unreadText: { fontWeight: '900', color: '#000' },
   unreadDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#007C00', marginLeft: 8 },
-  inquiryBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#E8F5E9', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, alignSelf: 'flex-start', marginTop: 4, gap: 4 },
-  inquiryText: { fontSize: 10, color: '#007C00', fontWeight: 'bold' },
-  // 🟢 MGA STYLES PARA SA MODAL
+  inquiryBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'transparent', borderWidth: 1, borderColor: '#007C00', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 12, alignSelf: 'flex-start', marginTop: 2, marginBottom: 2, gap: 4 },
+  inquiryText: { fontSize: 11, color: '#007C00' },
   darkModalSheet: { backgroundColor: '#1C1C1E', borderTopLeftRadius: 25, borderTopRightRadius: 25, paddingHorizontal: 20, paddingBottom: 35 },
   darkMenuItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 18, borderBottomWidth: 1, borderBottomColor: '#3A3A3C', backgroundColor: '#2C2C2E' },
   darkMenuText: { fontSize: 16, color: '#fff' },

@@ -142,6 +142,13 @@ export default function Settings() {
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <Text style={styles.sectionTitle}>Account & Features</Text>
 
+        {/* 🟢 NEW BUTTON: SAVED DIY PROJECTS */}
+        <TouchableOpacity style={styles.menuItem} onPress={() => router.push('/saved-diy-posts')}>
+            <View style={[styles.menuIcon, { backgroundColor: '#E3F2FD' }]}><MaterialCommunityIcons name="bookmark-multiple" size={20} color="#1976D2" /></View>
+            <Text style={styles.menuText}>Saved DIY Projects</Text>
+            <Ionicons name="chevron-forward" size={20} color="#ccc" />
+        </TouchableOpacity>
+
         <TouchableOpacity style={styles.menuItem} onPress={() => router.push('/archived-posts')}>
             <View style={[styles.menuIcon, { backgroundColor: '#E8F5E9' }]}><MaterialCommunityIcons name="shopping" size={20} color="#007C00" /></View>
             <Text style={styles.menuText}>Sold & Traded Items</Text>
