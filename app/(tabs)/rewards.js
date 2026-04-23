@@ -21,8 +21,10 @@ export default function Rewards() {
   
   const [wasteType, setWasteType] = useState(params.wasteType || params.itemName || params.scannedWaste || '');
   const [quantity, setQuantity] = useState('1');
+  const [unit, setUnit] = useState('kg'); 
+  const [showUnitDropdown, setShowUnitDropdown] = useState(false);
+
   const [isClean, setIsClean] = useState(false);
-  
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState([]); 
   
@@ -30,7 +32,6 @@ export default function Rewards() {
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
 
-  // 🟢 UPDATED FIX 1: Auto-update ang input field kapag may pinasa galing Scan page
   useEffect(() => {
       if (params.wasteType || params.itemName || params.scannedWaste) {
           setWasteType(params.wasteType || params.itemName || params.scannedWaste || '');
@@ -59,7 +60,6 @@ export default function Rewards() {
         return;
     }
 
-    // 🟢 UPDATED FIX 2: Hard stopper para hindi na mag-AI search kapag "No Detectable Waste Item"
     if (finalWaste.toLowerCase().includes("no detectable waste") || finalWaste.toLowerCase() === "none") {
         setHasSearched(true);
         setResults([]);
@@ -71,6 +71,7 @@ export default function Rewards() {
     setHasSearched(true);
     setAiResultText(''); 
     Keyboard.dismiss();
+    setShowUnitDropdown(false);
 
     try {
         const { data: { user } } = await supabase.auth.getUser();
@@ -105,9 +106,9 @@ export default function Rewards() {
                 const rewardMultiplier = Math.floor(inputQty / baseRate);
 
                 if (rewardMultiplier >= 1) {
-                    incentiveText = `Exchange your ${inputQty}kg waste for ${rewardMultiplier}x ${reward.name}`;
+                    incentiveText = `Exchange your ${inputQty}${unit} waste for ${rewardMultiplier}x ${reward.name}`;
                 } else {
-                    incentiveText = `Need at least ${baseRate}kg for ${reward.name} (Current: ${inputQty}kg)`;
+                    incentiveText = `Need at least ${baseRate}${unit} for ${reward.name} (Current: ${inputQty}${unit})`;
                 }
 
                 const isAlreadyClaimed = userLogs?.some(log => {
@@ -161,7 +162,6 @@ export default function Rewards() {
             console.log("Error getting location:", locError);
         }
 
-        // 🟢 UPDATED FIX 3: Mas mahigpit na AI Prompt
         const aiPrompt = `The user wants to recycle or dispose of the following item: "${finalWaste}".
         They are currently located in or near: ${userLocation}, Philippines.
         
@@ -212,133 +212,200 @@ export default function Rewards() {
   };
 
   return (
-    <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{flex: 1, backgroundColor: '#F5F7FA'}}>
+    <View style={{ flex: 1, backgroundColor: '#F5F7FA' }}>
+        {/* 🟢 IBINALIK SA TRANSLUCENT = TRUE PARA SAKOP ANG BUONG ITAAS */}
         <StatusBar barStyle="light-content" backgroundColor="#007C00" translucent={true} />
         
-        <View style={[styles.header, { paddingTop: Math.max(insets.top, 20) + 15, paddingBottom: 25 }]}>
-            <View style={styles.headerRow}>
-                <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-                    <Ionicons name="arrow-back" size={24} color="white" />
-                </TouchableOpacity>
-                <View style={{alignItems: 'center'}}>
-                    <Text style={styles.headerTitle}>Rewards Centers</Text>
-                    <Text style={styles.headerSubtitle}>Find centers accepting your waste</Text>
+        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{flex: 1}}>
+            {/* 🟢 DYNAMIC PADDING: Babasahin niya ang height ng status bar para hindi umangat ang header */}
+            <View style={[styles.header, { paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 24) + 15 : Math.max(insets.top, 20) + 15, paddingBottom: 25 }]}>
+                <View style={styles.headerRow}>
+                    <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+                        <Ionicons name="arrow-back" size={24} color="white" />
+                    </TouchableOpacity>
+                    <View style={{alignItems: 'center'}}>
+                        <Text style={styles.headerTitle}>Rewards Centers</Text>
+                        <Text style={styles.headerSubtitle}>Find centers accepting your waste</Text>
+                    </View>
+                    <View style={{ width: 40 }} />
                 </View>
-                <View style={{ width: 40 }} />
             </View>
-        </View>
 
-        <TouchableWithoutFeedback onPress={() => { Keyboard.dismiss(); }}>
-            <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-                <View style={styles.body}>
-                    
-                    <View style={styles.formCard}>
-                        <Text style={styles.cardTitle}>Search Locations</Text>
+            <TouchableWithoutFeedback onPress={() => { Keyboard.dismiss(); setShowUnitDropdown(false); }}>
+                <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+                    <View style={styles.body}>
                         
-                        <Text style={styles.label}>Waste Type</Text>
-                        <TextInput 
-                            style={styles.input} 
-                            placeholder="Type waste type (e.g. Computer Mouse, Plastic)" 
-                            value={wasteType} 
-                            onChangeText={setWasteType} 
-                        />
-                        
-                        <Text style={styles.label}>Quantity (kg or pcs)</Text>
-                        <TextInput style={styles.input} placeholder="1" keyboardType="numeric" value={quantity} onChangeText={setQuantity} />
+                        {/* 1. SEARCH FORM */}
+                        <View style={[styles.formCard, { zIndex: 10 }]}>
+                            <Text style={styles.cardTitle}>Search Locations</Text>
+                            
+                            <Text style={styles.label}>Waste Type</Text>
+                            <TextInput 
+                                style={styles.input} 
+                                placeholder="Type waste type (e.g. Computer Mouse, Plastic)" 
+                                value={wasteType} 
+                                onChangeText={setWasteType} 
+                            />
+                            
+                            <Text style={styles.label}>Quantity</Text>
+                            
+                            <View style={styles.quantityRowContainer}>
+                                <TextInput 
+                                    style={[styles.input, { flex: 1, marginBottom: 0 }]} 
+                                    placeholder="1" 
+                                    keyboardType="numeric" 
+                                    value={quantity} 
+                                    onChangeText={setQuantity} 
+                                />
+                                
+                                <View style={{ position: 'relative', width: 90, zIndex: 100 }}>
+                                    <TouchableOpacity 
+                                        style={[styles.input, styles.dropdownBtn]} 
+                                        onPress={() => setShowUnitDropdown(!showUnitDropdown)}
+                                        activeOpacity={0.8}
+                                    >
+                                        <Text style={styles.dropdownBtnText}>{unit}</Text>
+                                        <Ionicons name="chevron-down" size={16} color="#666" />
+                                    </TouchableOpacity>
 
-                        <TouchableOpacity style={[styles.checkboxContainer, isClean && styles.checkboxActive]} onPress={handleToggleClean} activeOpacity={0.8}>
-                            <View style={[styles.checkbox, isClean && {backgroundColor: '#007C00', borderColor: '#007C00'}]}>
-                                {isClean && <Ionicons name="checkmark" size={14} color="white" />}
+                                    {showUnitDropdown && (
+                                        <View style={styles.dropdownMenu}>
+                                            <TouchableOpacity style={styles.dropdownMenuItem} onPress={() => { setUnit('kg'); setShowUnitDropdown(false); }}>
+                                                <Text style={[styles.dropdownMenuText, unit === 'kg' && {color: '#007C00', fontWeight: 'bold'}]}>kg</Text>
+                                            </TouchableOpacity>
+                                            <TouchableOpacity style={[styles.dropdownMenuItem, { borderBottomWidth: 0 }]} onPress={() => { setUnit('pcs'); setShowUnitDropdown(false); }}>
+                                                <Text style={[styles.dropdownMenuText, unit === 'pcs' && {color: '#007C00', fontWeight: 'bold'}]}>pcs</Text>
+                                            </TouchableOpacity>
+                                        </View>
+                                    )}
+                                </View>
                             </View>
-                            <View style={{flex: 1}}>
-                                <Text style={styles.checkboxTitle}>My Waste is Clean and Dry</Text>
-                                <Text style={styles.checkboxSub}>Clean recyclables have higher value and are easier to process</Text>
-                            </View>
-                        </TouchableOpacity>
 
-                        {!isClean && (
-                            <Text style={{color: '#FF3B30', fontSize: 12, textAlign: 'center', marginBottom: 10, fontWeight: '600'}}>
-                                * You must confirm your waste is clean to search.
-                            </Text>
+                            <TouchableOpacity style={[styles.checkboxContainer, isClean && styles.checkboxActive, { zIndex: 1 }]} onPress={handleToggleClean} activeOpacity={0.8}>
+                                <View style={[styles.checkbox, isClean && {backgroundColor: '#007C00', borderColor: '#007C00'}]}>
+                                    {isClean && <Ionicons name="checkmark" size={14} color="white" />}
+                                </View>
+                                <View style={{flex: 1}}>
+                                    <Text style={styles.checkboxTitle}>My Waste is Clean and Dry</Text>
+                                    <Text style={styles.checkboxSub}>Clean recyclables have higher value and are easier to process</Text>
+                                </View>
+                            </TouchableOpacity>
+
+                            {!isClean && (
+                                <Text style={{color: '#FF3B30', fontSize: 12, textAlign: 'center', marginBottom: 10, fontWeight: '600'}}>
+                                    * You must confirm your waste is clean to search.
+                                </Text>
+                            )}
+
+                            <TouchableOpacity 
+                                style={[styles.searchBtn, { backgroundColor: isClean ? '#007C00' : '#ccc', zIndex: 1 }]} 
+                                onPress={handleSearch} 
+                                disabled={loading || !isClean}
+                            >
+                                {loading ? <ActivityIndicator color="white" /> : <><Ionicons name="search" size={18} color="white" style={{marginRight: 8}} /><Text style={styles.searchBtnText}>Search Centers</Text></>}
+                            </TouchableOpacity>
+                        </View>
+
+                        {/* 2. HOW IT WORKS (Nakatago kapag may results na) */}
+                        {!hasSearched && (
+                            <View style={styles.guidelinesCard}>
+                                <Text style={styles.guideTitle}>HOW IT WORKS</Text>
+                                
+                                <View style={styles.guideStepRow}>
+                                    <View style={styles.guideIconBg}><MaterialCommunityIcons name="magnify" size={20} color="#007C00" /></View>
+                                    <View style={styles.guideTextContainer}>
+                                        <Text style={styles.guideStepTitle}>1. Search Waste</Text>
+                                        <Text style={styles.guideStepDesc}>Type the specific recyclable you want to dispose of (e.g., Plastic bottles, Cans, E-waste).</Text>
+                                    </View>
+                                </View>
+
+                                <View style={styles.guideStepRow}>
+                                    <View style={styles.guideIconBg}><MaterialCommunityIcons name="water-off" size={20} color="#007C00" /></View>
+                                    <View style={styles.guideTextContainer}>
+                                        <Text style={styles.guideStepTitle}>2. Clean & Dry</Text>
+                                        <Text style={styles.guideStepDesc}>Ensure your recyclables are clean. Dirty items are often rejected or lose their exchange value.</Text>
+                                    </View>
+                                </View>
+
+                                <View style={[styles.guideStepRow, {marginBottom: 0}]}>
+                                    <View style={styles.guideIconBg}><MaterialCommunityIcons name="map-marker-check" size={20} color="#007C00" /></View>
+                                    <View style={styles.guideTextContainer}>
+                                        <Text style={styles.guideStepTitle}>3. Find Drop-off</Text>
+                                        <Text style={styles.guideStepDesc}>Discover nearby partner centers that accept your items and check their estimated rewards.</Text>
+                                    </View>
+                                </View>
+                            </View>
                         )}
 
-                        <TouchableOpacity 
-                            style={[styles.searchBtn, { backgroundColor: isClean ? '#007C00' : '#ccc' }]} 
-                            onPress={handleSearch} 
-                            disabled={loading || !isClean}
-                        >
-                            {loading ? <ActivityIndicator color="white" /> : <><Ionicons name="search" size={18} color="white" style={{marginRight: 8}} /><Text style={styles.searchBtnText}>Search Centers</Text></>}
-                        </TouchableOpacity>
-                    </View>
+                        {hasSearched && <Text style={[styles.sectionHeader, {color: '#007C00'}]}>AVAILABLE DROP OFF LOCATIONS</Text>}
+                    
+                        {hasSearched && results.length === 0 && !loading && <Text style={styles.noResults}>No registered app centers found for this waste.</Text>}
 
-                    {hasSearched && <Text style={[styles.sectionHeader, {color: '#007C00'}]}>AVAILABLE DROP OFF LOCATIONS</Text>}
-                
-                    {hasSearched && results.length === 0 && !loading && <Text style={styles.noResults}>No registered app centers found for this waste.</Text>}
-
-                    {results.map((loc) => (
-                        <TouchableOpacity key={loc.id} style={styles.resultCard} onPress={() => router.push({ pathname: '/location-details', params: { data: JSON.stringify(loc) } })}>
-                            {loc.isClaimed && <View style={styles.claimedBadge}><Text style={styles.claimedText}>ALREADY CLAIMED</Text></View>}
-                            
-                            <Text style={styles.locName}>{loc.name}</Text>
-                            <View style={styles.tagContainer}><Text style={styles.tagText}>{loc.type}</Text></View>
-                            
-                            {(loc.latitude && loc.longitude) ? (
-                                <View style={styles.mapContainer}>
-                                    <MapView
-                                        style={styles.map}
-                                        initialRegion={{
-                                            latitude: loc.latitude,
-                                            longitude: loc.longitude,
-                                            latitudeDelta: 0.005, 
-                                            longitudeDelta: 0.005,
-                                        }}
-                                        scrollEnabled={false} 
-                                        zoomEnabled={false}
-                                        pitchEnabled={false}
-                                        rotateEnabled={false}
-                                    >
-                                        <Marker coordinate={{ latitude: loc.latitude, longitude: loc.longitude }} />
-                                    </MapView>
-                                </View>
-                            ) : null}
-
-                            <View style={styles.detailRow}><Ionicons name="location-outline" size={16} color="#666" style={{marginRight: 6}} /><Text style={styles.detailText}>{loc.address}</Text></View>
-                            <View style={styles.materialsRow}>{loc.accepted.map((item, index) => (<View key={index} style={styles.materialTag}><Text style={styles.materialText}>{item}</Text></View>))}</View>
-                            <View style={styles.incentiveBox}>
-                                <Text style={styles.incentiveLabel}>Estimated Reward:</Text>
-                                <Text style={styles.incentiveValue}>{loc.computedIncentive}</Text>
-                            </View>
-                        </TouchableOpacity>
-                    ))}
-
-                    {hasSearched && (
-                        <View style={{ marginTop: 20 }}>
-                            <Text style={[styles.sectionHeader, {color: '#007C00'}]}>Can’t find anything nearby? Check out our recommended places based on our research in your area.</Text>
-                            
-                            {isAiLoading ? (
-                                <View style={{padding: 20, alignItems: 'center'}}>
-                                    <ActivityIndicator size="large" color="#007C00" />
-                                    <Text style={{color: '#666', marginTop: 10, fontSize: 12}}>GreenSort is scanning locations near you...</Text>
-                                </View>
-                            ) : aiResultText ? (
-                                <View style={styles.aiCard}>
-                                    <View style={styles.aiHeader}>
-                                        <Ionicons name="sparkles" size={18} color="#007C00" />
-                                        <Text style={styles.aiLocName}>GreenSort Suggestions</Text>
+                        {results.map((loc) => (
+                            <TouchableOpacity key={loc.id} style={styles.resultCard} onPress={() => router.push({ pathname: '/location-details', params: { data: JSON.stringify(loc) } })}>
+                                {loc.isClaimed && <View style={styles.claimedBadge}><Text style={styles.claimedText}>ALREADY CLAIMED</Text></View>}
+                                
+                                <Text style={styles.locName}>{loc.name}</Text>
+                                <View style={styles.tagContainer}><Text style={styles.tagText}>{loc.type}</Text></View>
+                                
+                                {(loc.latitude && loc.longitude) ? (
+                                    <View style={styles.mapContainer}>
+                                        <MapView
+                                            style={styles.map}
+                                            initialRegion={{
+                                                latitude: loc.latitude,
+                                                longitude: loc.longitude,
+                                                latitudeDelta: 0.005, 
+                                                longitudeDelta: 0.005,
+                                            }}
+                                            scrollEnabled={false} 
+                                            zoomEnabled={false}
+                                            pitchEnabled={false}
+                                            rotateEnabled={false}
+                                        >
+                                            <Marker coordinate={{ latitude: loc.latitude, longitude: loc.longitude }} />
+                                        </MapView>
                                     </View>
-                                    <Text style={styles.aiDetails} selectable={true}>{aiResultText}</Text>
-                                </View>
-                            ) : (
-                                !loading && <Text style={styles.noResults}>GreenSort could not find external locations at this moment.</Text>
-                            )}
-                        </View>
-                    )}
+                                ) : null}
 
-                </View>
-                <View style={{height: 100}} /> 
-            </ScrollView>
-        </TouchableWithoutFeedback>
-    </KeyboardAvoidingView>
+                                <View style={styles.detailRow}><Ionicons name="location-outline" size={16} color="#666" style={{marginRight: 6}} /><Text style={styles.detailText}>{loc.address}</Text></View>
+                                <View style={styles.materialsRow}>{loc.accepted.map((item, index) => (<View key={index} style={styles.materialTag}><Text style={styles.materialText}>{item}</Text></View>))}</View>
+                                <View style={styles.incentiveBox}>
+                                    <Text style={styles.incentiveLabel}>Estimated Reward:</Text>
+                                    <Text style={styles.incentiveValue}>{loc.computedIncentive}</Text>
+                                </View>
+                            </TouchableOpacity>
+                        ))}
+
+                        {hasSearched && (
+                            <View style={{ marginTop: 20 }}>
+                                <Text style={[styles.sectionHeader, {color: '#007C00'}]}>Can’t find anything nearby? Check out our recommended places based on our research in your area.</Text>
+                                
+                                {isAiLoading ? (
+                                    <View style={{padding: 20, alignItems: 'center'}}>
+                                        <ActivityIndicator size="large" color="#007C00" />
+                                        <Text style={{color: '#666', marginTop: 10, fontSize: 12}}>GreenSort is scanning locations near you...</Text>
+                                    </View>
+                                ) : aiResultText ? (
+                                    <View style={styles.aiCard}>
+                                        <View style={styles.aiHeader}>
+                                            <Ionicons name="sparkles" size={18} color="#007C00" />
+                                            <Text style={styles.aiLocName}>GreenSort Suggestions</Text>
+                                        </View>
+                                        <Text style={styles.aiDetails} selectable={true}>{aiResultText}</Text>
+                                    </View>
+                                ) : (
+                                    !loading && <Text style={styles.noResults}>GreenSort could not find external locations at this moment.</Text>
+                                )}
+                            </View>
+                        )}
+
+                    </View>
+                    <View style={{height: 100}} /> 
+                </ScrollView>
+            </TouchableWithoutFeedback>
+        </KeyboardAvoidingView>
+    </View>
   );
 }
 
@@ -350,11 +417,28 @@ const styles = StyleSheet.create({
   headerSubtitle: { color: 'rgba(255,255,255,0.9)', fontSize: 13, marginTop: 2 },
   backButton: { backgroundColor: 'rgba(255,255,255,0.2)', padding: 8, borderRadius: 12 },
   body: { padding: 20 }, 
+  
+  guidelinesCard: { backgroundColor: '#E8F5E9', borderRadius: 16, padding: 20, marginBottom: 20, borderWidth: 1, borderColor: '#C8E6C9' },
+  guideTitle: { fontSize: 13, fontWeight: '900', color: '#2E7D32', marginBottom: 15, textAlign: 'center', letterSpacing: 1 },
+  guideStepRow: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 15 },
+  guideIconBg: { backgroundColor: 'white', width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center', elevation: 2, shadowColor: '#000', shadowOffset: {width: 0, height: 1}, shadowOpacity: 0.1, shadowRadius: 2, marginRight: 15 },
+  guideTextContainer: { flex: 1, paddingTop: 2 },
+  guideStepTitle: { fontSize: 14, fontWeight: 'bold', color: '#1C1C1E', marginBottom: 4 },
+  guideStepDesc: { fontSize: 12, color: '#555', lineHeight: 18 },
+  
   formCard: { backgroundColor: 'white', borderRadius: 20, padding: 20, marginBottom: 25, ...getSafeShadow() },
   cardTitle: { fontSize: 18, fontWeight: 'bold', color: '#333', marginBottom: 15 },
   label: { fontSize: 13, color: '#666', marginBottom: 6, fontWeight: '600', marginTop: 10 },
   input: { backgroundColor: '#F5F7FA', borderRadius: 10, padding: 14, marginBottom: 16, fontSize: 14, color: '#333', borderWidth: 1, borderColor: '#F0F0F0' },
-  checkboxContainer: { flexDirection: 'row', backgroundColor: '#e7ffe0', padding: 12, borderRadius: 10, borderWidth: 1, borderColor: '#d1ffb2', marginBottom: 20, marginTop: 10 },
+  
+  quantityRowContainer: { flexDirection: 'row', gap: 10, marginBottom: 16, zIndex: 10 },
+  dropdownBtn: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 15, marginBottom: 0 },
+  dropdownBtnText: { fontSize: 14, color: '#333', fontWeight: 'bold' },
+  dropdownMenu: { position: 'absolute', top: 55, left: 0, right: 0, backgroundColor: 'white', borderRadius: 10, borderWidth: 1, borderColor: '#eee', elevation: 5, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, zIndex: 1000 },
+  dropdownMenuItem: { paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#f0f0f0', alignItems: 'center' },
+  dropdownMenuText: { fontSize: 14, color: '#333' },
+
+  checkboxContainer: { flexDirection: 'row', backgroundColor: '#e7ffe0', padding: 12, borderRadius: 10, borderWidth: 1, borderColor: '#d1ffb2', marginBottom: 20, marginTop: 5 },
   checkboxActive: { backgroundColor: '#b2ffbe', borderColor: '#4dff65' },
   checkbox: { width: 20, height: 20, borderRadius: 4, borderWidth: 2, borderColor: '#007C00', marginRight: 10, alignItems: 'center', justifyContent: 'center', marginTop: 2 },
   checkboxTitle: { fontSize: 13, fontWeight: 'bold', color: '#333' },

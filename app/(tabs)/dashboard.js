@@ -307,10 +307,6 @@ export default function Dashboard() {
     await supabase.from('comments').update({ likes: newLikes, liked_by: newLikedBy }).eq('id', comment.id); openPostDetails(selectedPost); 
   };
 
-  // 🟢 DITO ANG PINAKA-FIX NATIN! 
-  // Magse-save na agad ang Dashboard ng Inquiry Card sa Database.
-  // Ang SENDER ay si userData.name (yung nag-click ng Contact button).
-  // Ang RECEIVER ay si post.user (yung nag-post ng item).
   const handleContact = async (post) => {
     if (post.user === userData.name) return Alert.alert("Oops!", "You can't contact yourself.");
     
@@ -357,7 +353,6 @@ export default function Dashboard() {
         console.log("Auto-send error:", err);
     }
 
-    // Walang params na ipapasa, pangalan na lang ni ChatUser para magbukas ang normal na chat
     router.push({ 
         pathname: '/chat', 
         params: { chatUser: post.user } 
@@ -418,7 +413,8 @@ export default function Dashboard() {
 
     return (
       <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
-        <StatusBar barStyle="light-content" backgroundColor="#007C00" translucent={true} />
+        {/* 🟢 SOLID GREEN STATUS BAR TRICK */}
+        <StatusBar barStyle="light-content" backgroundColor="transparent" translucent={true} />
         
         <View style={[styles.subHeader, { paddingTop: Math.max(insets.top, 20) + 15, paddingBottom: 15, borderBottomLeftRadius: 0, borderBottomRightRadius: 0, zIndex: 10 }]}>
             <View style={styles.subHeaderRow}>
@@ -640,7 +636,7 @@ export default function Dashboard() {
                   {selectedCommentForOptions?.user_name === userData.name ? (
                       <>
                           <TouchableOpacity style={styles.darkMenuItem} onPress={handleEditCommentAction}><Ionicons name="pencil" size={22} color="#fff" style={{marginRight: 15}} /><Text style={styles.darkMenuText}>Edit Comment</Text></TouchableOpacity>
-                          <TouchableOpacity style={[styles.darkMenuItem, { borderBottomWidth: 0 }]} onPress={handleDeleteCommentAction}><Ionicons name="trash-outline" size={22} color="#FF3B30" style={{marginRight: 15}} /><Text style={[styles.darkMenuText, { color: '#FF3B30', fontWeight: 'bold' }]}>Delete Comment</Text></TouchableOpacity>
+                          <TouchableOpacity style={[styles.darkMenuItem, { borderBottomWidth: 0 }]} onPress={handleDeleteCommentAction}><Ionicons name="trash-outline" size={22} color="#FF3B30" style={{marginRight: 15}} /><Text style={[styles.darkMenuText, { color: '#FF3B30', fontWeight: 'bold' }]} >Delete Comment</Text></TouchableOpacity>
                       </>
                   ) : (
                       <TouchableOpacity style={[styles.darkMenuItem, { borderBottomWidth: 0 }]} onPress={handleReportCommentAction}><Ionicons name="warning-outline" size={22} color="#FF3B30" style={{marginRight: 15}} /><Text style={[styles.darkMenuText, { color: '#FF3B30', fontWeight: 'bold' }]}>Report Comment</Text></TouchableOpacity>
@@ -709,7 +705,9 @@ export default function Dashboard() {
   if (isCreating) {
       return (
         <View style={styles.container}>
-          <StatusBar barStyle="light-content" backgroundColor="#007C00" translucent={true} />
+          {/* 🟢 SOLID GREEN STATUS BAR TRICK */}
+          <StatusBar barStyle="light-content" backgroundColor="transparent" translucent={true} />
+          
           <View style={[styles.subHeader, { paddingTop: Math.max(insets.top, 20) + 15, paddingBottom: 25 }]}>
               <View style={styles.subHeaderRow}>
                   <TouchableOpacity onPress={() => {setIsCreating(false); setEditingPostId(null);}} style={styles.backButton}>
@@ -787,8 +785,10 @@ export default function Dashboard() {
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#007C00" translucent={true} />
+      {/* 🟢 SOLID GREEN STATUS BAR TRICK */}
+      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent={true} />
       
+      {/* PADDING TOP PARA MAG-SNAP YUNG HEADER SA STATUS BAR */}
       <View style={[styles.header, { paddingTop: Math.max(insets.top, 20) + 15 }]}>
         <View style={styles.headerContent}>
             <View>
