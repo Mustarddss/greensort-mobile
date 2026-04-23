@@ -49,7 +49,43 @@ export default function ChatScreen() {
           .or(`and(sender_name.eq."${currentUser}",receiver_name.eq."${chatUser}"),and(sender_name.eq."${chatUser}",receiver_name.eq."${currentUser}")`)
           .order('created_at', { ascending: true });
           
-        if (data) setMessages(data);
+        if (data) {
+            setMessages(data);
+
+            // 🟢 DITO INAYOS: AUTO-SEND LOGIC
+            // Kapag galing sa Contact button ng Dashboard, automatic magse-send!
+            if (postTitle && postDesc && postLocation && !hasSentInquiry) {
+                
+                // Safety check: I-check kung nakapag-send na tayo ng inquiry tungkol dito dati para hindi paulit-ulit
+                const alreadySent = data.some(m => m.text && m.text.includes('|||INQUIRY|||') && m.text.includes(postTitle));
+                
+                if (!alreadySent) {
+                    const contextObj = {
+                        title: postTitle,
+                        type: postType || 'Item',
+                        desc: postDesc || '',
+                        price: postPrice || '',
+                        location: postLocation || '',
+                        image: postImage || ''
+                    };
+                    
+                    // Ang default message ay "Hi, is this available?" kasama ang card data
+                    const autoPayload = `Hi, is this available?|||INQUIRY|||${JSON.stringify(contextObj)}`;
+                    
+                    const autoMsg = { 
+                        sender_name: currentUser, 
+                        receiver_name: chatUser, 
+                        text: autoPayload,
+                        is_read: false 
+                    };
+                    
+                    // Send to database agad-agad!
+                    await supabase.from('messages').insert([autoMsg]);
+                    setHasSentInquiry(true);
+                }
+            }
+        }
+        
         if (error) console.log("Error fetching messages:", error);
 
         if (!isBot) {
@@ -96,23 +132,9 @@ export default function ChatScreen() {
     let textToSend = overrideText || newMessage;
     if (!textToSend.trim()) return;
 
-    let finalPayload = textToSend;
-
-    if (postTitle && !hasSentInquiry && !overrideText) {
-        const contextObj = {
-            title: postTitle,
-            type: postType || 'Item',
-            desc: postDesc || '',
-            price: postPrice || '',
-            location: postLocation || '',
-            image: postImage || ''
-        };
-        finalPayload = `${textToSend}|||INQUIRY|||${JSON.stringify(contextObj)}`;
-        setHasSentInquiry(true);
-    }
-    
+    // Tinanggal na natin yung override ng payload dito kasi automatic na siya nagse-send sa useEffect sa itaas
     const msg = { 
-        sender_name: myName, receiver_name: chatUser, text: finalPayload,
+        sender_name: myName, receiver_name: chatUser, text: textToSend,
         reply_to_text: replyingTo ? replyingTo.text : null, reply_to_sender: replyingTo ? replyingTo.sender_name : null, is_read: false 
     };
     
@@ -228,10 +250,8 @@ export default function ChatScreen() {
 
   return (
     <KeyboardAvoidingView style={{ flex: 1, backgroundColor: '#F5F7FA' }} behavior={Platform.OS === "ios" ? "padding" : "padding"} keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}>
-      {/* 🟢 INAYOS ANG KULAY NG STATUS BAR PARA BUMAGAY SA GREEN HEADER */}
       <StatusBar barStyle="light-content" backgroundColor="#007C00" translucent={true} />
       
-      {/* 🟢 INAYOS ANG HEADER PARA GAYAHIN YUNG NASA REFERENCE UI MO (Green, White Text, Outline sa Avatar) */}
       <View style={[styles.header, { paddingTop: Math.max(insets.top, 20) + 15 }]}>
         <TouchableOpacity onPress={() => router.back()} style={{ marginRight: 15 }}>
             <Ionicons name="arrow-back" size={24} color="white" />
@@ -244,7 +264,7 @@ export default function ChatScreen() {
         
         <View style={{flex: 1}}>
             <Text style={styles.headerTitle}>{chatUser}</Text>
-            <Text style={{fontSize: 12, color: 'rgba(255,255,255,0.8)', fontWeight: isOnline ? 'bold' : 'normal'}}>{isOnline ? 'Active' : 'Offline'}</Text>
+            <Text style={{fontSize: 12, color: 'rgba(255,255,255,0.8)', fontWeight: isOnline ? 'bold' : 'normal'}}>{isOnline ? 'Active now' : 'Offline'}</Text>
         </View>
         
         <TouchableOpacity>
@@ -313,7 +333,6 @@ export default function ChatScreen() {
                         </View>
                     ) : null}
                     
-                    {/* 🟢 INAYOS: Nilagyan ng flex: 1 ang container para hindi mapiga (squish) yung chat bubbles */}
                     <View style={{flex: 1, flexDirection: 'column', alignItems: isMe ? 'flex-end' : 'flex-start'}}>
                         <TouchableOpacity activeOpacity={0.8} onLongPress={() => setReplyingTo(item)} style={[styles.bubble, isMe ? styles.myBubble : styles.theirBubble, (actualText === '👍' || item.image_url) ? {backgroundColor: 'transparent', padding: 0, borderWidth: 0, elevation: 0} : null]}>
                             
@@ -347,7 +366,7 @@ export default function ChatScreen() {
                                 
                                 <View style={styles.inquiryDetails}>
                                     <Text style={styles.inquiryText} numberOfLines={1}>
-                                        <Text style={{fontWeight: '900', color: '#1C1C1E'}}>{inquiryContext.type}: </Text>
+                                        <Text style={{fontWeight: '900', color: '#1C1C1E'}}>{inquiryContext.type === 'Trade' ? 'Trade: ' : 'Item: '}</Text>
                                         <Text style={{color: '#333'}}>{inquiryContext.title}</Text>
                                     </Text>
                                     
@@ -437,12 +456,9 @@ export default function ChatScreen() {
 }
 
 const styles = StyleSheet.create({
-  // 🟢 HEADER STYLES INAYOS PARA MAGING GREEN AT WHITE ANG TEXT/ICONS
   header: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#007C00', paddingBottom: 15, paddingHorizontal: 20, elevation: 4 }, 
   headerTitle: { fontSize: 18, fontWeight: 'bold', color: 'white' }, 
-  
   messageRow: { flexDirection: 'row', width: '100%', alignItems: 'flex-end' }, 
-  // 🟢 INAYOS ANG MAX WIDTH PARA 85% PARA MAS MALUWAG
   bubble: { maxWidth: '85%', paddingVertical: 10, paddingHorizontal: 15, borderRadius: 20 }, 
   myBubble: { backgroundColor: '#007C00', borderBottomRightRadius: 4 }, 
   theirBubble: { backgroundColor: '#E4E6EB', borderBottomLeftRadius: 4, elevation: 1, borderWidth: 1, borderColor: '#eee' }, 
