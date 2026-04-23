@@ -13,14 +13,13 @@ export default function MessagesList() {
   const [searchQuery, setSearchQuery] = useState('');
   const [currentUserName, setCurrentUserName] = useState('');
 
-  // 🟢 STATES PARA SA REPORT USER MODAL
-  const [reportModalVisible, setReportModalVisible] = useState(false);
-  const [userToReport, setUserToReport] = useState(null);
-  const [reportStep, setReportStep] = useState(0);
+  // 🟢 STATES PARA SA OPTIONS AT REPORT
+  const [optionsModalVisible, setOptionsModalVisible] = useState(false);
+  const [selectedChatUser, setSelectedChatUser] = useState(null);
+  const [reportStep, setReportStep] = useState(0); // 0 = Menu (Report/Delete), 1 = Reasons, 2 = Confirm
   const [selectedMainReason, setSelectedMainReason] = useState(null);
   const [reportAdditionalInfo, setReportAdditionalInfo] = useState('');
 
-  // 🟢 MGA RASON PARA SA PAG-REPORT NG TAO
   const userReportReasons = [
     "Harassment or bullying",
     "Scam or fraud attempt",
@@ -79,7 +78,7 @@ export default function MessagesList() {
         if (!chatMap.has(otherPerson)) {
           chatMap.set(otherPerson, { 
             chatUser: otherPerson, 
-            latestMessageOriginal: msg.text ? (isMe ? `You: ${msg.text}` : msg.text) : '',
+            latestMessageOriginal: msg.text ? (isMe ? `You: ${msg.text.replace('|||INQUIRY|||', '').replace(/\{.*\}/, '')}` : msg.text.replace('|||INQUIRY|||', '').replace(/\{.*\}/, '')) : '',
             latestImageUrl: msg.image_url, 
             time: msg.created_at,
             unreadCount: 0, 
@@ -96,6 +95,7 @@ export default function MessagesList() {
           let displayMsg = chat.latestMessageOriginal;
           if (chat.unreadCount > 1) { displayMsg = `${chat.unreadCount} new messages`; }
           else if (chat.latestImageUrl) { displayMsg = chat.latestMessageOriginal.includes('You:') ? 'You sent an attachment.' : 'Sent an attachment.'; }
+          else if (!chat.latestMessageOriginal && chat.postTitle) { displayMsg = chat.latestMessageOriginal.includes('You:') ? `You inquired about ${chat.postTitle}` : `Inquiring about ${chat.postTitle}`; }
           return { ...chat, displayMessage: displayMsg };
       });
       setChats(uniqueChats);
@@ -106,11 +106,42 @@ export default function MessagesList() {
     setRefreshing(true); await fetchChats(); setRefreshing(false);
   }, []);
 
+  // 🟢 LONG PRESS TRIGGER - STEP 0 (OPTIONS MENU)
   const handleLongPressChat = (userName) => {
     if (userName === 'GreenSort AI Assistant') return; 
-    setUserToReport(userName);
-    setReportStep(1);
-    setReportModalVisible(true);
+    setSelectedChatUser(userName);
+    setReportStep(0); // Magsisimula sa options menu
+    setOptionsModalVisible(true);
+  };
+
+  // 🟢 DELETE CHAT FUNCTION
+  const handleDeleteChat = () => {
+      setOptionsModalVisible(false);
+      Alert.alert(
+          "Delete Chat",
+          `Are you sure you want to permanently delete your conversation with ${selectedChatUser}?`,
+          [
+              { text: "Cancel", style: "cancel" },
+              { 
+                  text: "Delete", 
+                  style: "destructive", 
+                  onPress: async () => {
+                      try {
+                          const { error } = await supabase.from('messages')
+                              .delete()
+                              .or(`and(sender_name.eq."${currentUserName}",receiver_name.eq."${selectedChatUser}"),and(sender_name.eq."${selectedChatUser}",receiver_name.eq."${currentUserName}")`);
+                          
+                          if (error) throw error;
+                          
+                          fetchChats(); // I-refresh ang listahan
+                          Alert.alert("Deleted", "Conversation has been removed.");
+                      } catch (e) {
+                          Alert.alert("Error", "Failed to delete conversation.");
+                      }
+                  }
+              }
+          ]
+      );
   };
 
   const submitUserReport = async (reasonStr) => {
@@ -118,19 +149,19 @@ export default function MessagesList() {
     
     try {
         const { error } = await supabase.from('user_reports').insert([{
-            reported_user: userToReport,
+            reported_user: selectedChatUser,
             reporter_email: currentUserName,
             reason: finalReason,
             status: 'Pending'
         }]);
         
         if (error) throw error;
-        Alert.alert("Report Sent", `You have successfully reported ${userToReport}. Our admins will review this shortly.`);
+        Alert.alert("Report Sent", `You have successfully reported ${selectedChatUser}. Our admins will review this shortly.`);
     } catch (e) {
         Alert.alert("Error", e.message);
     } finally {
-        setReportModalVisible(false);
-        setUserToReport(null);
+        setOptionsModalVisible(false);
+        setSelectedChatUser(null);
         setReportStep(0);
         setSelectedMainReason(null);
         setReportAdditionalInfo('');
@@ -184,7 +215,7 @@ export default function MessagesList() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 30 }}
         showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled" // 🟢 ITO ANG PAPAYAG NA MA-CLICK AGAD KAHIT OPEN ANG KEYBOARD
+        keyboardShouldPersistTaps="handled"
         ListHeaderComponent={() => (
           <TouchableOpacity 
             style={[styles.chatCard, { backgroundColor: '#E8F5E9', borderColor: '#007C00', borderWidth: 1, marginBottom: 15 }]} 
@@ -211,7 +242,6 @@ export default function MessagesList() {
           return (
             <TouchableOpacity 
               style={styles.chatCard} 
-              // 🟢 INAYOS: Ginawang empty string ('') imbes na null para hindi mag-error ang router
               onPress={() => router.push({ pathname: '/chat', params: { chatUser: item.chatUser, postTitle: item.postTitle || '' } })}
               onLongPress={() => handleLongPressChat(item.chatUser)} 
               delayLongPress={500} 
@@ -242,29 +272,50 @@ export default function MessagesList() {
         }}
       />
 
-      {/* 🟢 REPORT USER MODAL */}
-      <Modal visible={reportModalVisible} animationType="slide" transparent={true} onRequestClose={() => setReportModalVisible(false)}>
-        <TouchableOpacity style={{flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end'}} activeOpacity={1} onPress={() => setReportModalVisible(false)}>
+      {/* 🟢 UNIVERSAL OPTIONS/REPORT MODAL */}
+      <Modal visible={optionsModalVisible} animationType="slide" transparent={true} onRequestClose={() => setOptionsModalVisible(false)}>
+        <TouchableOpacity style={{flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end'}} activeOpacity={1} onPress={() => setOptionsModalVisible(false)}>
           <TouchableOpacity activeOpacity={1} style={styles.darkModalSheet}>
             <View style={{width: 40, height: 5, backgroundColor: '#555', borderRadius: 5, alignSelf: 'center', marginTop: 15, marginBottom: 20}} />
             
+            {/* 🟢 STEP 0: OPTIONS MENU (Report User / Delete Chat) */}
+            {reportStep === 0 && selectedChatUser && (
+              <View style={{marginBottom: 15}}>
+                  <View style={styles.darkMenuContainer}>
+                      <TouchableOpacity style={styles.darkMenuItemMenu} onPress={() => setReportStep(1)}>
+                          <Ionicons name="warning-outline" size={22} color="#FF9800" style={{marginRight: 15}} />
+                          <Text style={styles.darkMenuTextMenu}>Report {selectedChatUser}</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={[styles.darkMenuItemMenu, { borderBottomWidth: 0 }]} onPress={handleDeleteChat}>
+                          <Ionicons name="trash-outline" size={22} color="#FF3B30" style={{marginRight: 15}} />
+                          <Text style={[styles.darkMenuTextMenu, { color: '#FF3B30', fontWeight: 'bold' }]}>Delete Chat</Text>
+                      </TouchableOpacity>
+                  </View>
+                  <TouchableOpacity style={styles.darkCancelBtn} onPress={() => setOptionsModalVisible(false)}>
+                      <Text style={{color: '#fff', fontWeight: 'bold'}}>Cancel</Text>
+                  </TouchableOpacity>
+              </View>
+            )}
+
+            {/* 🟢 STEP 1: REPORT REASONS */}
             {reportStep === 1 && (
               <View style={{marginBottom: 15}}>
-                <Text style={{fontSize: 18, fontWeight: 'bold', color: '#fff', marginBottom: 5, textAlign: 'center'}}>Report {userToReport}</Text>
+                <Text style={{fontSize: 18, fontWeight: 'bold', color: '#fff', marginBottom: 5, textAlign: 'center'}}>Report {selectedChatUser}</Text>
                 <Text style={{fontSize: 13, color: '#aaa', marginBottom: 15, textAlign: 'center'}}>Why are you reporting this user?</Text>
                 
                 {userReportReasons.map((reason, index) => (
-                  <TouchableOpacity key={index} style={styles.darkMenuItem} onPress={() => { setSelectedMainReason(reason); setReportStep(2); }}>
+                  <TouchableOpacity key={index} style={[styles.darkMenuItem, { borderRadius: index === 0 ? 12 : 0, borderTopLeftRadius: index === 0 ? 12 : 0, borderTopRightRadius: index === 0 ? 12 : 0, borderBottomLeftRadius: index === userReportReasons.length -1 ? 12 : 0, borderBottomRightRadius: index === userReportReasons.length -1 ? 12 : 0 }]} onPress={() => { setSelectedMainReason(reason); setReportStep(2); }}>
                     <Text style={styles.darkMenuText}>{reason}</Text>
                     <Ionicons name="chevron-forward" size={20} color="#555" />
                   </TouchableOpacity>
                 ))}
-                <TouchableOpacity style={[styles.darkCancelBtn, {marginTop: 15}]} onPress={() => setReportModalVisible(false)}>
-                  <Text style={{color: '#fff', fontWeight: 'bold'}}>Cancel</Text>
+                <TouchableOpacity style={[styles.darkCancelBtn, {marginTop: 15}]} onPress={() => setReportStep(0)}>
+                  <Text style={{color: '#fff', fontWeight: 'bold'}}>Back</Text>
                 </TouchableOpacity>
               </View>
             )}
 
+            {/* 🟢 STEP 2: CONFIRM REPORT */}
             {reportStep === 2 && selectedMainReason && (
               <View style={{marginBottom: 15}}>
                 <Text style={{fontSize: 18, fontWeight: 'bold', color: '#fff', marginBottom: 15, textAlign: 'center'}}>Confirm Report</Text>
@@ -317,7 +368,12 @@ const styles = StyleSheet.create({
   unreadDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#007C00', marginLeft: 8 },
   inquiryBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'transparent', borderWidth: 1, borderColor: '#007C00', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 12, alignSelf: 'flex-start', marginTop: 2, marginBottom: 2, gap: 4 },
   inquiryText: { fontSize: 11, color: '#007C00' },
+  
+  // 🟢 MODAL STYLES
   darkModalSheet: { backgroundColor: '#1C1C1E', borderTopLeftRadius: 25, borderTopRightRadius: 25, paddingHorizontal: 20, paddingBottom: 35 },
+  darkMenuContainer: { backgroundColor: '#2C2C2E', borderRadius: 15, overflow: 'hidden', marginBottom: 15 },
+  darkMenuItemMenu: { flexDirection: 'row', alignItems: 'center', padding: 18, borderBottomWidth: 1, borderBottomColor: '#3A3A3C' },
+  darkMenuTextMenu: { fontSize: 16, color: '#fff' },
   darkMenuItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 18, borderBottomWidth: 1, borderBottomColor: '#3A3A3C', backgroundColor: '#2C2C2E' },
   darkMenuText: { fontSize: 16, color: '#fff' },
   darkCancelBtn: { padding: 18, backgroundColor: '#2C2C2E', borderRadius: 15, alignItems: 'center' },

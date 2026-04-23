@@ -81,7 +81,7 @@ export default function Dashboard() {
         if (user) {
             presenceChannel = supabase.channel('app-presence');
             presenceChannel
-                .on('presence', { event: 'sync' }, () => { console.log('Presence sync completed'); })
+                .on('presence', { event: 'sync' }, () => { /* no log */ })
                 .subscribe(async (status) => {
                     if (status === 'SUBSCRIBED') {
                         await presenceChannel.track({ user_id: user.id, online_at: new Date().toISOString() });
@@ -239,10 +239,10 @@ export default function Dashboard() {
 
     Rules for flagging (Flag if ANY of these are true):
     1. Contains offensive, toxic, or inappropriate language.
-    2. Is a scam or spam (e.g., selling a common plastic bottle for an unrealistic price like ₱500).
+    2. Is a scam or spam.
     3. Is completely unrelated to recycling, upcycling, eco-friendly living, or trading pre-loved/waste items.
-    4. Contains gibberish, random keystrokes (e.g., "asdfghjkl", "qweqwe"), test words, or non-sensical text.
-    5. Mismatch between Type and Content: The selected Type MUST logically match the Title and Description. If the Type does not make sense for the given Title and Description, it MUST be flagged.
+    4. Contains gibberish.
+    5. Mismatch between Type and Content.
 
     Respond strictly in pure JSON format:
     {
@@ -307,48 +307,71 @@ export default function Dashboard() {
     await supabase.from('comments').update({ likes: newLikes, liked_by: newLikedBy }).eq('id', comment.id); openPostDetails(selectedPost); 
   };
 
-  // 🟢 IPAPASA YUNG POST DATA SA CHATSCREEN
+  // 🟢 DITO ANG PINAKA-FIX NATIN! 
+  // Magse-save na agad ang Dashboard ng Inquiry Card sa Database.
+  // Ang SENDER ay si userData.name (yung nag-click ng Contact button).
+  // Ang RECEIVER ay si post.user (yung nag-post ng item).
   const handleContact = async (post) => {
     if (post.user === userData.name) return Alert.alert("Oops!", "You can't contact yourself.");
-    try { await supabase.from('notifications').insert([{ owner_name: post.user, actor_name: userData.name, actor_avatar: userData.avatar, action: 'wants to contact you about', post_title: post.title || 'an item', is_read: false }]); } catch (e) { }
     
+    try { 
+        await supabase.from('notifications').insert([{ 
+            owner_name: post.user, 
+            actor_name: userData.name, 
+            actor_avatar: userData.avatar, 
+            action: 'wants to contact you about', 
+            post_title: post.title || 'an item', 
+            is_read: false 
+        }]); 
+    } catch (e) { }
+    
+    try {
+        const { data: existing } = await supabase.from('messages')
+            .select('id')
+            .eq('sender_name', userData.name)
+            .eq('receiver_name', post.user)
+            .like('text', '%|||INQUIRY|||%')
+            .like('text', `%${post.title}%`)
+            .limit(1);
+
+        if (!existing || existing.length === 0) {
+            const contextObj = {
+                title: post.title,
+                type: post.type || 'Item',
+                desc: post.desc || '',
+                price: post.price || '',
+                location: post.location || '',
+                image: post.image ? post.image.split(',')[0] : ''
+            };
+            
+            const autoPayload = `|||INQUIRY|||${JSON.stringify(contextObj)}`;
+            
+            await supabase.from('messages').insert([{ 
+                sender_name: userData.name, 
+                receiver_name: post.user, 
+                text: autoPayload,
+                is_read: false 
+            }]);
+        }
+    } catch (err) {
+        console.log("Auto-send error:", err);
+    }
+
+    // Walang params na ipapasa, pangalan na lang ni ChatUser para magbukas ang normal na chat
     router.push({ 
         pathname: '/chat', 
-        params: { 
-            chatUser: post.user, 
-            postTitle: post.title || 'an item',
-            postType: post.type || '',
-            postDesc: post.desc || '',
-            postPrice: post.price || '',
-            postLocation: post.location || '',
-            postImage: post.image ? post.image.split(',')[0] : ''
-        } 
+        params: { chatUser: post.user } 
     });
   };
 
   const handleSavePost = async (post) => {
     try {
-        const { data: existing } = await supabase.from('saved_posts')
-            .select('*')
-            .eq('user_email', userData.name)
-            .eq('post_id', post.id);
-
-        if (existing && existing.length > 0) {
-            Alert.alert("Already Saved", "You have already saved this DIY project.");
-            return;
-        }
-
-        const { error } = await supabase.from('saved_posts').insert([{ 
-            user_email: userData.name, 
-            post_id: post.id,
-            post_title: post.title
-        }]);
-
+        const { data: existing } = await supabase.from('saved_posts').select('*').eq('user_email', userData.name).eq('post_id', post.id);
+        if (existing && existing.length > 0) { Alert.alert("Already Saved", "You have already saved this DIY project."); return; }
+        const { error } = await supabase.from('saved_posts').insert([{ user_email: userData.name, post_id: post.id, post_title: post.title }]);
         if (error) throw error;
         Alert.alert("Post Saved! 📌", "You can view this project later in your Profile/Settings tab.");
-    } catch(e) {
-        Alert.alert("Error Saving", e.message);
-    }
+    } catch(e) { Alert.alert("Error Saving", e.message); }
   };
 
   const openPostDetails = async (post) => {
@@ -673,7 +696,7 @@ export default function Dashboard() {
                   </View>
                   <TextInput style={styles.darkTextInput} placeholder="Add additional details (optional)..." placeholderTextColor="#888" multiline={true} returnKeyType="done" blurOnSubmit={true} onSubmitEditing={() => Keyboard.dismiss()} value={reportAdditionalInfo} onChangeText={setReportAdditionalInfo} />
                   <TouchableOpacity style={{backgroundColor: '#FF3B30', padding: 18, borderRadius: 15, alignItems: 'center'}} onPress={() => submitCommentReport(`${selectedMainCommentReason.title}: ${selectedCommentSubReason.title}`)}><Text style={{color: 'white', fontWeight: 'bold', fontSize: 16}}>Submit Report</Text></TouchableOpacity>
-                  <TouchableOpacity style={[styles.darkCancelBtn, {marginTop: 10}]} onPress={() => setCommentReportStep(2)}><Text style={{color: '#fff', fontWeight: 'bold'}}>Back</Text></TouchableOpacity>
+                  <TouchableOpacity style={[styles.darkCancelBtn, {marginTop: 10}]} onPress={() => setReportStep(2)}><Text style={{color: '#fff', fontWeight: 'bold'}}>Back</Text></TouchableOpacity>
                 </View>
               )}
             </TouchableOpacity>
@@ -703,7 +726,6 @@ export default function Dashboard() {
             <ScrollView contentContainerStyle={styles.createContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
               <Text style={styles.label}>Post Type</Text>
               
-              {/* 🟢 TINANGGAL YUNG DIY PROJECT DITO */}
               <View style={styles.typeRow}>{['For Sale', 'Trade', 'Free'].map(type => (<TouchableOpacity key={type} style={[styles.typeBtn, form.type === type && styles.typeBtnActive, {borderColor: form.type === type ? '#007C00' : '#E0E0E0'}]} onPress={() => setForm({...form, type: type})}><Text style={[styles.typeBtnText, form.type === type && {color: '#007C00'}]}>{type}</Text></TouchableOpacity>))}</View>
               
               <Text style={styles.label}>Name of your Item</Text><TextInput style={styles.input} placeholder="Title" value={form.title} onChangeText={(t) => setForm({...form, title: t})} />
@@ -886,7 +908,6 @@ export default function Dashboard() {
                                 <TouchableOpacity style={styles.iconRow} onPress={() => openPostDetails(post)}><Ionicons name="chatbubble-outline" size={22} color="#666" /><Text style={styles.iconText}>{post.comments}</Text></TouchableOpacity>
                             </View>
                             
-                            {/* 🟢 DITO NA YUNG PRICE AT BUTTON (Flex layout issue fixed) */}
                             <View style={{flexDirection: 'row', alignItems: 'center', flexShrink: 1, gap: 10, justifyContent: 'flex-end', flex: 1}}>
                                 <Text style={[styles.postPrice, { flexShrink: 1, textAlign: 'right' }]} numberOfLines={1}>
                                     {post.price.replace('Market Value: ', '')}
@@ -1023,12 +1044,10 @@ const styles = StyleSheet.create({
   filterPill: { paddingHorizontal: 20, paddingVertical: 8, backgroundColor: 'white', borderRadius: 20, marginRight: 10, elevation: 1, borderWidth: 1, borderColor: '#eee' }, activePill: { backgroundColor: '#263238', borderColor: '#263238' }, filterText: { fontSize: 13, color: '#666', fontWeight: '600' }, activeFilterText: { color: 'white' }, 
   postCard: { backgroundColor: 'white', borderRadius: 16, padding: 15, marginBottom: 15, elevation: 2 }, myPostCardBorder: { backgroundColor: '#F1F8E9', borderWidth: 1, borderColor: '#C8E6C9' }, meBadge: { backgroundColor: '#007C00', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }, meBadgeText: { color: 'white', fontSize: 8, fontWeight: 'bold' },
   postHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 }, postAvatar: { width: 40, height: 40, borderRadius: 20 }, postUser: { fontWeight: 'bold', fontSize: 14, color: '#333' }, postTime: { fontSize: 11, color: '#999' }, typeBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10 }, postTitle: { fontSize: 16, fontWeight: 'bold', color: '#333', marginBottom: 5 }, postDesc: { fontSize: 13, color: '#666', marginBottom: 10 }, postImage: { width: '100%', aspectRatio: 16 / 9, borderRadius: 12, marginBottom: 15, resizeMode: 'cover', backgroundColor: '#f0f0f0' }, 
-  
-  // 🟢 DITO NAAYOS ANG LAYOUT NG PRICE AT BUTTON
   postFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, 
   iconRow: { flexDirection: 'row', alignItems: 'center', gap: 5, padding: 5 }, 
   iconText: { fontSize: 14, color: '#666' }, 
-  postPrice: { fontSize: 16, fontWeight: 'bold', color: '#007C00' }, // tinanggal ang flex: 1
+  postPrice: { fontSize: 16, fontWeight: 'bold', color: '#007C00' },
   
   contactBtn: { backgroundColor: '#007C00', paddingHorizontal: 15, paddingVertical: 8, borderRadius: 8 }, contactText: { color: 'white', fontWeight: 'bold', fontSize: 12 }, footerInput: { padding: 15, backgroundColor: 'white', borderTopWidth: 1, borderTopColor: '#eee', flexDirection: 'row', alignItems: 'flex-end', gap: 10 }, statusBanner: { backgroundColor: '#E8F5E9', padding: 8, paddingHorizontal: 15, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, inputField: { flex: 1, backgroundColor: '#F5F5F5', borderRadius: 20, paddingHorizontal: 15, paddingVertical: 10, maxHeight: 100 }, sendBtn: { width: 40, height: 40, backgroundColor: '#007C00', borderRadius: 20, justifyContent: 'center', alignItems: 'center', marginBottom: 2 }, createContent: { padding: 20 }, label: { fontSize: 14, fontWeight: '700', color: '#333', marginBottom: 4, marginTop: 15 }, input: { backgroundColor: '#F5F7FA', borderRadius: 10, padding: 15, borderWidth: 1, borderColor: '#F0F0F0' }, inputIconWrap: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F5F7FA', borderRadius: 10, paddingHorizontal: 15, paddingVertical: 12, borderWidth: 1, borderColor: '#F0F0F0' }, typeRow: { flexDirection: 'row', gap: 10 }, typeBtn: { flex: 1, paddingVertical: 15, borderRadius: 12, borderWidth: 1, alignItems: 'center', borderColor: '#E0E0E0' }, typeBtnActive: { borderColor: '#007C00', backgroundColor: '#E8F5E9' }, typeBtnText: { fontSize: 12, fontWeight: '600', color: '#666' }, imageUploadBox: { width: '100%', aspectRatio: 16 / 9, borderWidth: 1, borderColor: '#ddd', borderStyle: 'dashed', borderRadius: 12, justifyContent: 'center', alignItems: 'center', backgroundColor: '#FAFAFA', marginTop: 15 }, submitBtn: { padding: 15, borderRadius: 12, backgroundColor: '#007C00', alignItems: 'center', marginTop: 30 },
   darkModalSheet: { backgroundColor: '#1C1C1E', borderTopLeftRadius: 25, borderTopRightRadius: 25, paddingHorizontal: 20, paddingBottom: 35, shadowColor: '#000', shadowOffset: { width: 0, height: -2 }, shadowOpacity: 0.2, shadowRadius: 10, elevation: 15 }, darkMenuContainer: { backgroundColor: '#2C2C2E', borderRadius: 15, overflow: 'hidden', marginBottom: 15 }, darkMenuItem: { flexDirection: 'row', alignItems: 'center', padding: 18, borderBottomWidth: 1, borderBottomColor: '#3A3A3C' }, darkMenuText: { fontSize: 16, color: '#fff' }, darkCancelBtn: { padding: 18, backgroundColor: '#2C2C2E', borderRadius: 15, alignItems: 'center' },

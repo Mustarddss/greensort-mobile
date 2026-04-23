@@ -9,7 +9,9 @@ import { supabase } from '../lib/supabase';
 const screenWidth = Dimensions.get('window').width;
 
 export default function ChatScreen() {
-  const { chatUser, postTitle, postType, postDesc, postPrice, postLocation, postImage } = useLocalSearchParams(); 
+  // 🟢 DITO: Tinanggal ko na yung mga postTitle, postDesc, etc. para hindi na malito ang chat screen. 
+  // chatUser na lang ang kailangan niya.
+  const { chatUser } = useLocalSearchParams(); 
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const flatListRef = useRef(null); 
@@ -28,75 +30,41 @@ export default function ChatScreen() {
   const [replyingTo, setReplyingTo] = useState(null); 
   const [isUploading, setIsUploading] = useState(false); 
   const [isBotTyping, setIsBotTyping] = useState(false); 
-  
-  const [hasSentInquiry, setHasSentInquiry] = useState(false);
 
   useEffect(() => { 
+    let isMounted = true;
     let currentUser = '';
     let messageChannel;
     let statusInterval;
 
     const fetchSessionAndMessages = async () => {
       const { data: { session } } = await supabase.auth.getSession();
-      if (session?.user) {
-        currentUser = session.user.user_metadata?.full_name;
-        setMyName(currentUser);
-        
-        await supabase.from('messages').update({ is_read: true }).eq('sender_name', chatUser).eq('receiver_name', currentUser);
+      if (!session?.user) return;
+      
+      currentUser = session.user.user_metadata?.full_name;
+      if (isMounted) setMyName(currentUser);
+      
+      await supabase.from('messages').update({ is_read: true }).eq('sender_name', chatUser).eq('receiver_name', currentUser);
 
-        const { data, error } = await supabase.from('messages')
-          .select('*')
-          .or(`and(sender_name.eq."${currentUser}",receiver_name.eq."${chatUser}"),and(sender_name.eq."${chatUser}",receiver_name.eq."${currentUser}")`)
-          .order('created_at', { ascending: true });
-          
-        if (data) {
-            setMessages(data);
+      // 🟢 DITO: Kukunin na lang niya nang direkta ang messages galing sa Database. Walang dagdag na auto-send!
+      const { data, error } = await supabase.from('messages')
+        .select('*')
+        .or(`and(sender_name.eq."${currentUser}",receiver_name.eq."${chatUser}"),and(sender_name.eq."${chatUser}",receiver_name.eq."${currentUser}")`)
+        .order('created_at', { ascending: true });
 
-            // 🟢 DITO INAYOS: AUTO-SEND LOGIC
-            // Kapag galing sa Contact button ng Dashboard, automatic magse-send!
-            if (postTitle && postDesc && postLocation && !hasSentInquiry) {
-                
-                // Safety check: I-check kung nakapag-send na tayo ng inquiry tungkol dito dati para hindi paulit-ulit
-                const alreadySent = data.some(m => m.text && m.text.includes('|||INQUIRY|||') && m.text.includes(postTitle));
-                
-                if (!alreadySent) {
-                    const contextObj = {
-                        title: postTitle,
-                        type: postType || 'Item',
-                        desc: postDesc || '',
-                        price: postPrice || '',
-                        location: postLocation || '',
-                        image: postImage || ''
-                    };
-                    
-                    // Ang default message ay "Hi, is this available?" kasama ang card data
-                    const autoPayload = `Hi, is this available?|||INQUIRY|||${JSON.stringify(contextObj)}`;
-                    
-                    const autoMsg = { 
-                        sender_name: currentUser, 
-                        receiver_name: chatUser, 
-                        text: autoPayload,
-                        is_read: false 
-                    };
-                    
-                    // Send to database agad-agad!
-                    await supabase.from('messages').insert([autoMsg]);
-                    setHasSentInquiry(true);
-                }
-            }
-        }
-        
-        if (error) console.log("Error fetching messages:", error);
+      if (isMounted) {
+          setMessages(data || []);
+      }
+      if (error) console.log("Error fetching messages:", error);
 
-        if (!isBot) {
-            const globalChan = supabase.channel('green_sort_global');
-            const checkOnlineStatus = () => {
-                const state = globalChan.presenceState();
-                setIsOnline(Object.keys(state).includes(chatUser));
-            };
-            checkOnlineStatus(); 
-            statusInterval = setInterval(checkOnlineStatus, 2000); 
-        }
+      if (!isBot) {
+          const globalChan = supabase.channel('green_sort_global');
+          const checkOnlineStatus = () => {
+              const state = globalChan.presenceState();
+              if (isMounted) setIsOnline(Object.keys(state).includes(chatUser));
+          };
+          checkOnlineStatus(); 
+          statusInterval = setInterval(checkOnlineStatus, 2000); 
       }
     };
 
@@ -104,7 +72,6 @@ export default function ChatScreen() {
 
     messageChannel = supabase.channel('public:messages')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
-          
           const isThisChat = 
             (payload.new.sender_name === currentUser && payload.new.receiver_name === chatUser) || 
             (payload.new.sender_name === chatUser && payload.new.receiver_name === currentUser);
@@ -119,10 +86,10 @@ export default function ChatScreen() {
                   supabase.from('messages').update({ is_read: true }).eq('id', payload.new.id).then();
               }
           }
-
       }).subscribe();
 
     return () => {
+      isMounted = false;
       if (statusInterval) clearInterval(statusInterval);
       if (messageChannel) supabase.removeChannel(messageChannel);
     };
@@ -132,7 +99,6 @@ export default function ChatScreen() {
     let textToSend = overrideText || newMessage;
     if (!textToSend.trim()) return;
 
-    // Tinanggal na natin yung override ng payload dito kasi automatic na siya nagse-send sa useEffect sa itaas
     const msg = { 
         sender_name: myName, receiver_name: chatUser, text: textToSend,
         reply_to_text: replyingTo ? replyingTo.text : null, reply_to_sender: replyingTo ? replyingTo.sender_name : null, is_read: false 
@@ -142,7 +108,6 @@ export default function ChatScreen() {
     setReplyingTo(null); 
     await supabase.from('messages').insert([msg]);
 
-    // 🤖 AI CHATBOT LOGIC
     if (isBot) {
         setIsBotTyping(true);
         flatListRef.current?.scrollToEnd({ animated: true });
@@ -170,33 +135,16 @@ export default function ChatScreen() {
         try {
             const response = await fetch('https://api.openai.com/v1/chat/completions', {
                 method: 'POST',
-                headers: { 
-                  'Content-Type': 'application/json', 
-                  'Authorization': `Bearer ${process.env.EXPO_PUBLIC_OPENAI_API_KEY}` 
-                },
-                body: JSON.stringify({
-                    model: 'gpt-5.4',
-                    messages: [
-                        { role: 'system', content: systemInstruction },
-                        { role: 'user', content: textToSend }
-                    ],
-                    temperature: 0.2,
-                    max_completion_tokens: 300
-                })
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.EXPO_PUBLIC_OPENAI_API_KEY}` },
+                body: JSON.stringify({ model: 'gpt-5.4', messages: [{ role: 'system', content: systemInstruction }, { role: 'user', content: textToSend }], temperature: 0.2, max_completion_tokens: 300 })
             });
             const data = await response.json();
-            
             if (data.choices && data.choices.length > 0) {
-                const botReply = data.choices[0].message.content;
-                
-                const botMsg = { 
-                    sender_name: chatUser, receiver_name: myName, text: botReply, is_read: false 
-                };
+                const botMsg = { sender_name: chatUser, receiver_name: myName, text: data.choices[0].message.content, is_read: false };
                 await supabase.from('messages').insert([botMsg]);
             }
         } catch (error) {
-            console.log("AI Chat Error:", error);
-            const errorMsg = { sender_name: chatUser, receiver_name: myName, text: "I'm sorry, I'm having a little trouble connecting to my brain right now. Please try asking again later! 🔌", is_read: false };
+            const errorMsg = { sender_name: chatUser, receiver_name: myName, text: "I'm sorry, I'm having a little trouble connecting to my brain right now. 🔌", is_read: false };
             await supabase.from('messages').insert([errorMsg]);
         } finally {
             setIsBotTyping(false);
@@ -306,7 +254,7 @@ export default function ChatScreen() {
           const timeDiffNextMins = nextItem ? (new Date(nextItem.created_at) - new Date(item.created_at)) / 60000 : 999;
           
           const textParts = item.text ? item.text.split('|||INQUIRY|||') : [''];
-          const actualText = textParts[0];
+          const actualText = textParts[0].trim();
           let inquiryContext = null;
           if (textParts.length > 1) {
               try { inquiryContext = JSON.parse(textParts[1]); } catch(e){}
@@ -315,11 +263,15 @@ export default function ChatScreen() {
           const showTimeHeader = !isSameSenderAsPrev || timeDiffMins > 1 || inquiryContext; 
           const showAvatar = !isMe && (!isSameSenderAsNext || timeDiffNextMins > 1);
 
+          // Haharangin natin na gumawa ng empty green bubble kung ang text ay purong inquiry card lang
+          const showBubble = actualText.length > 0 || item.reply_to_text || item.image_url;
+
           return (
             <View style={{marginBottom: isSameSenderAsNext && timeDiffNextMins <= 1 ? 2 : 15}}>
                 
                 {showTimeHeader ? (<Text style={{textAlign: 'center', fontSize: 11, color: '#999', marginVertical: 10}}>{formatSmartTime(item.created_at)}</Text>) : null}
                 
+                {/* 🟢 SYSTEM TEXT: Makikita lang ito ng Seller (!isMe = receiver) para hindi lumabas sa screen nung nag-contact */}
                 {inquiryContext && !isMe && (
                     <Text style={{ textAlign: 'center', color: '#888', fontSize: 12, marginBottom: 15, paddingHorizontal: 20 }}>
                         <Text style={{ fontWeight: 'bold', color: '#333' }}>{item.sender_name}</Text> is contacting you about your {inquiryContext.type?.toLowerCase() || 'post'} in the community feed.
@@ -334,26 +286,31 @@ export default function ChatScreen() {
                     ) : null}
                     
                     <View style={{flex: 1, flexDirection: 'column', alignItems: isMe ? 'flex-end' : 'flex-start'}}>
-                        <TouchableOpacity activeOpacity={0.8} onLongPress={() => setReplyingTo(item)} style={[styles.bubble, isMe ? styles.myBubble : styles.theirBubble, (actualText === '👍' || item.image_url) ? {backgroundColor: 'transparent', padding: 0, borderWidth: 0, elevation: 0} : null]}>
-                            
-                            {item.reply_to_text ? (
-                                <View style={[styles.replyBoxRendered, isMe ? {backgroundColor: '#007C00'} : {backgroundColor: '#f0f0f0'}, item.image_url ? {backgroundColor: '#eee'} : null]}>
-                                    <Text style={{fontSize: 10, fontWeight: 'bold', color: isMe && !item.image_url ? '#e0e0e0' : '#007C00', marginBottom: 2}}>Replying to {item.reply_to_sender === myName ? 'yourself' : item.reply_to_sender}</Text>
-                                    <Text style={{fontSize: 12, color: isMe && !item.image_url ? '#fff' : '#666'}} numberOfLines={1}>{item.reply_to_text.split('|||')[0]}</Text>
-                                </View>
-                            ) : null}
-                            
-                            {item.image_url ? (
-                                <Image source={{uri: item.image_url}} style={{width: 200, height: 250, borderRadius: 15, marginBottom: actualText !== 'Sent an image' ? 5 : 0}} resizeMode="cover" />
-                            ) : null}
+                        
+                        {/* NORMAL TEXT BUBBLE */}
+                        {showBubble ? (
+                            <TouchableOpacity activeOpacity={0.8} onLongPress={() => setReplyingTo(item)} style={[styles.bubble, isMe ? styles.myBubble : styles.theirBubble, (actualText === '👍' || item.image_url) ? {backgroundColor: 'transparent', padding: 0, borderWidth: 0, elevation: 0} : null]}>
+                                
+                                {item.reply_to_text ? (
+                                    <View style={[styles.replyBoxRendered, isMe ? {backgroundColor: '#007C00'} : {backgroundColor: '#f0f0f0'}, item.image_url ? {backgroundColor: '#eee'} : null]}>
+                                        <Text style={{fontSize: 10, fontWeight: 'bold', color: isMe && !item.image_url ? '#e0e0e0' : '#007C00', marginBottom: 2}}>Replying to {item.reply_to_sender === myName ? 'yourself' : item.reply_to_sender}</Text>
+                                        <Text style={{fontSize: 12, color: isMe && !item.image_url ? '#fff' : '#666'}} numberOfLines={1}>{item.reply_to_text.split('|||')[0]}</Text>
+                                    </View>
+                                ) : null}
+                                
+                                {item.image_url ? (
+                                    <Image source={{uri: item.image_url}} style={{width: 200, height: 250, borderRadius: 15, marginBottom: actualText !== 'Sent an image' ? 5 : 0}} resizeMode="cover" />
+                                ) : null}
 
-                            {actualText === '👍' ? (
-                                <Text style={{fontSize: 45}}>👍</Text>
-                            ) : actualText !== 'Sent an image' ? (
-                                <Text style={[styles.msgText, isMe ? { color: 'white' } : { color: '#333' }]} selectable={true}>{actualText}</Text>
-                            ) : null}
-                        </TouchableOpacity>
+                                {actualText === '👍' ? (
+                                    <Text style={{fontSize: 45}}>👍</Text>
+                                ) : actualText !== 'Sent an image' ? (
+                                    <Text style={[styles.msgText, isMe ? { color: 'white' } : { color: '#333' }]} selectable={true}>{actualText}</Text>
+                                ) : null}
+                            </TouchableOpacity>
+                        ) : null}
 
+                        {/* 🟢 GRAY INQUIRY CARD: Lalabas sa screen ng Buyer at Seller kung may nakadikit na inquiry data */}
                         {inquiryContext && (
                             <View style={[styles.inquiryCard, isMe ? { alignSelf: 'flex-end' } : { alignSelf: 'flex-start' }]}>
                                 {inquiryContext.image ? (
