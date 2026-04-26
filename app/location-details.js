@@ -1,9 +1,11 @@
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, StatusBar, Platform } from 'react-native';
+import React, { useRef } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, StatusBar, Platform, Animated, PanResponder, Dimensions, Linking } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
+import MapView, { Marker } from 'react-native-maps'; // 🟢 DINA-DAGDAG NATIN ANG MAPA
+
+const screenWidth = Dimensions.get('window').width;
 
 export default function LocationDetails() {
   const router = useRouter();
@@ -12,289 +14,360 @@ export default function LocationDetails() {
   
   const location = params.data ? JSON.parse(params.data) : null;
 
+  // 🟢 DRAG & SNAP LOGIC PARA SA FLOATING BUTTON
+  const pan = useRef(new Animated.ValueXY()).current;
+  
+  const panResponder = useRef(
+      PanResponder.create({
+          onMoveShouldSetPanResponder: (evt, gestureState) => {
+              return Math.abs(gestureState.dx) > 5 || Math.abs(gestureState.dy) > 5;
+          },
+          onPanResponderGrant: () => {
+              pan.setOffset({
+                  x: pan.x._value,
+                  y: pan.y._value
+              });
+              pan.setValue({ x: 0, y: 0 });
+          },
+          onPanResponderMove: Animated.event(
+              [null, { dx: pan.x, dy: pan.y }],
+              { useNativeDriver: false } 
+          ),
+          onPanResponderRelease: () => {
+              pan.flattenOffset();
+              
+              const buttonWidth = 110;
+              const sideMargin = 15;
+              const leftSnap = -(screenWidth - buttonWidth - (sideMargin * 2));
+              
+              const isCloserToLeft = pan.x._value < (leftSnap / 2);
+
+              Animated.spring(pan, {
+                  toValue: { 
+                      x: isCloserToLeft ? leftSnap : 0, 
+                      y: pan.y._value
+                  },
+                  useNativeDriver: false,
+                  friction: 6
+              }).start();
+          }
+      })
+  ).current;
+
+  // 🟢 FUNCTION PARA MAG-OPEN SA GOOGLE MAPS / APPLE MAPS
+  const openInMaps = () => {
+      if (location.latitude && location.longitude) {
+          const lat = parseFloat(location.latitude);
+          const lng = parseFloat(location.longitude);
+          const label = encodeURIComponent(location.name);
+          const url = Platform.select({
+              ios: `maps:0,0?q=${label}@${lat},${lng}`,
+              android: `geo:0,0?q=${lat},${lng}(${label})`
+          });
+          Linking.openURL(url);
+      }
+  };
+
   if (!location) return null;
 
+  const surrenderItem = location.searchedWasteType || location.accepted[0];
+  const rewardItem = location.rewardUnit;
+
   return (
-    <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
+    <View style={{ flex: 1, backgroundColor: '#F8F9FA' }}>
       <StatusBar barStyle="light-content" backgroundColor="#007C00" translucent={true} />
       
-      {/* HEADER (Gaya ng sa Community Post) */}
-      <View style={[styles.subHeader, { paddingTop: Math.max(insets.top, 20) + 15 }]}>
-          <View style={styles.subHeaderRow}>
+      <View style={[styles.header, { paddingTop: Math.max(insets.top, 20) + 15 }]}>
+          <View style={styles.headerRow}>
               <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
                   <Ionicons name="arrow-back" size={24} color="white" />
               </TouchableOpacity>
               <View style={{alignItems: 'center'}}>
-                  <Text style={styles.subHeaderTitle}>Reward Center</Text>
+                  <Text style={styles.headerTitle}>Rewards Drop-off Centers</Text>
+                  <Text style={styles.headerSubtitle}>Check your reward</Text>
               </View>
               <View style={{ width: 40 }} />
           </View>
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{paddingBottom: 40}}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{paddingBottom: 100}}>
           
-          {/* HERO IMAGE */}
-          <View style={{position: 'relative'}}>
-              {location.imageUrl ? (
-                  <Image source={{ uri: location.imageUrl }} style={styles.heroImage} />
-              ) : (
-                  <View style={[styles.heroImage, {backgroundColor: '#E8F5E9', justifyContent: 'center', alignItems: 'center'}]}>
-                      <MaterialCommunityIcons name="gift-outline" size={80} color="#A5D6A7" />
-                  </View>
-              )}
-              
-              <View style={styles.typeBadge}>
-                  <Text style={{color: 'white', fontWeight: 'bold', fontSize: 12}}>Reward Item</Text>
-              </View>
-
-              {location.isClaimed && (
-                  <View style={[styles.typeBadge, {right: 15, left: undefined, backgroundColor: '#9E9E9E'}]}>
-                      <Text style={{color: 'white', fontWeight: 'bold', fontSize: 12}}>CLAIMED</Text>
-                  </View>
-              )}
-          </View>
-
           <View style={{padding: 20}}>
               
-              {/* CENTER INFO ROW (Parang User Profile Row) */}
-              <View style={{flexDirection: 'row', alignItems: 'center', marginBottom: 20}}>
-                  <View style={styles.centerAvatar}>
-                      <MaterialCommunityIcons name="storefront-outline" size={24} color="#007C00" />
+              <View style={styles.exchangeContainer}>
+                  <View style={styles.boxRow}>
+                      <MaterialCommunityIcons name="cube-send" size={24} color="#007C00" />
+                      <Text style={styles.boxLabel}>You Will Surrender:</Text>
                   </View>
-                  <View style={{flex: 1}}>
-                      <View style={{flexDirection: 'row', alignItems: 'center'}}>
-                          <Text style={{fontSize: 18, fontWeight: 'bold', color: '#1C1C1E', marginRight: 5}}>{location.name}</Text>
-                          <MaterialCommunityIcons name="check-decagram" size={18} color="#007C00" />
+                  <View style={styles.itemBox}>
+                      <View style={styles.itemImagePlaceholder}>
+                         <MaterialCommunityIcons name="recycle" size={30} color="#ccc" />
                       </View>
-                      <View style={{flexDirection: 'row', alignItems: 'center', marginTop: 2}}>
-                          <MaterialCommunityIcons name="clock-time-four-outline" size={12} color="#8E8E93" style={{marginRight: 4}}/>
-                          <Text style={{fontSize: 13, color: '#8E8E93'}}>{location.schedule}</Text>
-                      </View>
-                  </View>
-              </View>
-
-              {/* REWARD TITLE */}
-              <Text style={{fontSize: 24, fontWeight: 'bold', color: '#1C1C1E', marginBottom: 15, lineHeight: 32}}>
-                  {location.rewardUnit}
-              </Text>
-
-              {/* REQUIREMENT ROW (Parang Price Row) */}
-              <View style={{flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 25}}>
-                  <View>
-                      <Text style={{fontSize: 32, fontWeight: 'bold', color: '#00A86B'}}>{location.baseRate}kg</Text>
-                      <Text style={{fontSize: 14, color: '#8E8E93', marginTop: 2}}>Required amount of {location.accepted[0]}</Text>
-                  </View>
-                  
-                  {location.contact && (
-                      <TouchableOpacity style={styles.contactBtn}>
-                          <Ionicons name="call" size={18} color="white" style={{marginRight: 8}} />
-                          <Text style={{color: 'white', fontWeight: 'bold', fontSize: 14}}>Call</Text>
-                      </TouchableOpacity>
-                  )}
-              </View>
-
-              {/* DESCRIPTION */}
-              {location.subText ? (
-                  <>
-                      <Text style={{fontSize: 18, fontWeight: 'bold', color: '#1C1C1E', marginBottom: 10}}>Description</Text>
-                      <Text style={{fontSize: 15, color: '#3C3C43', lineHeight: 24, marginBottom: 30}}>{location.subText}</Text>
-                  </>
-              ) : null}
-
-              {/* DETAILS SECTION (Tags & Location Map) */}
-              <View style={styles.detailsBorderBox}>
-                  
-                  {/* ACCEPTS TAGS */}
-                  <View style={{flexDirection: 'row', marginBottom: 20}}>
-                      <View style={{marginRight: 15, marginTop: 2}}><MaterialCommunityIcons name="recycle" size={24} color="#8E8E93" /></View>
                       <View style={{flex: 1}}>
-                          <Text style={{fontSize: 13, color: '#8E8E93', marginBottom: 8}}>Accepts Materials</Text>
-                          <View style={{flexDirection: 'row', flexWrap: 'wrap', gap: 6}}>
-                              {location.accepted.map((item, index) => (
-                                  <View key={index} style={styles.materialTag}>
-                                      <Text style={styles.materialTagText}>{item}</Text>
-                                  </View>
-                              ))}
+                          <Text style={styles.itemTitle}>{surrenderItem}</Text>
+                          <Text style={styles.itemSub}>Your waste should be:</Text>
+                          <View style={styles.badgeRow}>
+                              <View style={styles.miniBadge}><Text style={styles.miniBadgeText}>Clean</Text></View>
+                              <View style={styles.miniBadge}><Text style={styles.miniBadgeText}>Dry</Text></View>
                           </View>
                       </View>
                   </View>
 
-                  {/* LOCATION & MAP */}
-                  <View style={{flexDirection: 'row'}}>
-                      <View style={{marginRight: 15, marginTop: 2}}><MaterialCommunityIcons name="map-marker-outline" size={24} color="#8E8E93" /></View>
-                      <View style={{flex: 1}}>
-                          <Text style={{fontSize: 13, color: '#8E8E93', marginBottom: 4}}>Exact Location</Text>
-                          <Text style={{fontSize: 16, fontWeight: '600', color: '#1C1C1E', marginBottom: 15, lineHeight: 22}}>
-                              {location.address ? location.address : "Address not provided"}
-                          </Text>
-                          
-                          {(location.latitude && location.longitude) ? (
-                              <View style={styles.mapWrapper}>
-                                  <MapView
-                                      provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined} 
-                                      style={{width: '100%', height: '100%'}}
-                                      initialRegion={{
-                                          latitude: parseFloat(location.latitude),
-                                          longitude: parseFloat(location.longitude),
-                                          latitudeDelta: 0.005,
-                                          longitudeDelta: 0.005,
-                                      }}
-                                      scrollEnabled={false} 
-                                      zoomEnabled={false}
-                                      pitchEnabled={false}
-                                      rotateEnabled={false}
-                                  >
-                                      <Marker coordinate={{ latitude: parseFloat(location.latitude), longitude: parseFloat(location.longitude) }} />
-                                  </MapView>
-                              </View>
-                          ) : null}
+                  <View style={styles.dividerContainer}>
+                      <View style={styles.dividerLine} />
+                      <MaterialCommunityIcons name="swap-vertical-circle" size={30} color="#007C00" style={styles.swapIcon} />
+                      <View style={styles.dividerLine} />
+                  </View>
+
+                  <View style={[styles.boxRow, {marginTop: 5}]}>
+                      <MaterialCommunityIcons name="gift-outline" size={24} color="#007C00" />
+                      <Text style={styles.boxLabel}>Your Reward is:</Text>
+                  </View>
+                  <View style={[styles.itemBox, {backgroundColor: '#E8F5E9', borderColor: '#A5D6A7'}]}>
+                      <View style={[styles.itemImagePlaceholder, {backgroundColor: 'white'}]}>
+                          <Image source={{uri: location.imageUrl || 'https://cdn-icons-png.flaticon.com/512/5166/5166986.png'}} style={{width: 40, height: 40}} resizeMode="contain" />
+                      </View>
+                      <View style={{flex: 1, justifyContent: 'center'}}>
+                          <Text style={[styles.itemTitle, {color: '#007C00', fontSize: 20}]}>{rewardItem}</Text>
                       </View>
                   </View>
               </View>
 
-              {/* RULES / CHECKLIST */}
-              <View style={styles.warningCard}>
-                  <View style={{flexDirection: 'row', alignItems: 'center', marginBottom: 8}}>
-                      <MaterialCommunityIcons name="alert-circle-outline" size={20} color="#D32F2F" style={{marginRight: 8}} />
-                      <Text style={{fontSize: 15, fontWeight: 'bold', color: '#D32F2F'}}>Center Rules</Text>
+              <View style={styles.detailsContainer}>
+                  <Text style={styles.detailsTitle}>Collection Center Details</Text>
+                  <Text style={styles.centerName}>{location.name}</Text>
+
+                  <View style={styles.infoRow}>
+                      <View style={styles.iconCircle}><Ionicons name="location-outline" size={20} color="#666" /></View>
+                      <View style={{flex: 1}}>
+                          <Text style={styles.infoLabel}>Location</Text>
+                          <Text style={styles.infoText}>{location.address || 'Address not provided'}</Text>
+                      </View>
                   </View>
-                  <Text style={{fontSize: 14, color: '#333', lineHeight: 22}}>
-                      {location.checklist ? location.checklist : "Please make sure your recyclables are clean and separated by type before going to the center."}
-                  </Text>
+
+                  <View style={styles.infoRow}>
+                      <View style={styles.iconCircle}><MaterialCommunityIcons name="clock-time-four-outline" size={20} color="#666" /></View>
+                      <View style={{flex: 1}}>
+                          <Text style={styles.infoLabel}>Operating Hours</Text>
+                          <Text style={styles.infoText}>{location.schedule}</Text>
+                      </View>
+                  </View>
+
+                  <View style={styles.infoRow}>
+                      <View style={styles.iconCircle}><Ionicons name="call-outline" size={20} color="#666" /></View>
+                      <View style={{flex: 1}}>
+                          <Text style={styles.infoLabel}>Telephone Number</Text>
+                          <Text style={styles.infoText}>{location.contact || 'No contact provided'}</Text>
+                      </View>
+                  </View>
+
+                  {/* 🟢 MAP VIEW NA MAGO-OPEN SA GOOGLE MAPS KAPAG PININDOT */}
+                  {(location.latitude && location.longitude) ? (
+                      <TouchableOpacity 
+                          activeOpacity={0.8} 
+                          onPress={openInMaps} 
+                          style={styles.detailsMapWrapper}
+                      >
+                          <View pointerEvents="none" style={{ flex: 1 }}>
+                              <MapView
+                                  style={styles.detailsMap}
+                                  initialRegion={{
+                                      latitude: parseFloat(location.latitude),
+                                      longitude: parseFloat(location.longitude),
+                                      latitudeDelta: 0.005,
+                                      longitudeDelta: 0.005,
+                                  }}
+                                  scrollEnabled={false}
+                                  zoomEnabled={false}
+                                  pitchEnabled={false}
+                                  rotateEnabled={false}
+                              >
+                                  <Marker coordinate={{ latitude: parseFloat(location.latitude), longitude: parseFloat(location.longitude) }} />
+                              </MapView>
+                          </View>
+                          
+                          {/* OVERLAY PARA MALAMAN NA CLICKABLE SIYA */}
+                          <View style={styles.mapOverlayButton}>
+                              <Ionicons name="navigate-circle" size={20} color="white" />
+                              <Text style={styles.mapOverlayText}>Tap to open in Maps</Text>
+                          </View>
+                      </TouchableOpacity>
+                  ) : null}
               </View>
 
-              {/* ACTION BUTTON */}
+              <View style={styles.warningBox}>
+                  <View style={styles.warningHeader}>
+                      <MaterialCommunityIcons name="alert-outline" size={22} color="#D32F2F" />
+                      <Text style={styles.warningTitle}>Before You Go - Required Checklist</Text>
+                  </View>
+                  
+                  <View style={styles.warningBody}>
+                      {location.checklist ? (
+                          <Text style={styles.warningPointText}>{location.checklist}</Text>
+                      ) : (
+                          <>
+                              <View style={styles.bulletRow}>
+                                  <View style={styles.bullet} />
+                                  <View>
+                                      <Text style={styles.bulletTitle}>I have separated my waste by type</Text>
+                                      <Text style={styles.bulletSub}>Plastics, paper, and metals should be in separate bags.</Text>
+                                  </View>
+                              </View>
+                              <View style={styles.bulletRow}>
+                                  <View style={styles.bullet} />
+                                  <View>
+                                      <Text style={styles.bulletTitle}>I have cleaned and dried my items</Text>
+                                      <Text style={styles.bulletSub}>Dirty items will not be accepted by the center.</Text>
+                                  </View>
+                              </View>
+                          </>
+                      )}
+                  </View>
+              </View>
+
               {location.isClaimed ? (
                   <View style={[styles.actionBtn, {backgroundColor: '#9E9E9E', elevation: 0}]}>
-                      <MaterialCommunityIcons name="lock-outline" size={24} color="white" style={{marginRight: 8}} />
                       <Text style={styles.actionText}>Reward Already Claimed</Text>
                   </View>
               ) : (
                   <TouchableOpacity 
                       style={styles.actionBtn} 
                       onPress={() => router.push({ pathname: '/qr-generator', params: { rewardName: location.rewardUnit, materialType: location.searchedWasteType || location.accepted[0] } })}
+                      activeOpacity={0.8}
                   >
-                      <MaterialCommunityIcons name="qrcode-scan" size={24} color="white" style={{marginRight: 8}} />
-                      <Text style={styles.actionText}>Scan to Exchange</Text>
+                      <Text style={styles.actionText}>Surrender</Text>
                   </TouchableOpacity>
               )}
 
           </View>
       </ScrollView>
+
+      {/* 🟢 DRAGGABLE FLOATING CHAT BUTTON */}
+      <Animated.View 
+          style={[
+              styles.floatingChatWrapper, 
+              { transform: [{ translateX: pan.x }, { translateY: pan.y }] }
+          ]}
+          {...panResponder.panHandlers}
+      >
+          <TouchableOpacity 
+              activeOpacity={0.8}
+              onPress={() => router.push({ pathname: '/chat', params: { chatUser: location.name } })}
+          >
+              <Image 
+                  source={require('../assets/images/contact.png')} 
+                  style={{ width: 110, height: 110 }} 
+                  resizeMode="contain" 
+              />
+          </TouchableOpacity>
+      </Animated.View>
+
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  subHeader: { 
+  header: { 
       backgroundColor: '#007C00', 
       paddingHorizontal: 20, 
-      paddingBottom: 15, 
-      borderBottomLeftRadius: 0, 
-      borderBottomRightRadius: 0, 
+      paddingBottom: 25, 
+      borderBottomLeftRadius: 30, 
+      borderBottomRightRadius: 30, 
+      elevation: 5, 
       zIndex: 10 
   },
-  subHeaderRow: { 
-      flexDirection: 'row', 
-      justifyContent: 'space-between', 
-      alignItems: 'center', 
-      width: '100%' 
+  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', width: '100%' },
+  headerTitle: { color: 'white', fontSize: 18, fontWeight: 'bold' },
+  headerSubtitle: { color: 'rgba(255,255,255,0.9)', fontSize: 12, marginTop: 2 },
+  backButton: { padding: 5 },
+  
+  exchangeContainer: {
+      backgroundColor: 'white',
+      borderRadius: 20,
+      padding: 20,
+      borderWidth: 1,
+      borderColor: '#007C00',
+      marginBottom: 20,
+      elevation: 2,
+      shadowColor: '#000', shadowOffset: {width: 0, height: 2}, shadowOpacity: 0.1, shadowRadius: 4
   },
-  subHeaderTitle: { 
-      color: 'white', 
-      fontSize: 20, 
-      fontWeight: 'bold' 
+  boxRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
+  boxLabel: { fontSize: 13, fontWeight: 'bold', color: '#1C1C1E', marginLeft: 8 },
+  itemBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F5F7FA', borderRadius: 12, padding: 12, borderWidth: 1, borderColor: '#eee' },
+  itemImagePlaceholder: { width: 50, height: 50, borderRadius: 8, backgroundColor: 'white', justifyContent: 'center', alignItems: 'center', marginRight: 15, borderWidth: 1, borderColor: '#ddd' },
+  itemTitle: { fontSize: 18, fontWeight: 'bold', color: '#333' },
+  itemSub: { fontSize: 11, color: '#666', marginTop: 2, marginBottom: 4 },
+  badgeRow: { flexDirection: 'row', gap: 6 },
+  miniBadge: { paddingHorizontal: 10, paddingVertical: 2, borderRadius: 10, borderWidth: 1, borderColor: '#007C00' },
+  miniBadgeText: { fontSize: 9, color: '#007C00', fontWeight: 'bold', textTransform: 'uppercase' },
+  
+  dividerContainer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 10 },
+  dividerLine: { flex: 1, height: 1, backgroundColor: '#007C00' },
+  swapIcon: { marginHorizontal: 10 },
+
+  detailsContainer: { backgroundColor: 'white', borderRadius: 20, padding: 20, marginBottom: 20, elevation: 1 },
+  detailsTitle: { fontSize: 16, fontWeight: 'bold', color: '#333', marginBottom: 15 },
+  centerName: { fontSize: 18, fontWeight: 'bold', color: '#1C1C1E', marginBottom: 20 },
+  infoRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 15 },
+  iconCircle: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#F5F7FA', justifyContent: 'center', alignItems: 'center', marginRight: 15 },
+  infoLabel: { fontSize: 13, fontWeight: 'bold', color: '#333' },
+  infoText: { fontSize: 12, color: '#888', marginTop: 2 },
+
+  // 🟢 NEW MAP STYLES FOR LOCATION DETAILS
+  detailsMapWrapper: {
+      width: '100%',
+      height: 180,
+      borderRadius: 16,
+      overflow: 'hidden',
+      marginTop: 10,
+      borderWidth: 1,
+      borderColor: '#E5E5EA',
+      position: 'relative'
   },
-  backButton: { 
-      backgroundColor: 'rgba(255,255,255,0.2)', 
-      padding: 8, 
-      borderRadius: 12 
-  },
-  heroImage: {
-      width: '100%', 
-      height: 350, 
-      resizeMode: 'cover', 
-      backgroundColor: '#eee'
-  },
-  typeBadge: {
-      position: 'absolute', 
-      top: 15, 
-      left: 15, 
-      backgroundColor: '#007C00', 
-      paddingHorizontal: 12, 
-      paddingVertical: 6, 
-      borderRadius: 12, 
-      elevation: 3
-  },
-  centerAvatar: {
-      width: 50, 
-      height: 50, 
-      borderRadius: 25, 
-      marginRight: 15, 
-      backgroundColor: '#E8F5E9',
+  detailsMap: { width: '100%', height: '100%' },
+  mapOverlayButton: {
+      position: 'absolute',
+      bottom: 10,
+      alignSelf: 'center',
+      backgroundColor: 'rgba(0, 124, 0, 0.9)',
+      paddingHorizontal: 16,
+      paddingVertical: 8,
+      borderRadius: 20,
+      flexDirection: 'row',
       alignItems: 'center',
-      justifyContent: 'center'
+      elevation: 3,
   },
-  contactBtn: {
-      backgroundColor: '#007C00', 
-      paddingHorizontal: 20, 
-      paddingVertical: 12, 
-      borderRadius: 25, 
-      flexDirection: 'row', 
-      alignItems: 'center', 
-      elevation: 2
-  },
-  detailsBorderBox: {
-      borderTopWidth: 1, 
-      borderTopColor: '#E5E5EA', 
-      borderBottomWidth: 1, 
-      borderBottomColor: '#E5E5EA', 
-      paddingVertical: 20, 
-      marginBottom: 25
-  },
-  materialTag: {
-      backgroundColor: '#E8F5E9', 
-      paddingHorizontal: 12, 
-      paddingVertical: 6, 
-      borderRadius: 16
-  },
-  materialTagText: {
-      fontSize: 12, 
-      color: '#2E7D32', 
-      fontWeight: '600'
-  },
-  mapWrapper: {
-      width: '100%', 
-      height: 160, 
-      borderRadius: 16, 
-      overflow: 'hidden', 
-      borderWidth: 1, 
-      borderColor: '#E5E5EA'
-  },
-  warningCard: { 
-      backgroundColor: '#FFF5F5', 
-      borderRadius: 16, 
-      padding: 16, 
-      borderWidth: 1, 
-      borderColor: '#FFCDD2', 
-      marginBottom: 30 
-  },
+  mapOverlayText: { color: 'white', fontWeight: 'bold', fontSize: 12, marginLeft: 6 },
+
+  warningBox: { backgroundColor: '#FFEBEE', borderRadius: 16, borderWidth: 1, borderColor: '#FFCDD2', marginBottom: 25, overflow: 'hidden' },
+  warningHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 12, borderBottomWidth: 1, borderBottomColor: '#FFCDD2' },
+  warningTitle: { fontSize: 13, fontWeight: 'bold', color: '#D32F2F', marginLeft: 6 },
+  warningBody: { padding: 15 },
+  warningPointText: { fontSize: 13, color: '#333', lineHeight: 20 },
+  bulletRow: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 10 },
+  bullet: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#333', marginTop: 6, marginRight: 10 },
+  bulletTitle: { fontSize: 13, fontWeight: 'bold', color: '#333' },
+  bulletSub: { fontSize: 11, color: '#666', marginTop: 2 },
+
   actionBtn: { 
       backgroundColor: '#007C00', 
-      flexDirection: 'row', 
-      justifyContent: 'center', 
+      padding: 16, 
+      borderRadius: 12, 
       alignItems: 'center', 
-      padding: 18, 
-      borderRadius: 30, 
-      shadowColor: '#007C00', 
-      shadowOffset: { width: 0, height: 4 }, 
-      shadowOpacity: 0.3, 
-      shadowRadius: 5, 
-      elevation: 5 
+      elevation: 3,
+      shadowColor: '#007C00', shadowOffset: {width: 0, height: 4}, shadowOpacity: 0.3, shadowRadius: 5
   },
-  actionText: { 
-      color: 'white', 
-      fontWeight: 'bold', 
-      fontSize: 16 
+  actionText: { color: 'white', fontWeight: 'bold', fontSize: 16 },
+
+  floatingChatWrapper: {
+      position: 'absolute',
+      right: 15,
+      bottom: 120,
+      zIndex: 999,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.3,
+      shadowRadius: 5,
+      elevation: 8,
   }
 });

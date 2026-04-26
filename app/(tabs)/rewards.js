@@ -102,14 +102,8 @@ export default function Rewards() {
             if (centerData) {
                 const match = reward.condition.match(/(\d+)/);
                 const baseRate = match ? parseFloat(match[1]) : 1;
-                let incentiveText = "";
                 const rewardMultiplier = Math.floor(inputQty / baseRate);
-
-                if (rewardMultiplier >= 1) {
-                    incentiveText = `Exchange your ${inputQty}${unit} waste for ${rewardMultiplier}x ${reward.name}`;
-                } else {
-                    incentiveText = `Need at least ${baseRate}${unit} for ${reward.name} (Current: ${inputQty}${unit})`;
-                }
+                const isSufficient = rewardMultiplier >= 1;
 
                 const isAlreadyClaimed = userLogs?.some(log => {
                     if (!log.reward_claimed || !reward.name) return false;
@@ -119,19 +113,36 @@ export default function Rewards() {
                     return isNameMatch && log.collector_email === reward.user_email;
                 }) || false;
 
+                // 🟢 PINAKAAAYOS NA LOGIC PARA SA UI
+                // You Get Side (Palaging reward item, walang red text)
+                let totalRewardToGet = isSufficient ? `${rewardMultiplier}x ${reward.name}` : `1x ${reward.name}`;
+                let getExplanation = `For ${baseRate}${unit} clean ${finalWaste}`;
+
+                // You Bring Side (Dito lalabas yung minimum required)
+                let bringRequiredAmount = isSufficient 
+                    ? `${inputQty} ${unit === 'kg' ? 'kilograms' : 'pieces'}` 
+                    : `${baseRate} ${unit === 'kg' ? 'kilograms' : 'pieces'} minimum`;
+
                 computedResults.push({
                     id: reward.id,
-                    name: centerData.program_name,
-                    type: 'Collection Center',
-                    address: centerData.exact_location || `${centerData.barangay}, ${centerData.city}`,
-                    schedule: `${centerData.operating_days}, ${centerData.operating_hours}`,
+                    name: centerData.program_name || `Brgy. ${centerData.barangay}`,
+                    address: centerData.exact_location || `${centerData.city}, ${centerData.region}`,
+                    schedule: `${centerData.operating_days}: ${centerData.operating_hours}`,
                     contact: centerData.contact_number,
                     accepted: [reward.condition.replace(/[\d]+(kg|pcs)\s+/i, '')], 
+                    
+                    youBringItem: finalWaste,
+                    bringRequiredAmount: bringRequiredAmount,
+                    userHasAmount: `${inputQty}${unit}`, // Gagamitin sa red error text
+                    
+                    youGetItem: totalRewardToGet, // 1x Coffee bean (Hindi na magiging "Not Enough")
+                    youGetReason: getExplanation, // For 10kg clean bottle
+                    isSufficient: isSufficient,
+
                     baseRate: baseRate,
                     rewardUnit: reward.name,
                     subText: reward.description,
                     checklist: reward.checklist || '',
-                    computedIncentive: incentiveText,
                     imageUrl: reward.image_url,
                     isClaimed: isAlreadyClaimed,
                     searchedWasteType: finalWaste,
@@ -213,11 +224,9 @@ export default function Rewards() {
 
   return (
     <View style={{ flex: 1, backgroundColor: '#F5F7FA' }}>
-        {/* 🟢 IBINALIK SA TRANSLUCENT = TRUE PARA SAKOP ANG BUONG ITAAS */}
         <StatusBar barStyle="light-content" backgroundColor="#007C00" translucent={true} />
         
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{flex: 1}}>
-            {/* 🟢 DYNAMIC PADDING: Babasahin niya ang height ng status bar para hindi umangat ang header */}
             <View style={[styles.header, { paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 24) + 15 : Math.max(insets.top, 20) + 15, paddingBottom: 25 }]}>
                 <View style={styles.headerRow}>
                     <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
@@ -235,7 +244,6 @@ export default function Rewards() {
                 <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
                     <View style={styles.body}>
                         
-                        {/* 1. SEARCH FORM */}
                         <View style={[styles.formCard, { zIndex: 10 }]}>
                             <Text style={styles.cardTitle}>Search Locations</Text>
                             
@@ -306,7 +314,6 @@ export default function Rewards() {
                             </TouchableOpacity>
                         </View>
 
-                        {/* 2. HOW IT WORKS (Nakatago kapag may results na) */}
                         {!hasSearched && (
                             <View style={styles.guidelinesCard}>
                                 <Text style={styles.guideTitle}>HOW IT WORKS</Text>
@@ -337,24 +344,42 @@ export default function Rewards() {
                             </View>
                         )}
 
-                        {hasSearched && <Text style={[styles.sectionHeader, {color: '#007C00'}]}>AVAILABLE DROP OFF LOCATIONS</Text>}
+                        {hasSearched && <Text style={[styles.sectionHeader, {color: '#1C1C1E'}]}>Available Locations</Text>}
                     
                         {hasSearched && results.length === 0 && !loading && <Text style={styles.noResults}>No registered app centers found for this waste.</Text>}
 
                         {results.map((loc) => (
-                            <TouchableOpacity key={loc.id} style={styles.resultCard} onPress={() => router.push({ pathname: '/location-details', params: { data: JSON.stringify(loc) } })}>
+                            <TouchableOpacity 
+                                key={loc.id} 
+                                style={styles.tradeCard}
+                                activeOpacity={0.9}
+                                onPress={() => router.push({ pathname: '/location-details', params: { data: JSON.stringify(loc) } })}
+                            >
                                 {loc.isClaimed && <View style={styles.claimedBadge}><Text style={styles.claimedText}>ALREADY CLAIMED</Text></View>}
                                 
                                 <Text style={styles.locName}>{loc.name}</Text>
-                                <View style={styles.tagContainer}><Text style={styles.tagText}>{loc.type}</Text></View>
                                 
+                                <View style={styles.detailRow}>
+                                    <Ionicons name="location-outline" size={16} color="#999" style={{marginRight: 4}} />
+                                    <Text style={styles.detailText}>{loc.address} • {loc.schedule}</Text>
+                                </View>
+
+                                <View style={styles.materialsRow}>
+                                    {loc.accepted.map((item, index) => (
+                                        <View key={index} style={styles.materialTag}>
+                                            <Text style={styles.materialText}>{item}</Text>
+                                        </View>
+                                    ))}
+                                    <Text style={styles.distanceText}>Nearby</Text>
+                                </View>
+
                                 {(loc.latitude && loc.longitude) ? (
                                     <View style={styles.mapContainer}>
                                         <MapView
                                             style={styles.map}
                                             initialRegion={{
-                                                latitude: loc.latitude,
-                                                longitude: loc.longitude,
+                                                latitude: parseFloat(loc.latitude),
+                                                longitude: parseFloat(loc.longitude),
                                                 latitudeDelta: 0.005, 
                                                 longitudeDelta: 0.005,
                                             }}
@@ -363,23 +388,65 @@ export default function Rewards() {
                                             pitchEnabled={false}
                                             rotateEnabled={false}
                                         >
-                                            <Marker coordinate={{ latitude: loc.latitude, longitude: loc.longitude }} />
+                                            <Marker coordinate={{ latitude: parseFloat(loc.latitude), longitude: parseFloat(loc.longitude) }} />
                                         </MapView>
                                     </View>
                                 ) : null}
 
-                                <View style={styles.detailRow}><Ionicons name="location-outline" size={16} color="#666" style={{marginRight: 6}} /><Text style={styles.detailText}>{loc.address}</Text></View>
-                                <View style={styles.materialsRow}>{loc.accepted.map((item, index) => (<View key={index} style={styles.materialTag}><Text style={styles.materialText}>{item}</Text></View>))}</View>
-                                <View style={styles.incentiveBox}>
-                                    <Text style={styles.incentiveLabel}>Estimated Reward:</Text>
-                                    <Text style={styles.incentiveValue}>{loc.computedIncentive}</Text>
+                                <View style={styles.tradeBox}>
+                                    {/* 🟢 YOU BRING COLUMN */}
+                                    <View style={styles.tradeCol}>
+                                        <View style={{flexDirection: 'row', alignItems: 'center', marginBottom: 2}}>
+                                            <MaterialCommunityIcons name="cube-outline" size={16} color="#0056b3" style={{marginRight: 4}} />
+                                            <Text style={styles.tradeSideTitle}>You Bring:</Text>
+                                        </View>
+                                        <Text style={styles.tradeMainValue} numberOfLines={1}>{loc.youBringItem}</Text>
+                                        
+                                        {/* Ito yung "10 kilograms minimum" o kung ano man yung target ng center */}
+                                        <Text style={[styles.tradeSubValue, {color: '#0056b3', fontWeight: '500'}]}>{loc.bringRequiredAmount}</Text>
+                                        
+                                        {/* Dito sa You Bring ipapakita ang red alert kapag Not Enough */}
+                                        {!loc.isSufficient && (
+                                            <View style={{marginTop: 8}}>
+                                                <Text style={{color: '#D32F2F', fontWeight: 'bold', fontSize: 13}}>Not Enough</Text>
+                                                <Text style={{color: '#D32F2F', fontStyle: 'italic', fontSize: 11, marginTop: 2, lineHeight: 14}}>
+                                                    *Based on your search, you only have {loc.userHasAmount}.
+                                                </Text>
+                                            </View>
+                                        )}
+                                    </View>
+
+                                    <View style={styles.tradeArrowWrapper}>
+                                        <Ionicons name="arrow-forward" size={24} color="#00A86B" />
+                                    </View>
+
+                                    {/* 🟢 YOU GET COLUMN */}
+                                    <View style={styles.tradeCol}>
+                                        <View style={{flexDirection: 'row', alignItems: 'center', marginBottom: 2}}>
+                                            <MaterialCommunityIcons name="gift-outline" size={16} color="#00A86B" style={{marginRight: 4}} />
+                                            <Text style={[styles.tradeSideTitle, {color: '#00A86B'}]}>You Get:</Text>
+                                        </View>
+                                        {/* Wala nang "Not Enough" na text dito, lagi nang reward name */}
+                                        <Text style={[styles.tradeMainValue, {color: '#00A86B', fontSize: 14}]} numberOfLines={2}>
+                                            {loc.youGetItem}
+                                        </Text>
+                                        <Text style={[styles.tradeSubValue, {lineHeight: 14, marginTop: 2}]}>{loc.youGetReason}</Text>
+                                    </View>
                                 </View>
+
+                                <TouchableOpacity 
+                                    style={styles.selectBtn}
+                                    onPress={() => router.push({ pathname: '/location-details', params: { data: JSON.stringify(loc) } })}
+                                >
+                                    <Text style={styles.selectBtnText}>Select this location</Text>
+                                </TouchableOpacity>
                             </TouchableOpacity>
                         ))}
 
                         {hasSearched && (
                             <View style={{ marginTop: 20 }}>
-                                <Text style={[styles.sectionHeader, {color: '#007C00'}]}>Can’t find anything nearby? Check out our recommended places based on our research in your area.</Text>
+                                <Text style={[styles.sectionHeader, {color: '#007C00'}]}>Can’t find anything nearby?</Text>
+                                <Text style={{color: '#666', fontSize: 13, marginBottom: 15, paddingHorizontal: 5}}>Check out our recommended places based on our research in your area.</Text>
                                 
                                 {isAiLoading ? (
                                     <View style={{padding: 20, alignItems: 'center'}}>
@@ -445,21 +512,32 @@ const styles = StyleSheet.create({
   checkboxSub: { fontSize: 11, color: '#666', marginTop: 2, lineHeight: 14 },
   searchBtn: { backgroundColor: '#007C00', paddingVertical: 14, borderRadius: 25, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', elevation: 2 },
   searchBtnText: { fontWeight: 'bold', color: 'white', fontSize: 14 },
-  sectionHeader: { fontSize: 15, fontWeight: '900', marginBottom: 15, letterSpacing: 0.5 },
+  sectionHeader: { fontSize: 16, fontWeight: '900', marginBottom: 10, letterSpacing: 0.5, paddingHorizontal: 5 },
   noResults: { textAlign: 'center', color: '#999', marginTop: 10, marginBottom: 20, fontSize: 13 },
-  resultCard: { backgroundColor: 'white', borderRadius: 15, padding: 18, marginBottom: 15, ...getSafeShadow() },
-  locName: { fontSize: 17, fontWeight: 'bold', color: '#333' },
-  tagContainer: { backgroundColor: '#F5F5F5', alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 4, marginTop: 4, marginBottom: 12 },
-  mapContainer: { width: '100%', height: 130, borderRadius: 12, overflow: 'hidden', marginBottom: 12, borderWidth: 1, borderColor: '#E5E5EA' },
+  
+  tradeCard: { backgroundColor: 'white', borderRadius: 20, padding: 20, marginBottom: 20, ...getSafeShadow() },
+  locName: { fontSize: 18, fontWeight: 'bold', color: '#1C1C1E', marginBottom: 6 },
+  detailRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
+  detailText: { fontSize: 12, color: '#666', flex: 1 },
+  materialsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 15 },
+  
+  mapContainer: { width: '100%', height: 130, borderRadius: 12, overflow: 'hidden', marginBottom: 15, borderWidth: 1, borderColor: '#E5E5EA' },
   map: { width: '100%', height: '100%' },
-  detailRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
-  detailText: { fontSize: 13, color: '#555' },
-  materialsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 10, marginBottom: 15 },
-  materialTag: { backgroundColor: '#E8F5E9', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
-  materialText: { fontSize: 11, color: '#2E7D32', fontWeight: '600' },
-  incentiveBox: { backgroundColor: '#E0F2F1', padding: 15, borderRadius: 10, borderLeftWidth: 4, borderLeftColor: '#007C00' },
-  incentiveLabel: { fontSize: 11, color: '#00695C', marginBottom: 2 },
-  incentiveValue: { fontSize: 15, fontWeight: 'bold', color: '#004D40', lineHeight: 22 },
+  
+  materialTag: { backgroundColor: '#E8F5E9', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 12, borderWidth: 1, borderColor: '#A5D6A7' },
+  materialText: { fontSize: 11, color: '#00A86B', fontWeight: 'bold' },
+  distanceText: { marginLeft: 'auto', fontSize: 12, color: '#999', alignSelf: 'center', fontWeight: '500' },
+  
+  tradeBox: { flexDirection: 'row', backgroundColor: '#F0FFF4', borderRadius: 12, padding: 15, borderWidth: 1, borderColor: '#A5D6A7', marginBottom: 20, alignItems: 'flex-start' },
+  tradeCol: { flex: 1 },
+  tradeSideTitle: { fontSize: 11, color: '#0056b3', fontWeight: '600' },
+  tradeMainValue: { fontSize: 15, fontWeight: 'bold', color: '#1C1C1E', marginBottom: 4, textTransform: 'capitalize' },
+  tradeSubValue: { fontSize: 11, color: '#666' },
+  tradeArrowWrapper: { paddingHorizontal: 10, justifyContent: 'center', alignItems: 'center', alignSelf: 'center' },
+
+  selectBtn: { borderWidth: 1.5, borderColor: '#00A86B', paddingVertical: 12, borderRadius: 25, alignItems: 'center' },
+  selectBtnText: { color: '#00A86B', fontWeight: 'bold', fontSize: 14 },
+  
   claimedBadge: { position: 'absolute', top: 15, right: 15, backgroundColor: '#9E9E9E', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 5, zIndex: 5 },
   claimedText: { color: 'white', fontSize: 10, fontWeight: 'bold', letterSpacing: 1 },
   aiCard: { backgroundColor: '#F1F8E9', borderRadius: 15, padding: 18, marginBottom: 15, borderWidth: 1, borderColor: '#C8E6C9', ...getSafeShadow() },
