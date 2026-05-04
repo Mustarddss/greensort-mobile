@@ -70,16 +70,20 @@ export default function Dashboard() {
   ];
 
   useEffect(() => { 
-    const msgChannel = supabase.channel('dashboard-changes')
+    // 1. Dashboard Changes Channel
+    const uniqueTopic = `dashboard-changes-${Date.now()}`;
+    const msgChannel = supabase.channel(uniqueTopic)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, () => { fetchUserSessionAndData(); })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications' }, () => { fetchUserSessionAndData(); })
       .subscribe();
 
-    let presenceChannel = null;
+    // 2. Presence Channel (DITO YUNG FIX PARA HINDI MAG-CRASH PAG LIPAT NG TAB)
+    const uniquePresenceTopic = `app-presence-${Date.now()}`;
+    const presenceChannel = supabase.channel(uniquePresenceTopic);
+    
     const setupPresence = async () => {
         const { data: { user } } = await supabase.auth.getUser();
         if (user) {
-            presenceChannel = supabase.channel('app-presence');
             presenceChannel
                 .on('presence', { event: 'sync' }, () => { /* no log */ })
                 .subscribe(async (status) => {
@@ -90,7 +94,12 @@ export default function Dashboard() {
         }
     };
     setupPresence();
-    return () => { supabase.removeChannel(msgChannel); if (presenceChannel) { supabase.removeChannel(presenceChannel); } };
+
+    // 3. Clean up laging tinatawag para walang naiiwan na kalat
+    return () => { 
+        supabase.removeChannel(msgChannel); 
+        supabase.removeChannel(presenceChannel); 
+    };
   }, []);
 
   useFocusEffect(useCallback(() => { fetchUserSessionAndData(); }, [params.openPostTitle]));
@@ -192,6 +201,7 @@ export default function Dashboard() {
         const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
         if (status !== 'granted') { Alert.alert('Permission needed', 'We need access to your gallery!'); return; }
         
+        // 🟢 NA-FIX NA RIN YUNG DILAW NA WARNING DITO: mediaTypes: ['images']
         let result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsMultipleSelection: true, selectionLimit: 5 - form.imageUris.length, allowsEditing: false, quality: 0.8, base64: true });
         if (!result.canceled && result.assets) {
             let validUris = [];
@@ -413,7 +423,6 @@ export default function Dashboard() {
 
     return (
       <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
-        {/* 🟢 SOLID GREEN STATUS BAR TRICK */}
         <StatusBar barStyle="light-content" backgroundColor="transparent" translucent={true} />
         
         <View style={[styles.subHeader, { paddingTop: Math.max(insets.top, 20) + 15, paddingBottom: 15, borderBottomLeftRadius: 0, borderBottomRightRadius: 0, zIndex: 10 }]}>

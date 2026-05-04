@@ -48,7 +48,8 @@
         {
           "locationAlwaysAndWhenInUsePermission": "Allow GreenSort to use your location to pin meet-up spots."
         }
-      ]
+      ],
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true,

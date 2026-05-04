@@ -41,7 +41,9 @@ export default function TabLayout() {
 
     initializeData();
 
-    const msgChannel = supabase.channel('realtime-unread-msgs')
+    // 🟢 DITO ANG FIX: Nilagyan ng Date.now() para iwas bug sa Hot Reload
+    const uniqueTopic = `realtime-unread-msgs-${Date.now()}`;
+    const msgChannel = supabase.channel(uniqueTopic)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, () => {
          initializeData(); 
       }).subscribe();

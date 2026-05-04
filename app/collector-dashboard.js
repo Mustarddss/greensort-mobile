@@ -19,7 +19,6 @@ export default function CollectorDashboard() {
   const [editForm, setEditForm] = useState({ phone: '', location: '', days: '', hours: '' });
   const [isSaving, setIsSaving] = useState(false);
 
-  // 🟢 DYNAMIC DATA STATES
   const [stats, setStats] = useState({ todaySurrenders: 0, todayWeight: '0kg', monthSurrenders: 0 });
   const [recentSurrenders, setRecentSurrenders] = useState([]);
 
@@ -49,7 +48,6 @@ export default function CollectorDashboard() {
             setIsOnline(data.is_online !== false); 
         }
         
-        // 🟢 KUNIN ANG MGA RECENT SURRENDERS AT STATS GAMIT ANG TAMANG TABLE
         await fetchSurrendersAndStats(user.email);
     }
     setIsLoading(false);
@@ -57,7 +55,6 @@ export default function CollectorDashboard() {
 
   const fetchSurrendersAndStats = async (email) => {
     try {
-      // 1. KUNIN ANG TOP 10 RECENT SURRENDERS SA surrender_logs
       const { data: recentData } = await supabase
           .from('surrender_logs') 
           .select('*')
@@ -72,12 +69,11 @@ export default function CollectorDashboard() {
               time: formatTime(item.created_at),
               item: item.waste_type || 'Recyclables', 
               weight: `${item.weight_kg || 0}kg`, 
-              status: 'Received' // Walang status column ang surrender_logs kaya naka-default ito
+              status: 'Received' 
           }));
           setRecentSurrenders(formatted);
       }
 
-      // 2. I-CALCULATE ANG TODAY'S SUMMARY
       const startOfToday = new Date();
       startOfToday.setHours(0,0,0,0);
       const startOfMonth = new Date();
@@ -114,7 +110,6 @@ export default function CollectorDashboard() {
     }
   };
 
-  // HELPER FUNCTION PARA SA ORAS
   const formatTime = (dateString) => {
     const date = new Date(dateString);
     let hours = date.getHours();
@@ -165,12 +160,31 @@ export default function CollectorDashboard() {
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#0066FF" />
 
-      {/* 🔵 HEADER CARD */}
       <View style={styles.headerCard}>
         <View style={styles.topRow}>
-            <TouchableOpacity onPress={() => router.push('/dashboard')}><MaterialCommunityIcons name="home-variant" size={28} color="white" /></TouchableOpacity>
-            <View style={styles.badge}><Text style={styles.badgeText}>Collector Mode</Text></View>
-            <TouchableOpacity onPress={openSettings}><MaterialCommunityIcons name="cog" size={28} color="white" /></TouchableOpacity>
+            
+            {/* 🟢 NA-UPDATE NA TEXT HIERARCHY */}
+            <View style={{ flex: 1, paddingRight: 10 }}>
+                <Text style={{ color: 'white', fontSize: 26, fontWeight: '900', letterSpacing: -0.5 }} numberOfLines={1}>
+                    Welcome Back!
+                </Text>
+                <Text style={{ color: '#E3F2FD', fontSize: 15, fontWeight: '700', marginTop: 2 }}>
+                    Center Account
+                </Text>
+                <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, marginTop: 4 }} numberOfLines={1}>
+                    {shopDetails.name}
+                </Text>
+            </View>
+            
+            <View style={{flexDirection: 'row', alignItems: 'center'}}>
+                <TouchableOpacity onPress={() => router.push('/collector-messages')} style={{marginRight: 15}}>
+                    <MaterialCommunityIcons name="message-text-outline" size={26} color="white" />
+                </TouchableOpacity>
+                
+                <TouchableOpacity onPress={() => router.push('/center-settings')}>
+                    <MaterialCommunityIcons name="cog" size={28} color="white" />
+                </TouchableOpacity>
+            </View>
         </View>
 
         <View style={styles.shopInfo}>
@@ -194,7 +208,6 @@ export default function CollectorDashboard() {
         </View>
       </View>
 
-      {/* 🟢 MAIN ACTIONS */}
       <View style={styles.body}>
         <TouchableOpacity style={styles.processBtn} activeOpacity={0.8} onPress={() => router.push('/process-surrender')}>
             <MaterialCommunityIcons name="cube-send" size={24} color="white" style={{marginRight: 10}} />
@@ -213,14 +226,12 @@ export default function CollectorDashboard() {
             </TouchableOpacity>
         </View>
 
-        {/* RECENT SURRENDERS */}
         <View style={styles.listContainer}>
             <View style={styles.listHeader}>
                 <View style={{flexDirection: 'row', alignItems: 'center'}}><MaterialCommunityIcons name="clock-outline" size={20} color="#333" /><Text style={styles.listTitle}> Recent Surrenders</Text></View>
                 <TouchableOpacity onPress={() => router.push('/digital-logbook')}><Text style={styles.viewAll}>View All</Text></TouchableOpacity>
             </View>
             <ScrollView style={{height: 250}} showsVerticalScrollIndicator={false}>
-                {/* 🟢 DYNAMIC LIST */}
                 {recentSurrenders.length === 0 ? (
                     <Text style={{textAlign: 'center', marginTop: 50, color: '#999'}}>No recent surrenders yet.</Text>
                 ) : (
@@ -235,7 +246,6 @@ export default function CollectorDashboard() {
         </View>
       </View>
 
-      {/* FOOTER SUMMARY */}
       <View style={styles.footerCard}>
         <View style={styles.footerHeader}><Text style={styles.footerTitle}>Today's Summary</Text></View>
         <View style={styles.footerRow}>
@@ -245,7 +255,6 @@ export default function CollectorDashboard() {
         </View>
       </View>
 
-      {/* ⚙️ SETTINGS MODAL */}
       <Modal visible={isSettingsVisible} animationType="slide" transparent={true}>
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
             <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
@@ -282,8 +291,6 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F0F2F5' },
   headerCard: { backgroundColor: '#0066FF', paddingTop: 50, paddingBottom: 60, paddingHorizontal: 20, borderBottomLeftRadius: 30, borderBottomRightRadius: 30 },
   topRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
-  badge: { backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20 },
-  badgeText: { color: 'white', fontSize: 12, fontWeight: 'bold' },
   shopInfo: { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
   shopIconBg: { width: 50, height: 50, backgroundColor: 'white', borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginRight: 15 },
   shopName: { color: 'white', fontSize: 18, fontWeight: 'bold' },

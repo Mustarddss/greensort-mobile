@@ -60,6 +60,20 @@ export default function Rewards() {
         return;
     }
 
+    // 🟢 BAGONG GPS CHECKER LOGIC
+    try {
+        const gpsEnabled = await Location.hasServicesEnabledAsync();
+        if (!gpsEnabled) {
+            Alert.alert(
+                "GPS is Off",
+                "Please turn on your Location Services (GPS) so GreenSort AI can find the closest centers near you.",
+                [{ text: "OK" }]
+            );
+        }
+    } catch (e) {
+        console.log("GPS check failed", e);
+    }
+
     if (finalWaste.toLowerCase().includes("no detectable waste") || finalWaste.toLowerCase() === "none") {
         setHasSearched(true);
         setResults([]);
@@ -113,9 +127,19 @@ export default function Rewards() {
                     return isNameMatch && log.collector_email === reward.user_email;
                 }) || false;
 
-                // 🟢 PINAKAAAYOS NA LOGIC PARA SA UI
-                // You Get Side (Palaging reward item, walang red text)
-                let totalRewardToGet = isSufficient ? `${rewardMultiplier}x ${reward.name}` : `1x ${reward.name}`;
+                // 🟢 AUTO-CLEANER PARA SA LUMANG DATA ("1kg 1kg Rice" -> "1kg Rice")
+                let cleanRewardName = reward.name;
+                const doubleMatch = cleanRewardName.match(/^(\d+\s*(?:kg|pcs))\s+\1\s+(.*)/i);
+                if (doubleMatch) {
+                    cleanRewardName = `${doubleMatch[1]} ${doubleMatch[2]}`;
+                }
+
+                // 🟢 PINAKAAAYOS NA LOGIC PARA SA UI: 
+                // Tinanggal na ang "1x" kapag isa lang. "1kg Rice" na lang ang lalabas.
+                let totalRewardToGet = (isSufficient && rewardMultiplier > 1) 
+                    ? `${rewardMultiplier}x ${cleanRewardName}` 
+                    : cleanRewardName;
+                
                 let getExplanation = `For ${baseRate}${unit} clean ${finalWaste}`;
 
                 // You Bring Side (Dito lalabas yung minimum required)
@@ -135,15 +159,16 @@ export default function Rewards() {
                     bringRequiredAmount: bringRequiredAmount,
                     userHasAmount: `${inputQty}${unit}`, // Gagamitin sa red error text
                     
-                    youGetItem: totalRewardToGet, // 1x Coffee bean (Hindi na magiging "Not Enough")
-                    youGetReason: getExplanation, // For 10kg clean bottle
+                    youGetItem: totalRewardToGet, // Super malinis na reward text
+                    youGetReason: getExplanation, 
                     isSufficient: isSufficient,
 
                     baseRate: baseRate,
-                    rewardUnit: reward.name,
+                    rewardUnit: cleanRewardName, // Pinasa na yung malinis na pangalan para sa LocationDetails
                     subText: reward.description,
                     checklist: reward.checklist || '',
                     imageUrl: reward.image_url,
+                    wasteImageUrl: reward.waste_image_url, // 🟢 Nakapasa na yung Waste Image
                     isClaimed: isAlreadyClaimed,
                     searchedWasteType: finalWaste,
                     latitude: centerData.latitude,
@@ -159,18 +184,21 @@ export default function Rewards() {
         try {
             let { status } = await Location.requestForegroundPermissionsAsync();
             if (status === 'granted') {
-                let location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-                let geocode = await Location.reverseGeocodeAsync({
-                    latitude: location.coords.latitude,
-                    longitude: location.coords.longitude
-                });
-                if (geocode.length > 0) {
-                    const address = geocode[0];
-                    userLocation = [address.city || address.subregion, address.region].filter(Boolean).join(', ');
+                // 🟢 SAFE LOCATION FETCH (hindi magka-crash kung naka-off sa settings)
+                let location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }).catch(() => null);
+                if (location) {
+                    let geocode = await Location.reverseGeocodeAsync({
+                        latitude: location.coords.latitude,
+                        longitude: location.coords.longitude
+                    });
+                    if (geocode.length > 0) {
+                        const address = geocode[0];
+                        userLocation = [address.city || address.subregion, address.region].filter(Boolean).join(', ');
+                    }
                 }
             }
         } catch (locError) {
-            console.log("Error getting location:", locError);
+            console.log("Location retrieval skipped or failed.");
         }
 
         const aiPrompt = `The user wants to recycle or dispose of the following item: "${finalWaste}".
@@ -402,10 +430,8 @@ export default function Rewards() {
                                         </View>
                                         <Text style={styles.tradeMainValue} numberOfLines={1}>{loc.youBringItem}</Text>
                                         
-                                        {/* Ito yung "10 kilograms minimum" o kung ano man yung target ng center */}
                                         <Text style={[styles.tradeSubValue, {color: '#0056b3', fontWeight: '500'}]}>{loc.bringRequiredAmount}</Text>
                                         
-                                        {/* Dito sa You Bring ipapakita ang red alert kapag Not Enough */}
                                         {!loc.isSufficient && (
                                             <View style={{marginTop: 8}}>
                                                 <Text style={{color: '#D32F2F', fontWeight: 'bold', fontSize: 13}}>Not Enough</Text>
@@ -426,7 +452,7 @@ export default function Rewards() {
                                             <MaterialCommunityIcons name="gift-outline" size={16} color="#00A86B" style={{marginRight: 4}} />
                                             <Text style={[styles.tradeSideTitle, {color: '#00A86B'}]}>You Get:</Text>
                                         </View>
-                                        {/* Wala nang "Not Enough" na text dito, lagi nang reward name */}
+                                        
                                         <Text style={[styles.tradeMainValue, {color: '#00A86B', fontSize: 14}]} numberOfLines={2}>
                                             {loc.youGetItem}
                                         </Text>

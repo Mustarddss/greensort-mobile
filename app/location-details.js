@@ -1,9 +1,10 @@
 import React, { useRef } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, StatusBar, Platform, Animated, PanResponder, Dimensions, Linking } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, StatusBar, Platform, Animated, PanResponder, Dimensions, Linking, Alert } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import MapView, { Marker } from 'react-native-maps'; // 🟢 DINA-DAGDAG NATIN ANG MAPA
+import MapView, { Marker } from 'react-native-maps';
+import { supabase } from '../lib/supabase'; // 🟢 IN-IMPORT NATIN ANG SUPABASE DITO
 
 const screenWidth = Dimensions.get('window').width;
 
@@ -14,7 +15,6 @@ export default function LocationDetails() {
   
   const location = params.data ? JSON.parse(params.data) : null;
 
-  // 🟢 DRAG & SNAP LOGIC PARA SA FLOATING BUTTON
   const pan = useRef(new Animated.ValueXY()).current;
   
   const panResponder = useRef(
@@ -54,7 +54,6 @@ export default function LocationDetails() {
       })
   ).current;
 
-  // 🟢 FUNCTION PARA MAG-OPEN SA GOOGLE MAPS / APPLE MAPS
   const openInMaps = () => {
       if (location.latitude && location.longitude) {
           const lat = parseFloat(location.latitude);
@@ -70,8 +69,67 @@ export default function LocationDetails() {
 
   if (!location) return null;
 
-  const surrenderItem = location.searchedWasteType || location.accepted[0];
-  const rewardItem = location.rewardUnit;
+  const surrenderItem = location.searchedWasteType || location.accepted?.[0] || 'Recyclables';
+  const rewardItem = location.rewardUnit || 'Reward Item';
+  const rewardDesc = location.subText; 
+  const requiredAmount = location.bringRequiredAmount || 'Any amount'; 
+
+  // 🟢 🟢 🟢 ITO ANG MAGIC FUNCTION PARA SA INQUIRY CARD 🟢 🟢 🟢
+  const handleContactCenter = async () => {
+      try {
+          const { data: { session } } = await supabase.auth.getSession();
+          if (!session?.user) {
+              Alert.alert("Error", "Please login to contact the center.");
+              return;
+          }
+          const residentName = session.user.user_metadata?.full_name;
+
+          // 🔴 CRITICAL: Dapat ang receiverName ay ang eksaktong Full Name ng Center sa Supabase Auth!
+          // Kung may 'officerName' sa database niyo, 'yun ang gamitin. Kung wala, fallback sa location.name
+          const receiverName = location.officerName || location.name; 
+
+          // GAGAWA TAYO NG INQUIRY PAYLOAD NA BABASAHIN NG COLLECTOR-CHAT.JS
+          const inquiryContext = {
+              type: "Reward",
+              wasteType: surrenderItem,
+              wasteQty: requiredAmount,
+              rewardName: rewardItem,
+              location: location.address || location.name
+          };
+
+          const inquiryText = `Hi, Are you still accepting? |||INQUIRY|||${JSON.stringify(inquiryContext)}`;
+
+          // 1. Check muna natin kung nag-message na sila dati para hindi ma-spam yung Inquiry Card
+          const { data: existingChat } = await supabase
+              .from('messages')
+              .select('id')
+              .or(`and(sender_name.eq."${residentName}",receiver_name.eq."${receiverName}"),and(sender_name.eq."${receiverName}",receiver_name.eq."${residentName}")`)
+              .limit(1);
+
+          // 2. Kung bago pa lang sila mag-uusap, isesend na natin agad yung Inquiry Message!
+          if (!existingChat || existingChat.length === 0) {
+              await supabase.from('messages').insert([{
+                  sender_name: residentName,
+                  receiver_name: receiverName,
+                  text: inquiryText,
+                  is_read: false
+              }]);
+          }
+
+          // 3. Pagkatapos i-send, ibabato na natin yung Resident papunta sa Chat Screen
+          router.push({ 
+              pathname: '/chat', 
+              params: { 
+                  chatUser: receiverName, 
+                  centerEmail: location.userEmail || '' 
+              } 
+          });
+
+      } catch (error) {
+          console.log("Error starting chat:", error);
+          Alert.alert("Error", "Could not start chat with center.");
+      }
+  };
 
   return (
     <View style={{ flex: 1, backgroundColor: '#F8F9FA' }}>
@@ -99,12 +157,24 @@ export default function LocationDetails() {
                       <MaterialCommunityIcons name="cube-send" size={24} color="#007C00" />
                       <Text style={styles.boxLabel}>You Will Surrender:</Text>
                   </View>
-                  <View style={styles.itemBox}>
-                      <View style={styles.itemImagePlaceholder}>
-                         <MaterialCommunityIcons name="recycle" size={30} color="#ccc" />
+                  <View style={[styles.itemBox, { alignItems: 'flex-start' }]}>
+                      <View style={[styles.itemImagePlaceholder, location.wasteImageUrl && { borderWidth: 0, backgroundColor: 'transparent' }]}>
+                         {location.wasteImageUrl ? (
+                             <Image source={{uri: location.wasteImageUrl}} style={{width: '100%', height: '100%', borderRadius: 8}} resizeMode="cover" />
+                         ) : (
+                             <MaterialCommunityIcons name="recycle" size={30} color="#ccc" />
+                         )}
                       </View>
-                      <View style={{flex: 1}}>
+                      
+                      <View style={{flex: 1, paddingTop: 2}}>
                           <Text style={styles.itemTitle}>{surrenderItem}</Text>
+                          
+                          {requiredAmount ? (
+                              <Text style={{fontSize: 12, color: '#0056b3', fontWeight: 'bold', marginTop: 2, marginBottom: 6}}>
+                                  Target: {requiredAmount}
+                              </Text>
+                          ) : null}
+
                           <Text style={styles.itemSub}>Your waste should be:</Text>
                           <View style={styles.badgeRow}>
                               <View style={styles.miniBadge}><Text style={styles.miniBadgeText}>Clean</Text></View>
@@ -123,12 +193,19 @@ export default function LocationDetails() {
                       <MaterialCommunityIcons name="gift-outline" size={24} color="#007C00" />
                       <Text style={styles.boxLabel}>Your Reward is:</Text>
                   </View>
-                  <View style={[styles.itemBox, {backgroundColor: '#E8F5E9', borderColor: '#A5D6A7'}]}>
+                  
+                  <View style={[styles.itemBox, {backgroundColor: '#E8F5E9', borderColor: '#A5D6A7', alignItems: 'flex-start'}]}>
                       <View style={[styles.itemImagePlaceholder, {backgroundColor: 'white'}]}>
                           <Image source={{uri: location.imageUrl || 'https://cdn-icons-png.flaticon.com/512/5166/5166986.png'}} style={{width: 40, height: 40}} resizeMode="contain" />
                       </View>
-                      <View style={{flex: 1, justifyContent: 'center'}}>
-                          <Text style={[styles.itemTitle, {color: '#007C00', fontSize: 20}]}>{rewardItem}</Text>
+                      <View style={{flex: 1, justifyContent: 'center', paddingTop: 2}}>
+                          <Text style={[styles.itemTitle, {color: '#007C00', fontSize: 18}]}>{rewardItem}</Text>
+                          
+                          {rewardDesc ? (
+                              <Text style={{fontSize: 12, color: '#2E7D32', marginTop: 4, lineHeight: 18}}>
+                                  {rewardDesc}
+                              </Text>
+                          ) : null}
                       </View>
                   </View>
               </View>
@@ -161,7 +238,6 @@ export default function LocationDetails() {
                       </View>
                   </View>
 
-                  {/* 🟢 MAP VIEW NA MAGO-OPEN SA GOOGLE MAPS KAPAG PININDOT */}
                   {(location.latitude && location.longitude) ? (
                       <TouchableOpacity 
                           activeOpacity={0.8} 
@@ -186,7 +262,6 @@ export default function LocationDetails() {
                               </MapView>
                           </View>
                           
-                          {/* OVERLAY PARA MALAMAN NA CLICKABLE SIYA */}
                           <View style={styles.mapOverlayButton}>
                               <Ionicons name="navigate-circle" size={20} color="white" />
                               <Text style={styles.mapOverlayText}>Tap to open in Maps</Text>
@@ -242,7 +317,7 @@ export default function LocationDetails() {
           </View>
       </ScrollView>
 
-      {/* 🟢 DRAGGABLE FLOATING CHAT BUTTON */}
+      {/* 🟢 FLOATING CHAT BUTTON (Ngayon dadaan muna sa handleContactCenter function) */}
       <Animated.View 
           style={[
               styles.floatingChatWrapper, 
@@ -252,7 +327,7 @@ export default function LocationDetails() {
       >
           <TouchableOpacity 
               activeOpacity={0.8}
-              onPress={() => router.push({ pathname: '/chat', params: { chatUser: location.name } })}
+              onPress={handleContactCenter} 
           >
               <Image 
                   source={require('../assets/images/contact.png')} 
@@ -313,7 +388,6 @@ const styles = StyleSheet.create({
   infoLabel: { fontSize: 13, fontWeight: 'bold', color: '#333' },
   infoText: { fontSize: 12, color: '#888', marginTop: 2 },
 
-  // 🟢 NEW MAP STYLES FOR LOCATION DETAILS
   detailsMapWrapper: {
       width: '100%',
       height: 180,
