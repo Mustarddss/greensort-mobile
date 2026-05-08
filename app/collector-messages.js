@@ -26,7 +26,6 @@ export default function CollectorInbox() {
       const userEmail = session.user.email;
 
       const fetchUniqueChats = async () => {
-          // 🔴 KUNIN ANG PROGRAM NAME SA DATABASE PARA MATCH SA RESIDENT
           const { data: profile } = await supabase
               .from('dropoff_applications')
               .select('program_name, applicant_name')
@@ -36,10 +35,7 @@ export default function CollectorInbox() {
           const programName = profile?.program_name || '';
           const applicantName = profile?.applicant_name || '';
 
-          // Ito ang lahat ng posibleng pangalan na chinat ng Resident
           const myAliases = [officerName, programName, applicantName].filter(Boolean);
-
-          // Gawa ng dynamic query para mahanap lahat ng messages natin
           const orQuery = myAliases.map(alias => `sender_name.eq."${alias}",receiver_name.eq."${alias}"`).join(',');
 
           const { data: messages, error } = await supabase
@@ -56,22 +52,44 @@ export default function CollectorInbox() {
           const conversationsMap = new Map();
 
           messages?.forEach(msg => {
-              // Hanapin kung sino ang kausap natin
               const otherUser = myAliases.includes(msg.sender_name) ? msg.receiver_name : msg.sender_name;
+              const isMe = myAliases.includes(msg.sender_name);
               
+              let rawText = msg.text || '';
+              let cleanMsg = rawText.split('|||INQUIRY|||')[0].trim();
+              
+              let inquiryTag = null;
+              if (rawText.includes('|||INQUIRY|||')) {
+                  try {
+                      const context = JSON.parse(rawText.split('|||INQUIRY|||')[1]);
+                      inquiryTag = context.rewardName || context.type;
+                  } catch(e){}
+              }
+
               if (!conversationsMap.has(otherUser)) {
                   conversationsMap.set(otherUser, {
                       id: `${userEmail}_${otherUser}`, 
                       partnerName: otherUser,
-                      lastMessage: msg.text,
+                      lastMessageOriginal: isMe ? (cleanMsg ? `You: ${cleanMsg}` : 'You: ') : cleanMsg,
                       lastMessageTime: msg.created_at,
-                      isRead: myAliases.includes(msg.sender_name) ? true : msg.is_read,
-                      lastSenderIsMe: myAliases.includes(msg.sender_name),
+                      lastImageUrl: msg.image_url,
+                      isRead: isMe ? true : msg.is_read,
+                      lastSenderIsMe: isMe,
+                      inquiryTag: inquiryTag
                   });
               }
           });
 
-          const conversationList = Array.from(conversationsMap.values());
+          const conversationList = Array.from(conversationsMap.values()).map(chat => {
+              let displayMsg = chat.lastMessageOriginal;
+              if (chat.lastImageUrl) { 
+                  displayMsg = chat.lastSenderIsMe ? 'You sent an attachment.' : 'Sent an attachment.'; 
+              } else if (chat.inquiryTag && (displayMsg === 'You: ' || displayMsg === '')) {
+                  displayMsg = chat.lastSenderIsMe ? `You sent an inquiry card.` : `Sent an inquiry card.`;
+              }
+              return { ...chat, displayMessage: displayMsg };
+          });
+
           if(isMounted) {
               setConversations(conversationList);
               setIsLoading(false);
@@ -80,7 +98,8 @@ export default function CollectorInbox() {
 
       await fetchUniqueChats();
 
-      messageChannel = supabase.channel('public:messages_inbox')
+      // 🟢 FIXED SUPABASE REALTIME ERROR
+      messageChannel = supabase.channel(`inbox_center_${Date.now()}`)
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, () => {
             fetchUniqueChats(); 
         }).subscribe();
@@ -105,17 +124,6 @@ export default function CollectorInbox() {
     if(date > lastWeek) return date.toLocaleDateString([], { weekday: 'short' });
 
     return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
-  };
-
-  const getInquiryText = (lastMessage) => {
-      if (!lastMessage || typeof lastMessage !== 'string') return null;
-      if (!lastMessage.includes('|||INQUIRY|||')) return null;
-      try {
-          const parts = lastMessage.split('|||INQUIRY|||');
-          const context = JSON.parse(parts[1]);
-          if (!context || !context.type) return null;
-          return `Inquiry: ${context.type || 'Post'}`;
-      } catch(e) { return null; }
   };
 
   const getPartnerAvatar = (partnerName) => `https://ui-avatars.com/api/?name=${encodeURIComponent(partnerName)}&background=random&color=fff&bold=true`;
@@ -159,8 +167,6 @@ export default function CollectorInbox() {
                 contentContainerStyle={{ paddingHorizontal: 15, paddingTop: 10, paddingBottom: 20 }}
                 showsVerticalScrollIndicator={false}
                 renderItem={({ item }) => {
-                    const inquiryTag = getInquiryText(item.lastMessage);
-                    const cleanMessage = item.lastMessage ? item.lastMessage.split('|||INQUIRY|||')[0].trim() : '';
                     const isHighlighted = item.id === selectedChatId; 
 
                     return (
@@ -169,7 +175,8 @@ export default function CollectorInbox() {
                           activeOpacity={0.8}
                           onPress={() => {
                                 setSelectedChatId(item.id);
-                                router.push(`/collector-chat?chatUser=${encodeURIComponent(item.partnerName)}`)
+                                // 🟢 FIXED THE ROUTING TO ENSURE CHAT USER IS PASSED
+                                router.push({ pathname: '/collector-chat', params: { chatUser: item.partnerName } });
                           }}
                         >
                             <View style={styles.avatarWrap}>
@@ -182,16 +189,19 @@ export default function CollectorInbox() {
                                     <Text style={[styles.timeText, !item.isRead && {color: '#0066FF', fontWeight: 'bold'}]}>{formatSmartTime(item.lastMessageTime)}</Text>
                                 </View>
                                 
-                                {!!inquiryTag ? (
+                                {/* 🟢 EXACT BLUE BADGE DESIGN PARA SA CENTER INBOX */}
+                                {item.inquiryTag && (
                                     <View style={styles.inquiryBadge}>
-                                        <Text style={styles.inquiryTagText}>{inquiryTag}</Text>
+                                        <MaterialCommunityIcons name="tag-text-outline" size={12} color="#0066FF" />
+                                        <Text style={styles.inquiryTagText} numberOfLines={1}>
+                                            Question about {item.inquiryTag}
+                                        </Text>
                                     </View>
-                                ) : null}
+                                )}
 
                                 <View style={styles.msgRow}>
-                                    {item.lastSenderIsMe && <Text style={styles.youText}>You: </Text>}
                                     <Text style={[styles.lastMsg, !item.isRead && { color: '#333', fontWeight: '600' }]} numberOfLines={1}>
-                                        {cleanMessage}
+                                        {item.displayMessage}
                                     </Text>
                                     {!item.isRead && <View style={styles.unreadDot} />}
                                 </View>
@@ -207,30 +217,162 @@ export default function CollectorInbox() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0066FF' }, 
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 15, paddingBottom: 20, backgroundColor: '#0066FF' },
-  headerTitle: { fontSize: 24, fontWeight: '800', color: 'white', letterSpacing: 0.5 },
-  backBtn: { padding: 5, marginLeft: -5 },
-  body: { flex: 1, backgroundColor: '#F7F8FA', borderTopLeftRadius: 30, borderTopRightRadius: 30, overflow: 'hidden' },
-  searchContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFFFFF', borderRadius: 14, margin: 15, paddingHorizontal: 12, height: 48, borderWidth: 1, borderColor: '#ECEFF1', elevation: 1 },
-  searchIcon: { marginRight: 10 },
-  searchInput: { flex: 1, fontSize: 15, color: '#1C1C1E' },
-  chatCard: { flexDirection: 'row', backgroundColor: '#FFFFFF', borderRadius: 20, padding: 15, marginBottom: 10, alignItems: 'center', borderWidth: 1, borderColor: 'transparent', elevation: 1 },
-  highlightedCard: { borderColor: '#0066FF', backgroundColor: '#F4F9FF' },
-  avatarWrap: { position: 'relative', marginRight: 15 },
-  avatar: { width: 56, height: 56, borderRadius: 28, backgroundColor: '#e0e0e0' },
-  detailsWrap: { flex: 1, justifyContent: 'center' },
-  nameRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 },
-  partnerName: { fontSize: 16, fontWeight: '700', color: '#1C1C1E', flex: 1, marginRight: 10 },
-  timeText: { fontSize: 12, color: '#757575' },
-  inquiryBadge: { backgroundColor: '#E1F5FE', borderWidth: 1, borderColor: '#81D4FA', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3, alignSelf: 'flex-start', marginBottom: 4, marginTop: -1 },
-  inquiryTagText: { fontSize: 10, fontWeight: 'bold', color: '#0277BD', textTransform: 'uppercase', letterSpacing: 0.2 },
-  msgRow: { flexDirection: 'row', alignItems: 'center' },
-  youText: { fontSize: 13, color: '#757575', fontWeight: '500' },
-  lastMsg: { fontSize: 13, color: '#757575', flex: 1 },
-  unreadDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#0066FF', marginLeft: 10 },
-  centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  emptyWrap: { flex: 1, justifyContent: 'center', alignItems: 'center', marginTop: 100, paddingHorizontal: 40 },
-  emptyText: { fontSize: 18, fontWeight: 'bold', color: '#333', marginTop: 20 },
-  emptySub: { fontSize: 14, color: '#757575', textAlign: 'center', marginTop: 10 },
+  container: { 
+      flex: 1, 
+      backgroundColor: '#0066FF' 
+  }, 
+  header: { 
+      flexDirection: 'row', 
+      alignItems: 'center', 
+      justifyContent: 'space-between', 
+      paddingHorizontal: 15, 
+      paddingBottom: 20, 
+      backgroundColor: '#0066FF' 
+  },
+  headerTitle: { 
+      fontSize: 24, 
+      fontWeight: '800', 
+      color: 'white', 
+      letterSpacing: 0.5 
+  },
+  backBtn: { 
+      padding: 5, 
+      marginLeft: -5 
+  },
+  body: { 
+      flex: 1, 
+      backgroundColor: '#F7F8FA', 
+      borderTopLeftRadius: 30, 
+      borderTopRightRadius: 30, 
+      overflow: 'hidden' 
+  },
+  searchContainer: { 
+      flexDirection: 'row', 
+      alignItems: 'center', 
+      backgroundColor: '#FFFFFF', 
+      borderRadius: 14, 
+      margin: 15, 
+      paddingHorizontal: 12, 
+      height: 48, 
+      borderWidth: 1, 
+      borderColor: '#ECEFF1', 
+      elevation: 1 
+  },
+  searchIcon: { 
+      marginRight: 10 
+  },
+  searchInput: { 
+      flex: 1, 
+      fontSize: 15, 
+      color: '#1C1C1E' 
+  },
+  chatCard: { 
+      flexDirection: 'row', 
+      backgroundColor: '#FFFFFF', 
+      borderRadius: 20, 
+      padding: 15, 
+      marginBottom: 10, 
+      alignItems: 'center', 
+      borderWidth: 1, 
+      borderColor: 'transparent', 
+      elevation: 1 
+  },
+  highlightedCard: { 
+      borderColor: '#0066FF', 
+      backgroundColor: '#F4F9FF' 
+  },
+  avatarWrap: { 
+      position: 'relative', 
+      marginRight: 15 
+  },
+  avatar: { 
+      width: 56, 
+      height: 56, 
+      borderRadius: 28, 
+      backgroundColor: '#e0e0e0' 
+  },
+  detailsWrap: { 
+      flex: 1, 
+      justifyContent: 'center' 
+  },
+  nameRow: { 
+      flexDirection: 'row', 
+      justifyContent: 'space-between', 
+      alignItems: 'center', 
+      marginBottom: 2 
+  },
+  partnerName: { 
+      fontSize: 16, 
+      fontWeight: '700', 
+      color: '#1C1C1E', 
+      flex: 1, 
+      marginRight: 10 
+  },
+  timeText: { 
+      fontSize: 12, 
+      color: '#757575' 
+  },
+  
+  // 🟢 BLUE BADGE DESIGN
+  inquiryBadge: { 
+      flexDirection: 'row', 
+      alignItems: 'center', 
+      backgroundColor: '#FFFFFF', 
+      borderWidth: 1, 
+      borderColor: '#0066FF', 
+      paddingHorizontal: 8, 
+      paddingVertical: 3, 
+      borderRadius: 12, 
+      alignSelf: 'flex-start', 
+      marginTop: 3, 
+      marginBottom: 3, 
+      gap: 4 
+  },
+  inquiryTagText: { 
+      fontSize: 10, 
+      fontWeight: 'bold', 
+      color: '#0066FF' 
+  },
+
+  msgRow: { 
+      flexDirection: 'row', 
+      alignItems: 'center', 
+      paddingRight: 10 
+  },
+  lastMsg: { 
+      fontSize: 13, 
+      color: '#757575', 
+      flex: 1 
+  },
+  unreadDot: { 
+      width: 10, 
+      height: 10, 
+      borderRadius: 5, 
+      backgroundColor: '#0066FF', 
+      marginLeft: 10 
+  },
+  centered: { 
+      flex: 1, 
+      justifyContent: 'center', 
+      alignItems: 'center' 
+  },
+  emptyWrap: { 
+      flex: 1, 
+      justifyContent: 'center', 
+      alignItems: 'center', 
+      marginTop: 100, 
+      paddingHorizontal: 40 
+  },
+  emptyText: { 
+      fontSize: 18, 
+      fontWeight: 'bold', 
+      color: '#333', 
+      marginTop: 20 
+  },
+  emptySub: { 
+      fontSize: 14, 
+      color: '#757575', 
+      textAlign: 'center', 
+      marginTop: 10 
+  }
 });

@@ -17,7 +17,6 @@ export default function CollectorChatScreen() {
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState('');
   
-  // 🔴 I-S-SAVE NATIN YUNG "PROGRAM NAME" AS SENDER PARA MATCH SA RESIDENT
   const [myPrimaryName, setMyPrimaryName] = useState(''); 
   const [myAliases, setMyAliases] = useState([]);
 
@@ -27,6 +26,9 @@ export default function CollectorChatScreen() {
 
   const [isUploading, setIsUploading] = useState(false);
   const [isInitialLoading, setIsInitialLoading] = useState(true); 
+  const [replyingTo, setReplyingTo] = useState(null);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const isNearBottomRef = useRef(true);
 
   const displayedMessages = useMemo(() => [...messages].slice().reverse(), [messages]);
 
@@ -41,7 +43,6 @@ export default function CollectorChatScreen() {
       const officerName = session.user.user_metadata?.full_name;
       const userEmail = session.user.email;
 
-      // 🔴 KUNIN ANG MGA ALIAS NATIN SA DATABASE
       const { data: profile } = await supabase.from('dropoff_applications').select('program_name, applicant_name').eq('user_email', userEmail).single();
       
       const programName = profile?.program_name || '';
@@ -50,11 +51,9 @@ export default function CollectorChatScreen() {
       
       if (isMounted) {
           setMyAliases(aliases);
-          // Gagamitin natin yung Program Name pang-reply para alam ng Resident kung sino tayo!
           setMyPrimaryName(programName || officerName); 
       }
 
-      // MARK AS READ (Kahit alin man sa aliases natin yung sinendan nila)
       const updateOrQuery = aliases.map(alias => `receiver_name.eq."${alias}"`).join(',');
       await supabase.from('messages').update({ is_read: true }).eq('sender_name', chatUser).or(updateOrQuery);
 
@@ -63,7 +62,6 @@ export default function CollectorChatScreen() {
           if (profileData?.avatar_url && isMounted) setChatUserAvatar(profileData.avatar_url);
       }
 
-      // FETCH CHAT HISTORY (Hahanapin kapag ang Resident nakipag-usap sa KAHIT SINO sa aliases natin)
       const orQuery = aliases.map(alias => `and(sender_name.eq."${alias}",receiver_name.eq."${chatUser}"),and(sender_name.eq."${chatUser}",receiver_name.eq."${alias}")`).join(',');
 
       const { data, error } = await supabase.from('messages')
@@ -84,7 +82,8 @@ export default function CollectorChatScreen() {
         if (isMounted) setIsInitialLoading(false);
     }, 1500);
 
-    messageChannel = supabase.channel('public:collector_messages')
+    // 🟢 FIXED SUPABASE REALTIME ERROR: Unique channel name every mount
+    messageChannel = supabase.channel(`chat_center_${Date.now()}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
           
           const isThisChat = myAliases.some(alias => 
@@ -99,6 +98,11 @@ export default function CollectorChatScreen() {
               });
               
               if (payload.new.sender_name === chatUser) {
+                  if (isNearBottomRef.current) {
+                      requestAnimationFrame(() => flatListRef.current?.scrollToOffset({ offset: 0, animated: true }));
+                  } else {
+                      setUnreadCount(c => c + 1);
+                  }
                   supabase.from('messages').update({ is_read: true }).eq('id', payload.new.id).then();
               }
           }
@@ -109,7 +113,7 @@ export default function CollectorChatScreen() {
       clearTimeout(loadingFallback);
       if (messageChannel) supabase.removeChannel(messageChannel);
     };
-  }, [chatUser, myAliases.length]); // Added dependency
+  }, [chatUser, myAliases.length]); 
 
   const handleSend = async (overrideText = null) => {
     let textToSend = overrideText || newMessage;
@@ -118,15 +122,18 @@ export default function CollectorChatScreen() {
     const tempId = `temp-${Date.now()}`;
     const optimisticMsg = {
         id: tempId,
-        sender_name: myPrimaryName, // Dito na magagamit yung Program Name!
+        sender_name: myPrimaryName, 
         receiver_name: chatUser, 
         text: textToSend,
+        reply_to_text: replyingTo ? replyingTo.text : null,
+        reply_to_sender: replyingTo ? replyingTo.sender_name : null,
         is_read: false,
         created_at: new Date().toISOString(),
         status: 'sending'
     };
 
     setNewMessage('');
+    setReplyingTo(null);
     setMessages(prev => [...prev, optimisticMsg]);
     requestAnimationFrame(() => flatListRef.current?.scrollToOffset({ offset: 0, animated: true }));
 
@@ -134,6 +141,8 @@ export default function CollectorChatScreen() {
         sender_name: optimisticMsg.sender_name, 
         receiver_name: optimisticMsg.receiver_name, 
         text: optimisticMsg.text,
+        reply_to_text: optimisticMsg.reply_to_text,
+        reply_to_sender: optimisticMsg.reply_to_sender,
         is_read: false
     }]).select().single();
 
@@ -177,9 +186,16 @@ export default function CollectorChatScreen() {
     }
   };
 
-  const formatTime = (dateString) => {
+  const formatSmartTime = (dateString) => {
     if (!dateString) return '';
-    return new Date(dateString).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true });
+    const date = new Date(dateString);
+    const today = new Date();
+    const isToday = date.toDateString() === today.toDateString();
+    const timeOpts = { hour: 'numeric', minute: '2-digit', hour12: true };
+    const timeStr = date.toLocaleTimeString([], timeOpts);
+    if (isToday) return timeStr;
+    const dayStr = date.toLocaleDateString([], { weekday: 'short' }).toUpperCase();
+    return `${dayStr} • ${timeStr}`;
   };
 
   return (
@@ -189,7 +205,6 @@ export default function CollectorChatScreen() {
     >
       <StatusBar barStyle="light-content" backgroundColor="#0066FF" translucent={false} />
 
-      {/* 🔵 HEADER EXACT DESIGN */}
       <View style={[styles.header, { paddingTop: Platform.OS === 'ios' ? Math.max(insets.top, 20) + 10 : 15 }]}>
         <TouchableOpacity onPress={() => router.back()} style={{ marginRight: 15, padding: 5 }}>
             <Ionicons name="arrow-back" size={26} color="white" />
@@ -203,7 +218,7 @@ export default function CollectorChatScreen() {
             <Text style={styles.headerTitle}>{chatUser}</Text>
             <View style={{flexDirection: 'row', alignItems: 'center', marginTop: 2}}>
                 <Ionicons name="location-outline" size={14} color="rgba(255,255,255,0.9)" />
-                <Text style={{fontSize: 13, color: 'rgba(255,255,255,0.9)', marginLeft: 3}}>{chatUserLocation || 'Dasmarinas'}</Text>
+                <Text style={{fontSize: 13, color: 'rgba(255,255,255,0.9)', marginLeft: 3}}>{chatUserLocation || 'Location'}</Text>
             </View>
         </View>
 
@@ -221,6 +236,13 @@ export default function CollectorChatScreen() {
         keyExtractor={(item, index) => item.id ? item.id.toString() : index.toString()}
         contentContainerStyle={{ paddingHorizontal: 15, paddingBottom: 15, paddingTop: 10, flexGrow: 1 }}
         showsVerticalScrollIndicator={false}
+        onScroll={(e) => {
+            const { contentOffset } = e.nativeEvent;
+            const nearBottom = contentOffset.y < 100;
+            isNearBottomRef.current = nearBottom;
+            if (nearBottom && unreadCount > 0) setUnreadCount(0);
+        }}
+        scrollEventThrottle={100}
         renderItem={({ item, index }) => {
           const isMe = myAliases.includes(item.sender_name);
           const prevItem = index < displayedMessages.length - 1 ? displayedMessages[index + 1] : null;
@@ -236,25 +258,28 @@ export default function CollectorChatScreen() {
           }
 
           const showTimeHeader = timeDiffMins > 30 || inquiryContext;
+          const showBubble = actualText.length > 0 || item.image_url || item.reply_to_text;
           const isThumbsUp = actualText === '👍';
 
           return (
             <View style={{marginBottom: 15}}>
                 
-                {/* ⏱ TIME HEADER */}
                 {showTimeHeader && (
-                    <Text style={styles.timeHeader}>{formatTime(item.created_at)}</Text>
+                    <Text style={styles.timeHeader}>{formatSmartTime(item.created_at)}</Text>
                 )}
 
-                {/* 🟢 SYSTEM MESSAGE & INQUIRY CARD */}
-                {inquiryContext && !isMe && (
+                {/* 🟢 SYSTEM BANNER & REWARD CARD */}
+                {inquiryContext && (
                     <View style={styles.inquirySection}>
-                        <Text style={styles.systemContactText}>
-                            <Text style={{fontWeight: 'bold'}}>{item.sender_name}</Text> contacted you regarding the {inquiryContext.rewardName || 'Reward'}.
-                        </Text>
+                        
+                        {/* 🟢 BANNER NA MAKIKITA LANG NI CENTER */}
+                        {!isMe && (
+                            <Text style={styles.systemContactText}>
+                                <Text style={{fontWeight: 'bold'}}>{item.sender_name}</Text> contacted you regarding the {inquiryContext.rewardName || 'Reward'}.
+                            </Text>
+                        )}
 
-                        {/* EXOTIC REWARD CARD UI */}
-                        <View style={styles.rewardCard}>
+                        <View style={[styles.rewardCard, isMe ? { alignSelf: 'flex-end' } : { alignSelf: 'flex-start' }]}>
                             <View style={styles.rcHeader}>
                                 <View style={styles.rcPill}><Text style={styles.rcPillText}>✦ GreenSort - Exchange Request</Text></View>
                                 <Text style={styles.rcTitle}>Reward Inquiry Details</Text>
@@ -319,62 +344,78 @@ export default function CollectorChatScreen() {
                 )}
 
                 {/* 💬 CHAT BUBBLES */}
-                {(actualText.length > 0 || item.image_url) && (
+                {showBubble ? (
                     <View style={[styles.messageRow, isMe ? { justifyContent: 'flex-end' } : { justifyContent: 'flex-start' }]}>
                         
-                        {/* RESIDENT AVATAR BESIDE BUBBLE */}
                         {!isMe && !inquiryContext && (
                             <Image source={{ uri: chatUserAvatar }} style={styles.chatAvatar} />
                         )}
 
                         <View style={{flexDirection: 'column', alignItems: isMe ? 'flex-end' : 'flex-start'}}>
-                            <View style={[styles.bubble, isMe ? styles.myBubble : styles.theirBubble, (isThumbsUp || item.image_url) ? {backgroundColor: 'transparent', padding: 0, elevation: 0} : null]}>
+                            <TouchableOpacity activeOpacity={0.85} onLongPress={() => setReplyingTo(item)} style={[styles.bubble, isMe ? styles.myBubble : styles.theirBubble, (isThumbsUp || item.image_url) ? {backgroundColor: 'transparent', padding: 0, borderWidth: 0, elevation: 0, shadowOpacity: 0} : null]}>
                                 
+                                {item.reply_to_text ? (
+                                    <View style={[styles.replyBoxRendered, isMe ? {backgroundColor: 'rgba(255,255,255,0.18)', borderLeftColor: '#fff'} : {backgroundColor: '#F1F3F5', borderLeftColor: '#0066FF'}, item.image_url ? {backgroundColor: '#eee'} : null]}>
+                                        <Text style={{fontSize: 11, fontWeight: '700', color: isMe && !item.image_url ? '#E3F2FD' : '#0066FF', marginBottom: 2}}>↩ Replying to {item.reply_to_sender === myPrimaryName ? 'yourself' : item.reply_to_sender}</Text>
+                                        <Text style={{fontSize: 12, color: isMe && !item.image_url ? '#fff' : '#666'}} numberOfLines={1}>{item.reply_to_text.split('|||')[0]}</Text>
+                                    </View>
+                                ) : null}
+
                                 {item.image_url ? (
-                                    <Image source={{uri: item.image_url}} style={{width: 220, height: 260, borderRadius: 18}} resizeMode="cover" />
+                                    <Image source={{uri: item.image_url}} style={{width: 220, height: 260, borderRadius: 18, marginBottom: actualText !== 'Sent an image' ? 5 : 0}} resizeMode="cover" />
                                 ) : isThumbsUp ? (
                                     <MaterialCommunityIcons name="thumb-up" size={45} color={isMe ? "#0066FF" : "#007C00"} />
                                 ) : (
-                                    <Text style={[styles.msgText, isMe ? { color: 'white' } : { color: '#1C1C1E' }]}>{actualText}</Text>
+                                    <Text style={[styles.msgText, isMe ? { color: 'white' } : { color: '#1C1C1E' }]} selectable={true}>{actualText}</Text>
                                 )}
-                            </View>
+                            </TouchableOpacity>
+
+                            {isMe && (
+                                <View style={{marginLeft: 4, marginBottom: 4}}>
+                                    {item.status === 'sending' && <Ionicons name="ellipse-outline" size={12} color="#999" />}
+                                    {item.status === 'failed' && <Ionicons name="alert-circle" size={12} color="red" />}
+                                </View>
+                            )}
                         </View>
                     </View>
-                )}
+                ) : null}
             </View>
           );
         }}
       />
 
-      {/* ⌨️ INPUT AREA */}
+      {unreadCount > 0 && (
+          <TouchableOpacity style={styles.newMsgButton} activeOpacity={0.85} onPress={() => { flatListRef.current?.scrollToOffset({ offset: 0, animated: true }); setUnreadCount(0); }}>
+              <View style={styles.newMsgBadge}><Text style={styles.newMsgBadgeText}>{unreadCount}</Text></View>
+              <Text style={styles.newMsgText}>{unreadCount === 1 ? 'New message' : 'New messages'}</Text>
+              <Ionicons name="arrow-down" size={14} color="#fff" style={{marginLeft: 6}} />
+          </TouchableOpacity>
+      )}
+
       <View style={styles.inputArea}>
+          {replyingTo ? (
+              <View style={styles.replyBanner}>
+                  <View style={styles.replyAccent} />
+                  <View style={{flex: 1}}>
+                      <Text style={{fontSize: 12, color: '#0066FF', fontWeight: '700'}}>↩ Replying to {replyingTo.sender_name === myPrimaryName ? 'yourself' : replyingTo.sender_name}</Text>
+                      <Text style={{fontSize: 13, color: '#666', marginTop: 2}} numberOfLines={1}>{replyingTo.text.split('|||')[0]}</Text>
+                  </View>
+                  <TouchableOpacity onPress={() => setReplyingTo(null)} style={{padding: 4}}><MaterialCommunityIcons name="close-circle" size={22} color="#bbb" /></TouchableOpacity>
+              </View>
+          ) : null}
+
           <View style={styles.inputContainer}>
-            <TouchableOpacity onPress={() => handleImageSend('camera')} disabled={isUploading} style={{padding: 5}}>
-                <Ionicons name="camera-outline" size={28} color="#0066FF" />
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => handleImageSend('gallery')} disabled={isUploading} style={{padding: 5, marginLeft: 5}}>
-                <Ionicons name="image-outline" size={28} color="#0066FF" />
-            </TouchableOpacity>
+            <TouchableOpacity onPress={() => handleImageSend('camera')} disabled={isUploading} style={{padding: 5}}><Ionicons name="camera-outline" size={28} color="#0066FF" /></TouchableOpacity>
+            <TouchableOpacity onPress={() => handleImageSend('gallery')} disabled={isUploading} style={{padding: 5, marginLeft: 5}}><Ionicons name="image-outline" size={28} color="#0066FF" /></TouchableOpacity>
 
             <View style={styles.inputWrap}>
-                <TextInput
-                    style={styles.input}
-                    placeholder="Aa"
-                    placeholderTextColor="#9AA0A6"
-                    value={newMessage}
-                    onChangeText={setNewMessage}
-                    multiline
-                />
+                <TextInput style={styles.input} placeholder="Aa" placeholderTextColor="#9AA0A6" value={newMessage} onChangeText={setNewMessage} multiline />
             </View>
 
             {newMessage.trim().length > 0 ? (
-                <TouchableOpacity onPress={() => handleSend(null)} style={{padding: 5}}>
-                    <Ionicons name="send" size={26} color="#0066FF" />
-                </TouchableOpacity>
+                <TouchableOpacity onPress={() => handleSend(null)} style={{padding: 5}}><Ionicons name="send" size={26} color="#0066FF" /></TouchableOpacity>
             ) : (
-                <TouchableOpacity onPress={() => handleSend('👍')} style={{padding: 5}}>
-                    <MaterialCommunityIcons name="thumb-up-outline" size={28} color="#0066FF" />
-                </TouchableOpacity>
+                <TouchableOpacity onPress={() => handleSend('👍')} style={{padding: 5}}><MaterialCommunityIcons name="thumb-up-outline" size={28} color="#0066FF" /></TouchableOpacity>
             )}
           </View>
       </View>
@@ -385,19 +426,15 @@ export default function CollectorChatScreen() {
 const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#0066FF', paddingBottom: 15, paddingHorizontal: 15, elevation: 4 },
   headerTitle: { fontSize: 20, fontWeight: 'bold', color: 'white' },
-  
   timeHeader: { textAlign: 'center', fontSize: 12, color: '#555', fontWeight: '500', marginBottom: 20, marginTop: 10 },
-  
   systemContactText: { textAlign: 'center', fontSize: 13, color: '#111', marginBottom: 15, paddingHorizontal: 20 },
-
   messageRow: { flexDirection: 'row', width: '100%', alignItems: 'flex-end', marginTop: 2 },
   chatAvatar: { width: 34, height: 34, borderRadius: 17, marginRight: 8, marginBottom: 2, backgroundColor: '#ddd' },
   bubble: { maxWidth: screenWidth * 0.75, paddingVertical: 12, paddingHorizontal: 18, borderRadius: 22 },
   myBubble: { backgroundColor: '#4285F4', borderBottomRightRadius: 6 },
   theirBubble: { backgroundColor: '#E4E6EB', borderBottomLeftRadius: 6 },
   msgText: { fontSize: 15, lineHeight: 21 },
-
-  // 🟢 EXACT REWARD CARD UI
+  
   inquirySection: { alignItems: 'center', marginBottom: 15, width: '100%' },
   rewardCard: { width: screenWidth * 0.85, backgroundColor: 'white', borderRadius: 16, overflow: 'hidden', borderWidth: 1, borderColor: '#eee', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 5, elevation: 2 },
   rcHeader: { backgroundColor: '#0066FF', padding: 15, alignItems: 'center' },
@@ -405,7 +442,6 @@ const styles = StyleSheet.create({
   rcPillText: { color: 'white', fontSize: 10, fontWeight: 'bold' },
   rcTitle: { color: 'white', fontSize: 16, fontWeight: 'bold' },
   rcSub: { color: 'rgba(255,255,255,0.8)', fontSize: 11, marginTop: 2 },
-  
   rcBody: { padding: 15 },
   rcTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
   rcLabel: { fontSize: 11, color: '#555', fontWeight: '600', marginBottom: 8 },
@@ -414,18 +450,19 @@ const styles = StyleSheet.create({
   exchangeCircle: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#0066FF', justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#E3F2FD' },
   rewardBox: { width: 80, height: 90, backgroundColor: '#E8F5E9', borderRadius: 12, justifyContent: 'center', alignItems: 'center', overflow: 'hidden' },
   rewardBoxLabel: { position: 'absolute', bottom: 0, width: '100%', backgroundColor: '#4CAF50', paddingVertical: 4, alignItems: 'center' },
-
   rcDetailsRow: { flexDirection: 'row', justifyContent: 'space-between' },
   rcCol: { flex: 1, paddingRight: 5 },
   rcColHeader: { fontSize: 12, fontWeight: 'bold', color: '#333', marginBottom: 8 },
   rcDetailText: { fontSize: 10, color: '#555', marginBottom: 4, lineHeight: 14 },
   outlineBadge: { borderWidth: 1, borderColor: '#0066FF', borderRadius: 10, paddingHorizontal: 6, paddingVertical: 2, marginRight: 5 },
   outlineBadgeText: { fontSize: 9, color: '#0066FF', fontWeight: 'bold' },
-
   rcFooter: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 15, borderTopWidth: 1, borderTopColor: '#f0f0f0', paddingTop: 10 },
   rcBtn: { flex: 1, paddingVertical: 8, alignItems: 'center', backgroundColor: '#fcfcfc', borderRadius: 8, marginHorizontal: 5, borderWidth: 1, borderColor: '#f0f0f0' },
   rcBtnText: { fontSize: 11, color: '#aaa', fontWeight: '600' },
 
+  replyBanner: { flexDirection: 'row', backgroundColor: '#F5F7FA', padding: 10, paddingHorizontal: 14, alignItems: 'center', borderTopLeftRadius: 12, borderTopRightRadius: 12 },
+  replyAccent: { width: 3, height: 32, backgroundColor: '#0066FF', borderRadius: 2, marginRight: 10 },
+  replyBoxRendered: { padding: 8, paddingHorizontal: 10, borderRadius: 10, marginBottom: 8, borderLeftWidth: 3 },
   inputArea: { backgroundColor: '#F5F7FA', borderTopWidth: 1, borderTopColor: '#ECEFF1' },
   inputContainer: { flexDirection: 'row', alignItems: 'flex-end', padding: 10, paddingBottom: Platform.OS === 'ios' ? 25 : 15 },
   inputWrap: { flex: 1, backgroundColor: '#E4E6EB', borderRadius: 20, paddingHorizontal: 15, paddingVertical: Platform.OS === 'ios' ? 10 : 6, marginHorizontal: 10, minHeight: 40, justifyContent: 'center' },

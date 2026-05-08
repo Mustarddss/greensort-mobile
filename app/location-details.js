@@ -4,7 +4,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import MapView, { Marker } from 'react-native-maps';
-import { supabase } from '../lib/supabase'; // 🟢 IN-IMPORT NATIN ANG SUPABASE DITO
+import { supabase } from '../lib/supabase'; 
 
 const screenWidth = Dimensions.get('window').width;
 
@@ -74,7 +74,6 @@ export default function LocationDetails() {
   const rewardDesc = location.subText; 
   const requiredAmount = location.bringRequiredAmount || 'Any amount'; 
 
-  // 🟢 🟢 🟢 ITO ANG MAGIC FUNCTION PARA SA INQUIRY CARD 🟢 🟢 🟢
   const handleContactCenter = async () => {
       try {
           const { data: { session } } = await supabase.auth.getSession();
@@ -83,12 +82,8 @@ export default function LocationDetails() {
               return;
           }
           const residentName = session.user.user_metadata?.full_name;
-
-          // 🔴 CRITICAL: Dapat ang receiverName ay ang eksaktong Full Name ng Center sa Supabase Auth!
-          // Kung may 'officerName' sa database niyo, 'yun ang gamitin. Kung wala, fallback sa location.name
           const receiverName = location.officerName || location.name; 
 
-          // GAGAWA TAYO NG INQUIRY PAYLOAD NA BABASAHIN NG COLLECTOR-CHAT.JS
           const inquiryContext = {
               type: "Reward",
               wasteType: surrenderItem,
@@ -97,24 +92,23 @@ export default function LocationDetails() {
               location: location.address || location.name
           };
 
-          const inquiryText = `Hi, Are you still accepting? |||INQUIRY|||${JSON.stringify(inquiryContext)}`;
+          // 🟢 TINANGGAL YUNG RAW TEXT SA UNAHAN PARA CARD LANG ANG LUMABAS SA CHAT
+          const inquiryText = `|||INQUIRY|||${JSON.stringify(inquiryContext)}`;
 
-          // 1. Check muna natin kung nag-message na sila dati para hindi ma-spam yung Inquiry Card
+          // 1. Check muna natin kung nag-message na sila dati (KINI-KEEP NATIN TO KASI AYAW MO MAGBURA)
           const { data: existingChat } = await supabase
               .from('messages')
               .select('id')
               .or(`and(sender_name.eq."${residentName}",receiver_name.eq."${receiverName}"),and(sender_name.eq."${receiverName}",receiver_name.eq."${residentName}")`)
               .limit(1);
 
-          // 2. Kung bago pa lang sila mag-uusap, isesend na natin agad yung Inquiry Message!
-          if (!existingChat || existingChat.length === 0) {
-              await supabase.from('messages').insert([{
-                  sender_name: residentName,
-                  receiver_name: receiverName,
-                  text: inquiryText,
-                  is_read: false
-              }]);
-          }
+          // 2. Isesend natin yung Card! (TINANGGAL YUNG IF CONDITION PARA KAHIT NAKA-CHAT NA KAYO, MAG-SESEND PA RIN NG CARD)
+          await supabase.from('messages').insert([{
+              sender_name: residentName,
+              receiver_name: receiverName,
+              text: inquiryText,
+              is_read: false
+          }]);
 
           // 3. Pagkatapos i-send, ibabato na natin yung Resident papunta sa Chat Screen
           router.push({ 
@@ -317,7 +311,6 @@ export default function LocationDetails() {
           </View>
       </ScrollView>
 
-      {/* 🟢 FLOATING CHAT BUTTON (Ngayon dadaan muna sa handleContactCenter function) */}
       <Animated.View 
           style={[
               styles.floatingChatWrapper, 
