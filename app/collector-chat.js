@@ -82,8 +82,7 @@ export default function CollectorChatScreen() {
         if (isMounted) setIsInitialLoading(false);
     }, 1500);
 
-    // 🟢 FIXED SUPABASE REALTIME ERROR: Unique channel name every mount
-    messageChannel = supabase.channel(`chat_center_${Date.now()}`)
+    messageChannel = supabase.channel(`collector_chat_${Date.now()}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
           
           const isThisChat = myAliases.some(alias => 
@@ -186,6 +185,11 @@ export default function CollectorChatScreen() {
     }
   };
 
+  const formatTime = (dateString) => {
+    if (!dateString) return '';
+    return new Date(dateString).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true });
+  };
+
   const formatSmartTime = (dateString) => {
     if (!dateString) return '';
     const date = new Date(dateString);
@@ -218,7 +222,7 @@ export default function CollectorChatScreen() {
             <Text style={styles.headerTitle}>{chatUser}</Text>
             <View style={{flexDirection: 'row', alignItems: 'center', marginTop: 2}}>
                 <Ionicons name="location-outline" size={14} color="rgba(255,255,255,0.9)" />
-                <Text style={{fontSize: 13, color: 'rgba(255,255,255,0.9)', marginLeft: 3}}>{chatUserLocation || 'Location'}</Text>
+                <Text style={{fontSize: 13, color: 'rgba(255,255,255,0.9)', marginLeft: 3}}>{chatUserLocation || 'User Location'}</Text>
             </View>
         </View>
 
@@ -249,9 +253,9 @@ export default function CollectorChatScreen() {
           
           const timeDiffMins = prevItem ? (new Date(item.created_at) - new Date(prevItem.created_at)) / 60000 : 999;
           
+          // 🟢 PARSE INQUIRY DATA
           const textParts = item.text ? item.text.split('|||INQUIRY|||') : [''];
           const actualText = textParts[0].trim();
-          
           let inquiryContext = null;
           if (textParts.length > 1) {
               try { inquiryContext = JSON.parse(textParts[1]); } catch(e){}
@@ -264,6 +268,7 @@ export default function CollectorChatScreen() {
           return (
             <View style={{marginBottom: 15}}>
                 
+                {/* ⏱ TIME HEADER */}
                 {showTimeHeader && (
                     <Text style={styles.timeHeader}>{formatSmartTime(item.created_at)}</Text>
                 )}
@@ -275,13 +280,15 @@ export default function CollectorChatScreen() {
                         {/* 🟢 BANNER NA MAKIKITA LANG NI CENTER */}
                         {!isMe && (
                             <Text style={styles.systemContactText}>
-                                <Text style={{fontWeight: 'bold'}}>{item.sender_name}</Text> contacted you regarding the {inquiryContext.rewardName || 'Reward'}.
+                                <Text style={{fontWeight: 'bold'}}>{item.sender_name}</Text> contacted you regarding the {inquiryContext.rewardName || 'Reward'} Reward.
                             </Text>
                         )}
 
                         <View style={[styles.rewardCard, isMe ? { alignSelf: 'flex-end' } : { alignSelf: 'flex-start' }]}>
                             <View style={styles.rcHeader}>
-                                <View style={styles.rcPill}><Text style={styles.rcPillText}>✦ GreenSort - Exchange Request</Text></View>
+                                <View style={styles.rcPill}>
+                                    <Text style={styles.rcPillText}>✦ GreenSort - Exchange Request</Text>
+                                </View>
                                 <Text style={styles.rcTitle}>Reward Inquiry Details</Text>
                                 <Text style={styles.rcSub}>Exchange details from {item.sender_name}</Text>
                             </View>
@@ -292,7 +299,9 @@ export default function CollectorChatScreen() {
                                         <Text style={styles.rcLabel}>Waste</Text>
                                         <View style={styles.wasteBox}>
                                             <MaterialCommunityIcons name="recycle" size={32} color="#0066FF" />
-                                            <View style={styles.wasteBoxLabel}><Text style={{color:'white', fontSize: 9, fontWeight:'bold'}}>{inquiryContext.wasteType || 'Plastic'}</Text></View>
+                                            <View style={styles.wasteBoxLabel}>
+                                                <Text style={{color:'white', fontSize: 9, fontWeight:'bold'}}>{inquiryContext.wasteType || 'Plastic'}</Text>
+                                            </View>
                                         </View>
                                     </View>
 
@@ -307,7 +316,9 @@ export default function CollectorChatScreen() {
                                         <Text style={styles.rcLabel}>Reward</Text>
                                         <View style={styles.rewardBox}>
                                             <MaterialCommunityIcons name="barley" size={32} color="#F9A826" />
-                                            <View style={styles.rewardBoxLabel}><Text style={{color:'white', fontSize: 9, fontWeight:'bold'}}>{inquiryContext.rewardName || '1kg Rice'}</Text></View>
+                                            <View style={styles.rewardBoxLabel}>
+                                                <Text style={{color:'white', fontSize: 9, fontWeight:'bold'}}>{inquiryContext.rewardName || '1kg Rice'}</Text>
+                                            </View>
                                         </View>
                                     </View>
                                 </View>
@@ -323,6 +334,7 @@ export default function CollectorChatScreen() {
                                             <View style={styles.outlineBadge}><Text style={styles.outlineBadgeText}>Dry</Text></View>
                                         </View>
                                     </View>
+                                    
                                     <View style={[styles.rcCol, {borderLeftWidth: 1, borderColor: '#eee', paddingLeft: 10}]}>
                                         <Text style={styles.rcColHeader}><MaterialCommunityIcons name="gift" color="#F9A826" /> Reward details</Text>
                                         <Text style={styles.rcDetailText}><Text style={{fontWeight: 'bold'}}>Item:</Text> {inquiryContext.rewardName}</Text>
@@ -335,15 +347,20 @@ export default function CollectorChatScreen() {
                                 </View>
 
                                 <View style={styles.rcFooter}>
-                                    <TouchableOpacity style={[styles.rcBtn, {opacity: 0.4}]} disabled><Text style={styles.rcBtnText}>View center</Text></TouchableOpacity>
-                                    <TouchableOpacity style={styles.rcBtn}><Text style={[styles.rcBtnText, {color: '#0066FF', fontWeight: 'bold'}]}>Reply to {item.sender_name.split(' ')[0]} →</Text></TouchableOpacity>
+                                    <TouchableOpacity style={[styles.rcBtn, {opacity: 0.4}]} disabled>
+                                        <Text style={styles.rcBtnText}>View center</Text>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity style={styles.rcBtn} disabled>
+                                        <Text style={[styles.rcBtnText, {color: '#0066FF', fontWeight: 'bold'}]}>Exchange details received</Text>
+                                    </TouchableOpacity>
                                 </View>
                             </View>
                         </View>
                     </View>
                 )}
 
-                {/* 💬 CHAT BUBBLES */}
+                {/* 💬 4. NORMAL CHAT BUBBLES (LALABAS LANG KUNG MAY TEXT O IMAGE) */}
+                {/* 🟢 FIXED: TEXT SQUISH ISSUE BY RESTORING FLEX: 1 */}
                 {showBubble ? (
                     <View style={[styles.messageRow, isMe ? { justifyContent: 'flex-end' } : { justifyContent: 'flex-start' }]}>
                         
@@ -351,31 +368,33 @@ export default function CollectorChatScreen() {
                             <Image source={{ uri: chatUserAvatar }} style={styles.chatAvatar} />
                         )}
 
-                        <View style={{flexDirection: 'column', alignItems: isMe ? 'flex-end' : 'flex-start'}}>
-                            <TouchableOpacity activeOpacity={0.85} onLongPress={() => setReplyingTo(item)} style={[styles.bubble, isMe ? styles.myBubble : styles.theirBubble, (isThumbsUp || item.image_url) ? {backgroundColor: 'transparent', padding: 0, borderWidth: 0, elevation: 0, shadowOpacity: 0} : null]}>
-                                
-                                {item.reply_to_text ? (
-                                    <View style={[styles.replyBoxRendered, isMe ? {backgroundColor: 'rgba(255,255,255,0.18)', borderLeftColor: '#fff'} : {backgroundColor: '#F1F3F5', borderLeftColor: '#0066FF'}, item.image_url ? {backgroundColor: '#eee'} : null]}>
-                                        <Text style={{fontSize: 11, fontWeight: '700', color: isMe && !item.image_url ? '#E3F2FD' : '#0066FF', marginBottom: 2}}>↩ Replying to {item.reply_to_sender === myPrimaryName ? 'yourself' : item.reply_to_sender}</Text>
-                                        <Text style={{fontSize: 12, color: isMe && !item.image_url ? '#fff' : '#666'}} numberOfLines={1}>{item.reply_to_text.split('|||')[0]}</Text>
+                        <View style={{flex: 1, flexDirection: 'column', alignItems: isMe ? 'flex-end' : 'flex-start'}}>
+                            <View style={{flexDirection: 'row', alignItems: 'flex-end'}}>
+                                <TouchableOpacity activeOpacity={0.85} onLongPress={() => setReplyingTo(item)} style={[styles.bubble, isMe ? styles.myBubble : styles.theirBubble, (isThumbsUp || item.image_url) ? {backgroundColor: 'transparent', padding: 0, borderWidth: 0, elevation: 0, shadowOpacity: 0} : null]}>
+                                    
+                                    {item.reply_to_text ? (
+                                        <View style={[styles.replyBoxRendered, isMe ? {backgroundColor: 'rgba(255,255,255,0.18)', borderLeftColor: '#fff'} : {backgroundColor: '#F1F3F5', borderLeftColor: '#0066FF'}, item.image_url ? {backgroundColor: '#eee'} : null]}>
+                                            <Text style={{fontSize: 11, fontWeight: '700', color: isMe && !item.image_url ? '#E3F2FD' : '#0066FF', marginBottom: 2}}>↩ Replying to {item.reply_to_sender === myPrimaryName ? 'yourself' : item.reply_to_sender}</Text>
+                                            <Text style={{fontSize: 12, color: isMe && !item.image_url ? '#fff' : '#666'}} numberOfLines={1}>{item.reply_to_text.split('|||')[0]}</Text>
+                                        </View>
+                                    ) : null}
+
+                                    {item.image_url ? (
+                                        <Image source={{uri: item.image_url}} style={{width: 220, height: 260, borderRadius: 18, marginBottom: actualText !== 'Sent an image' ? 5 : 0}} resizeMode="cover" />
+                                    ) : isThumbsUp ? (
+                                        <MaterialCommunityIcons name="thumb-up" size={45} color={isMe ? "#0066FF" : "#007C00"} />
+                                    ) : (
+                                        <Text style={[styles.msgText, isMe ? { color: 'white' } : { color: '#1C1C1E' }]} selectable={true}>{actualText}</Text>
+                                    )}
+                                </TouchableOpacity>
+
+                                {isMe && (
+                                    <View style={{marginLeft: 4, marginBottom: 4}}>
+                                        {item.status === 'sending' && <Ionicons name="ellipse-outline" size={12} color="#999" />}
+                                        {item.status === 'failed' && <Ionicons name="alert-circle" size={12} color="red" />}
                                     </View>
-                                ) : null}
-
-                                {item.image_url ? (
-                                    <Image source={{uri: item.image_url}} style={{width: 220, height: 260, borderRadius: 18, marginBottom: actualText !== 'Sent an image' ? 5 : 0}} resizeMode="cover" />
-                                ) : isThumbsUp ? (
-                                    <MaterialCommunityIcons name="thumb-up" size={45} color={isMe ? "#0066FF" : "#007C00"} />
-                                ) : (
-                                    <Text style={[styles.msgText, isMe ? { color: 'white' } : { color: '#1C1C1E' }]} selectable={true}>{actualText}</Text>
                                 )}
-                            </TouchableOpacity>
-
-                            {isMe && (
-                                <View style={{marginLeft: 4, marginBottom: 4}}>
-                                    {item.status === 'sending' && <Ionicons name="ellipse-outline" size={12} color="#999" />}
-                                    {item.status === 'failed' && <Ionicons name="alert-circle" size={12} color="red" />}
-                                </View>
-                            )}
+                            </View>
                         </View>
                     </View>
                 ) : null}
@@ -385,8 +404,17 @@ export default function CollectorChatScreen() {
       />
 
       {unreadCount > 0 && (
-          <TouchableOpacity style={styles.newMsgButton} activeOpacity={0.85} onPress={() => { flatListRef.current?.scrollToOffset({ offset: 0, animated: true }); setUnreadCount(0); }}>
-              <View style={styles.newMsgBadge}><Text style={styles.newMsgBadgeText}>{unreadCount}</Text></View>
+          <TouchableOpacity
+              style={styles.newMsgButton}
+              activeOpacity={0.85}
+              onPress={() => {
+                  flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
+                  setUnreadCount(0);
+              }}
+          >
+              <View style={styles.newMsgBadge}>
+                  <Text style={styles.newMsgBadgeText}>{unreadCount}</Text>
+              </View>
               <Text style={styles.newMsgText}>{unreadCount === 1 ? 'New message' : 'New messages'}</Text>
               <Ionicons name="arrow-down" size={14} color="#fff" style={{marginLeft: 6}} />
           </TouchableOpacity>
@@ -400,25 +428,49 @@ export default function CollectorChatScreen() {
                       <Text style={{fontSize: 12, color: '#0066FF', fontWeight: '700'}}>↩ Replying to {replyingTo.sender_name === myPrimaryName ? 'yourself' : replyingTo.sender_name}</Text>
                       <Text style={{fontSize: 13, color: '#666', marginTop: 2}} numberOfLines={1}>{replyingTo.text.split('|||')[0]}</Text>
                   </View>
-                  <TouchableOpacity onPress={() => setReplyingTo(null)} style={{padding: 4}}><MaterialCommunityIcons name="close-circle" size={22} color="#bbb" /></TouchableOpacity>
+                  <TouchableOpacity onPress={() => setReplyingTo(null)} style={{padding: 4}}>
+                      <MaterialCommunityIcons name="close-circle" size={22} color="#bbb" />
+                  </TouchableOpacity>
               </View>
           ) : null}
 
           <View style={styles.inputContainer}>
-            <TouchableOpacity onPress={() => handleImageSend('camera')} disabled={isUploading} style={{padding: 5}}><Ionicons name="camera-outline" size={28} color="#0066FF" /></TouchableOpacity>
-            <TouchableOpacity onPress={() => handleImageSend('gallery')} disabled={isUploading} style={{padding: 5, marginLeft: 5}}><Ionicons name="image-outline" size={28} color="#0066FF" /></TouchableOpacity>
+            <TouchableOpacity onPress={() => handleImageSend('camera')} disabled={isUploading} style={{padding: 5}}>
+                <Ionicons name="camera-outline" size={28} color="#0066FF" />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => handleImageSend('gallery')} disabled={isUploading} style={{padding: 5, marginLeft: 5}}>
+                <Ionicons name="image-outline" size={28} color="#0066FF" />
+            </TouchableOpacity>
 
             <View style={styles.inputWrap}>
-                <TextInput style={styles.input} placeholder="Aa" placeholderTextColor="#9AA0A6" value={newMessage} onChangeText={setNewMessage} multiline />
+                <TextInput
+                    style={styles.input}
+                    placeholder="Aa"
+                    placeholderTextColor="#9AA0A6"
+                    value={newMessage}
+                    onChangeText={setNewMessage}
+                    multiline
+                />
             </View>
 
             {newMessage.trim().length > 0 ? (
-                <TouchableOpacity onPress={() => handleSend(null)} style={{padding: 5}}><Ionicons name="send" size={26} color="#0066FF" /></TouchableOpacity>
+                <TouchableOpacity onPress={() => handleSend(null)} style={{padding: 5}}>
+                    <Ionicons name="send" size={26} color="#0066FF" />
+                </TouchableOpacity>
             ) : (
-                <TouchableOpacity onPress={() => handleSend('👍')} style={{padding: 5}}><MaterialCommunityIcons name="thumb-up-outline" size={28} color="#0066FF" /></TouchableOpacity>
+                <TouchableOpacity onPress={() => handleSend('👍')} style={{padding: 5}}>
+                    <MaterialCommunityIcons name="thumb-up-outline" size={28} color="#0066FF" />
+                </TouchableOpacity>
             )}
           </View>
       </View>
+
+      {isUploading ? (
+          <View style={styles.uploadToast}>
+              <ActivityIndicator color="white" style={{marginRight: 10}} />
+              <Text style={{color: 'white', fontWeight: '600'}}>Sending image...</Text>
+          </View>
+      ) : null}
     </KeyboardAvoidingView>
   );
 }
@@ -435,6 +487,7 @@ const styles = StyleSheet.create({
   theirBubble: { backgroundColor: '#E4E6EB', borderBottomLeftRadius: 6 },
   msgText: { fontSize: 15, lineHeight: 21 },
   
+  // 🟢 REWARD CARD UI STYLES
   inquirySection: { alignItems: 'center', marginBottom: 15, width: '100%' },
   rewardCard: { width: screenWidth * 0.85, backgroundColor: 'white', borderRadius: 16, overflow: 'hidden', borderWidth: 1, borderColor: '#eee', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 5, elevation: 2 },
   rcHeader: { backgroundColor: '#0066FF', padding: 15, alignItems: 'center' },
@@ -467,4 +520,10 @@ const styles = StyleSheet.create({
   inputContainer: { flexDirection: 'row', alignItems: 'flex-end', padding: 10, paddingBottom: Platform.OS === 'ios' ? 25 : 15 },
   inputWrap: { flex: 1, backgroundColor: '#E4E6EB', borderRadius: 20, paddingHorizontal: 15, paddingVertical: Platform.OS === 'ios' ? 10 : 6, marginHorizontal: 10, minHeight: 40, justifyContent: 'center' },
   input: { fontSize: 15, color: '#1C1C1E', maxHeight: 100, padding: 0 },
+
+  newMsgButton: { position: 'absolute', bottom: Platform.OS === 'ios' ? 95 : 75, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', backgroundColor: '#0066FF', paddingLeft: 6, paddingRight: 14, paddingVertical: 6, borderRadius: 24, shadowColor: '#000', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.25, shadowRadius: 6, elevation: 6, zIndex: 50 },
+  newMsgBadge: { minWidth: 22, height: 22, paddingHorizontal: 6, borderRadius: 11, backgroundColor: '#FFFFFF', justifyContent: 'center', alignItems: 'center', marginRight: 8 },
+  newMsgBadgeText: { color: '#0066FF', fontWeight: '800', fontSize: 12 },
+  newMsgText: { color: '#fff', fontWeight: '600', fontSize: 13, letterSpacing: 0.2 },
+  uploadToast: { position: 'absolute', top: 110, alignSelf: 'center', backgroundColor: 'rgba(0,0,0,0.78)', paddingHorizontal: 18, paddingVertical: 12, borderRadius: 24, flexDirection: 'row', alignItems: 'center' },
 });

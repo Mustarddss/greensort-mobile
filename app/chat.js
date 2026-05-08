@@ -107,6 +107,7 @@ export default function ChatScreen() {
           setMessages(uniqueMessages);
           setIsInitialLoading(false); 
       }
+      if (error) console.log("Error fetching messages:", error);
     };
 
     fetchSessionAndMessages();
@@ -115,7 +116,6 @@ export default function ChatScreen() {
         if (isMounted) setIsInitialLoading(false);
     }, 1500);
 
-    // 🟢 FIXED SUPABASE REALTIME ERROR: Unique channel name every mount
     messageChannel = supabase.channel(`chat_res_${Date.now()}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
           const isThisChat =
@@ -252,9 +252,7 @@ export default function ChatScreen() {
         );
 
         return finalManip.uri;
-    } catch (error) {
-        return uri; 
-    }
+    } catch (error) { return uri; }
   };
 
   const handleImageSend = async (mode) => {
@@ -305,8 +303,21 @@ export default function ChatScreen() {
     return `${dayStr} • ${timeStr}`;
   };
 
+  // 🟢 BALIK YUNG ACCENT FUNCTION PARA SA COMMUNITY POSTS
+  const getInquiryAccent = (type) => {
+      switch ((type || '').toLowerCase()) {
+          case 'trade':   return { icon: 'swap-horizontal', color: '#007C00', bg: '#E8F5E9', label: 'TRADE' };
+          case 'free':    return { icon: 'gift-outline',    color: '#1976D2', bg: '#E3F2FD', label: 'FREE'  };
+          case 'sell':    return { icon: 'cash-multiple',   color: '#E65100', bg: '#FFF3E0', label: 'SELL'  };
+          default:        return { icon: 'tag-outline',     color: '#555',    bg: '#EEEEEE', label: (type || 'POST').toUpperCase() };
+      }
+  };
+
   return (
-    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: '#F5F7FA' }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+    <KeyboardAvoidingView 
+        style={{ flex: 1, backgroundColor: '#F5F7FA' }} 
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+    >
       <StatusBar barStyle="light-content" backgroundColor="#007C00" translucent={false} />
 
       <View style={[styles.header, { paddingTop: Math.max(insets.top, 20) + 10 }]}>
@@ -316,7 +327,10 @@ export default function ChatScreen() {
 
         <View style={{flexDirection: 'row', alignItems: 'center', flex: 1}}>
             <View style={{position: 'relative'}}>
-                <Image source={{uri: chatUserAvatar}} style={{width: 40, height: 40, borderRadius: 20, marginRight: 10, backgroundColor: '#e0e0e0', borderWidth: 1.5, borderColor: 'white'}} />
+                <Image 
+                    source={{uri: chatUserAvatar}} 
+                    style={{width: 40, height: 40, borderRadius: 20, marginRight: 10, backgroundColor: '#e0e0e0', borderWidth: 1.5, borderColor: 'white'}} 
+                />
                 {isBot && <View style={{position: 'absolute', bottom: -2, right: 8, backgroundColor: 'white', borderRadius: 6, padding: 1}}><Ionicons name="sparkles" size={10} color="#007C00" /></View>}
             </View>
 
@@ -333,7 +347,9 @@ export default function ChatScreen() {
             </View>
         </View>
 
-        <TouchableOpacity style={{padding: 5}}><MaterialCommunityIcons name="dots-vertical" size={26} color="white" /></TouchableOpacity>
+        <TouchableOpacity style={{padding: 5}}>
+            <MaterialCommunityIcons name="dots-vertical" size={26} color="white" />
+        </TouchableOpacity>
       </View>
 
       {isInitialLoading && (
@@ -341,6 +357,7 @@ export default function ChatScreen() {
               <View style={[styles.skeletonBubble, { alignSelf: 'flex-start', width: '60%' }]} />
               <View style={[styles.skeletonBubble, { alignSelf: 'flex-end', width: '45%', backgroundColor: '#D7EDD8' }]} />
               <View style={[styles.skeletonBubble, { alignSelf: 'flex-start', width: '70%' }]} />
+              <View style={[styles.skeletonBubble, { alignSelf: 'flex-end', width: '50%', backgroundColor: '#D7EDD8' }]} />
           </View>
       )}
 
@@ -365,18 +382,24 @@ export default function ChatScreen() {
             if (chatContext === 'center' && centerDetails) {
                 return (
                     <View style={styles.centerIntroWrapper}>
-                        <View style={styles.heroCircle}><MaterialCommunityIcons name="storefront" size={54} color="#007C00" /></View>
+                        <View style={styles.heroCircle}>
+                            <MaterialCommunityIcons name="storefront" size={54} color="#007C00" />
+                        </View>
                         <Text style={styles.centerTitle}>{centerDetails.program_name || chatUser}</Text>
                         <View style={[styles.statusPill, { backgroundColor: isOnline ? '#E8F5E9' : '#FBE9E7', borderColor: isOnline ? '#A5D6A7' : '#FFCCBC' }]}>
                             <View style={[styles.statusPillDot, { backgroundColor: isOnline ? '#4CAF50' : '#E57373' }]} />
-                            <Text style={[styles.statusPillText, { color: isOnline ? '#2E7D32' : '#C62828' }]}>{isOnline ? 'Accepting Surrenders' : 'Not Accepting Right Now'}</Text>
+                            <Text style={[styles.statusPillText, { color: isOnline ? '#2E7D32' : '#C62828' }]}>
+                                {isOnline ? 'Accepting Surrenders' : 'Not Accepting Right Now'}
+                            </Text>
                         </View>
                         <View style={styles.infoCard}>
                             <View style={styles.infoCardRow}>
                                 <View style={styles.infoIconBubble}><Ionicons name="location-outline" size={16} color="#007C00" /></View>
                                 <View style={{flex: 1}}>
                                     <Text style={styles.infoLabel}>Location</Text>
-                                    <Text style={styles.infoValue} numberOfLines={2}>{centerDetails.exact_location || `${centerDetails.barangay || ''}${centerDetails.barangay && centerDetails.city ? ', ' : ''}${centerDetails.city || ''}`}</Text>
+                                    <Text style={styles.infoValue} numberOfLines={2}>
+                                        {centerDetails.exact_location || `${centerDetails.barangay || ''}${centerDetails.barangay && centerDetails.city ? ', ' : ''}${centerDetails.city || ''}`}
+                                    </Text>
                                 </View>
                             </View>
                             <View style={styles.infoDivider} />
@@ -391,7 +414,10 @@ export default function ChatScreen() {
                         </View>
                         {messages.length === 0 && (
                             <>
-                                <View style={styles.faqHeaderRow}><Ionicons name="chatbubbles-outline" size={14} color="#007C00" /><Text style={styles.faqHeaderText}>Frequently asked questions</Text></View>
+                                <View style={styles.faqHeaderRow}>
+                                    <Ionicons name="chatbubbles-outline" size={14} color="#007C00" />
+                                    <Text style={styles.faqHeaderText}>Frequently asked questions</Text>
+                                </View>
                                 <View style={styles.faqWrapper}>
                                     {faqs.map((faq, idx) => (
                                         <TouchableOpacity key={idx} style={[styles.faqRow, idx === faqs.length - 1 && { borderBottomWidth: 0 }]} onPress={() => handleSend(faq)} activeOpacity={0.6}>
@@ -413,7 +439,9 @@ export default function ChatScreen() {
             isBotTyping ? (
                 <View style={[styles.messageRow, { justifyContent: 'flex-start', marginBottom: 10 }]}>
                     <View style={[styles.bubble, styles.theirBubble, styles.typingBubble]}>
-                        <View style={styles.typingDot} /><View style={[styles.typingDot, { opacity: 0.6 }]} /><View style={[styles.typingDot, { opacity: 0.3 }]} />
+                        <View style={styles.typingDot} />
+                        <View style={[styles.typingDot, { opacity: 0.6 }]} />
+                        <View style={[styles.typingDot, { opacity: 0.3 }]} />
                     </View>
                 </View>
             ) : <View style={{height: 10}} /> 
@@ -428,6 +456,7 @@ export default function ChatScreen() {
           const timeDiffMins = prevItem ? (new Date(item.created_at) - new Date(prevItem.created_at)) / 60000 : 999;
           const timeDiffNextMins = nextItem ? (new Date(nextItem.created_at) - new Date(item.created_at)) / 60000 : 999;
 
+          // 🟢 PARSE INQUIRY PAYLOAD
           const textParts = item.text ? item.text.split('|||INQUIRY|||') : [''];
           const actualText = textParts[0].trim();
           let inquiryContext = null;
@@ -435,19 +464,76 @@ export default function ChatScreen() {
               try { inquiryContext = JSON.parse(textParts[1]); } catch(e){}
           }
 
+          // 🟢 KUNG REWARD OR COMMUNITY
+          const isRewardInquiry = inquiryContext && inquiryContext.type === 'Reward';
+          const isCommunityInquiry = inquiryContext && inquiryContext.type !== 'Reward';
+
           const showTimeHeader = !isSameSenderAsPrev || timeDiffMins > 1 || inquiryContext;
           const showBubble = actualText.length > 0 || item.reply_to_text || item.image_url;
           const isThumbsUp = actualText === '👍';
+          
+          const accent = isCommunityInquiry ? getInquiryAccent(inquiryContext.type) : null;
 
           return (
             <View style={{marginBottom: isSameSenderAsNext && timeDiffNextMins <= 1 ? 2 : 14}}>
 
                 {showTimeHeader ? (
-                    <View style={styles.timePillWrap}><Text style={styles.timePill}>{formatSmartTime(item.created_at)}</Text></View>
+                    <View style={styles.timePillWrap}>
+                        <Text style={styles.timePill}>{formatSmartTime(item.created_at)}</Text>
+                    </View>
                 ) : null}
 
-                {/* 🟢 EXACT REWARD CARD UI PARA SA RESIDENT SIDE (WALANG SYSTEM BANNER) */}
-                {inquiryContext && (
+                {/* 🟢 1. SYSTEM BANNER PARA SA COMMUNITY POST (Hindi makikita ng nag-send) */}
+                {isCommunityInquiry && !isMe && (
+                    <View style={styles.systemBanner}>
+                        <Ionicons name="information-circle" size={14} color="#007C00" style={{marginRight: 6}} />
+                        <Text style={styles.systemText}>
+                            <Text style={{ fontWeight: '700', color: '#1B5E20' }}>{item.sender_name}</Text> is contacting you about your <Text style={{ fontWeight: '700', color: '#1B5E20' }}>{inquiryContext.type?.toLowerCase() || 'post'}</Text> in the community feed.
+                        </Text>
+                    </View>
+                )}
+
+                {/* 🟢 2. COMMUNITY POST INQUIRY CARD (Original) */}
+                {isCommunityInquiry && (
+                    <TouchableOpacity activeOpacity={0.9} style={[styles.communityInquiryCard, isMe ? { alignSelf: 'flex-end' } : { alignSelf: 'flex-start' }]}>
+                        <View style={[styles.inquiryAccentBar, { backgroundColor: accent?.color || '#007C00' }]} />
+                        <View style={styles.inquiryImageContainer}>
+                            {inquiryContext.image ? (
+                                <Image source={{ uri: inquiryContext.image }} style={styles.inquiryImage} resizeMode="cover" />
+                            ) : (
+                                <MaterialCommunityIcons name="image-off-outline" size={28} color="#B0B0B0" />
+                            )}
+                        </View>
+                        <View style={styles.inquiryDetails}>
+                            <View style={[styles.typeBadge, { backgroundColor: accent?.bg }]}>
+                                <MaterialCommunityIcons name={accent?.icon} size={11} color={accent?.color} style={{marginRight: 4}} />
+                                <Text style={[styles.typeBadgeText, { color: accent?.color }]}>{accent?.label}</Text>
+                            </View>
+                            <Text style={styles.inquiryTitle} numberOfLines={1}>{inquiryContext.title}</Text>
+                            <Text style={styles.inquiryDesc} numberOfLines={2}>{inquiryContext.desc}</Text>
+                            {inquiryContext.type === 'Trade' && inquiryContext.price ? (
+                                <View style={styles.metaRow}>
+                                    <MaterialCommunityIcons name="swap-horizontal" size={12} color="#007C00" />
+                                    <Text style={styles.metaLabel}>Looking for:</Text>
+                                    <Text style={styles.metaValue} numberOfLines={1}>{inquiryContext.price.replace('Trade: ', '')}</Text>
+                                </View>
+                            ) : inquiryContext.price && inquiryContext.type !== 'Free' ? (
+                                <View style={styles.metaRow}>
+                                    <MaterialCommunityIcons name="cash" size={12} color="#E65100" />
+                                    <Text style={styles.metaLabel}>Price:</Text>
+                                    <Text style={styles.metaValue} numberOfLines={1}>{inquiryContext.price}</Text>
+                                </View>
+                            ) : null}
+                            <View style={styles.metaRow}>
+                                <Ionicons name="location-sharp" size={12} color="#D32F2F" />
+                                <Text style={[styles.metaValue, { marginLeft: 4 }]} numberOfLines={1}>{inquiryContext.location}</Text>
+                            </View>
+                        </View>
+                    </TouchableOpacity>
+                )}
+
+                {/* 🟢 3. REWARD INQUIRY CARD PARA SA CENTER (Walang System Banner) */}
+                {isRewardInquiry && (
                     <View style={styles.inquirySection}>
                         <View style={[styles.rewardCard, isMe ? { alignSelf: 'flex-end' } : { alignSelf: 'flex-start' }]}>
                             <View style={styles.rcHeader}>
@@ -513,36 +599,42 @@ export default function ChatScreen() {
                     </View>
                 )}
 
-                {/* 💬 CHAT BUBBLES */}
+                {/* 💬 4. NORMAL CHAT BUBBLES (LALABAS LANG KUNG MAY TEXT O IMAGE) */}
+                {/* 🟢 FIXED: TEXT SQUISH ISSUE BY RESTORING FLEX: 1 */}
                 {showBubble ? (
                     <View style={[styles.messageRow, isMe ? { justifyContent: 'flex-end' } : { justifyContent: 'flex-start' }]}>
-                        {!isMe && !inquiryContext && (<Image source={{ uri: chatUserAvatar }} style={styles.chatAvatar} />)}
+                        
+                        {!isMe && !inquiryContext && (
+                            <Image source={{ uri: chatUserAvatar }} style={styles.chatAvatar} />
+                        )}
 
-                        <View style={{flexDirection: 'column', alignItems: isMe ? 'flex-end' : 'flex-start'}}>
-                            <TouchableOpacity activeOpacity={0.85} onLongPress={() => setReplyingTo(item)} style={[styles.bubble, isMe ? styles.myBubble : styles.theirBubble, (isThumbsUp || item.image_url) ? {backgroundColor: 'transparent', padding: 0, borderWidth: 0, elevation: 0, shadowOpacity: 0} : null]}>
-                                
-                                {item.reply_to_text ? (
-                                    <View style={[styles.replyBoxRendered, isMe ? {backgroundColor: 'rgba(255,255,255,0.18)', borderLeftColor: '#fff'} : {backgroundColor: '#F1F3F5', borderLeftColor: '#007C00'}, item.image_url ? {backgroundColor: '#eee'} : null]}>
-                                        <Text style={{fontSize: 11, fontWeight: '700', color: isMe && !item.image_url ? '#E8F5E9' : '#007C00', marginBottom: 2}}>↩ Replying to {item.reply_to_sender === myName ? 'yourself' : item.reply_to_sender}</Text>
-                                        <Text style={{fontSize: 12, color: isMe && !item.image_url ? '#fff' : '#666'}} numberOfLines={1}>{item.reply_to_text.split('|||')[0]}</Text>
+                        <View style={{flex: 1, flexDirection: 'column', alignItems: isMe ? 'flex-end' : 'flex-start'}}>
+                            <View style={{flexDirection: 'row', alignItems: 'flex-end'}}>
+                                <TouchableOpacity activeOpacity={0.85} onLongPress={() => setReplyingTo(item)} style={[styles.bubble, isMe ? styles.myBubble : styles.theirBubble, (isThumbsUp || item.image_url) ? {backgroundColor: 'transparent', padding: 0, borderWidth: 0, elevation: 0, shadowOpacity: 0} : null]}>
+                                    
+                                    {item.reply_to_text ? (
+                                        <View style={[styles.replyBoxRendered, isMe ? {backgroundColor: 'rgba(255,255,255,0.18)', borderLeftColor: '#fff'} : {backgroundColor: '#F1F3F5', borderLeftColor: '#007C00'}, item.image_url ? {backgroundColor: '#eee'} : null]}>
+                                            <Text style={{fontSize: 11, fontWeight: '700', color: isMe && !item.image_url ? '#E8F5E9' : '#007C00', marginBottom: 2}}>↩ Replying to {item.reply_to_sender === myName ? 'yourself' : item.reply_to_sender}</Text>
+                                            <Text style={{fontSize: 12, color: isMe && !item.image_url ? '#fff' : '#666'}} numberOfLines={1}>{item.reply_to_text.split('|||')[0]}</Text>
+                                        </View>
+                                    ) : null}
+
+                                    {item.image_url ? (
+                                        <Image source={{uri: item.image_url}} style={{width: 220, height: 260, borderRadius: 18, marginBottom: actualText !== 'Sent an image' ? 5 : 0}} resizeMode="cover" />
+                                    ) : isThumbsUp ? (
+                                        <MaterialCommunityIcons name="thumb-up" size={45} color={isMe ? "#007C00" : "#007C00"} />
+                                    ) : (
+                                        <Text style={[styles.msgText, isMe ? { color: 'white' } : { color: '#1C1C1E' }]} selectable={true}>{actualText}</Text>
+                                    )}
+                                </TouchableOpacity>
+
+                                {isMe && (
+                                    <View style={{marginLeft: 4, marginBottom: 4}}>
+                                        {item.status === 'sending' && <Ionicons name="ellipse-outline" size={12} color="#999" />}
+                                        {item.status === 'failed' && <Ionicons name="alert-circle" size={12} color="red" />}
                                     </View>
-                                ) : null}
-
-                                {item.image_url ? (
-                                    <Image source={{uri: item.image_url}} style={{width: 220, height: 260, borderRadius: 18, marginBottom: actualText !== 'Sent an image' ? 5 : 0}} resizeMode="cover" />
-                                ) : isThumbsUp ? (
-                                    <MaterialCommunityIcons name="thumb-up" size={45} color={isMe ? "#007C00" : "#007C00"} />
-                                ) : (
-                                    <Text style={[styles.msgText, isMe ? { color: 'white' } : { color: '#1C1C1E' }]} selectable={true}>{actualText}</Text>
                                 )}
-                            </TouchableOpacity>
-
-                            {isMe && (
-                                <View style={{marginLeft: 4, marginBottom: 4}}>
-                                    {item.status === 'sending' && <Ionicons name="ellipse-outline" size={12} color="#999" />}
-                                    {item.status === 'failed' && <Ionicons name="alert-circle" size={12} color="red" />}
-                                </View>
-                            )}
+                            </View>
                         </View>
                     </View>
                 ) : null}
@@ -552,8 +644,17 @@ export default function ChatScreen() {
       />
 
       {unreadCount > 0 && (
-          <TouchableOpacity style={styles.newMsgButton} activeOpacity={0.85} onPress={() => { flatListRef.current?.scrollToOffset({ offset: 0, animated: true }); setUnreadCount(0); }}>
-              <View style={styles.newMsgBadge}><Text style={styles.newMsgBadgeText}>{unreadCount}</Text></View>
+          <TouchableOpacity
+              style={styles.newMsgButton}
+              activeOpacity={0.85}
+              onPress={() => {
+                  flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
+                  setUnreadCount(0);
+              }}
+          >
+              <View style={styles.newMsgBadge}>
+                  <Text style={styles.newMsgBadgeText}>{unreadCount}</Text>
+              </View>
               <Text style={styles.newMsgText}>{unreadCount === 1 ? 'New message' : 'New messages'}</Text>
               <Ionicons name="arrow-down" size={14} color="#fff" style={{marginLeft: 6}} />
           </TouchableOpacity>
@@ -567,33 +668,53 @@ export default function ChatScreen() {
                       <Text style={{fontSize: 12, color: '#007C00', fontWeight: '700'}}>↩ Replying to {replyingTo.sender_name === myName ? 'yourself' : replyingTo.sender_name}</Text>
                       <Text style={{fontSize: 13, color: '#666', marginTop: 2}} numberOfLines={1}>{replyingTo.text.split('|||')[0]}</Text>
                   </View>
-                  <TouchableOpacity onPress={() => setReplyingTo(null)} style={{padding: 4}}><MaterialCommunityIcons name="close-circle" size={22} color="#bbb" /></TouchableOpacity>
+                  <TouchableOpacity onPress={() => setReplyingTo(null)} style={{padding: 4}}>
+                      <MaterialCommunityIcons name="close-circle" size={22} color="#bbb" />
+                  </TouchableOpacity>
               </View>
           ) : null}
 
           <View style={styles.inputContainer}>
             {!isBot && (
                 <>
-                    <TouchableOpacity onPress={() => handleImageSend('camera')} disabled={isUploading} activeOpacity={0.7}><Ionicons name="camera-outline" size={28} color={isUploading ? "#ccc" : "#007C00"} style={{marginRight: 10}} /></TouchableOpacity>
-                    <TouchableOpacity onPress={() => handleImageSend('gallery')} disabled={isUploading} activeOpacity={0.7}><Ionicons name="image-outline" size={28} color={isUploading ? "#ccc" : "#007C00"} style={{marginRight: 10}} /></TouchableOpacity>
+                    <TouchableOpacity onPress={() => handleImageSend('camera')} disabled={isUploading} activeOpacity={0.7}>
+                        <Ionicons name="camera-outline" size={28} color={isUploading ? "#ccc" : "#007C00"} style={{marginRight: 10}} />
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => handleImageSend('gallery')} disabled={isUploading} activeOpacity={0.7}>
+                        <Ionicons name="image-outline" size={28} color={isUploading ? "#ccc" : "#007C00"} style={{marginRight: 10}} />
+                    </TouchableOpacity>
                 </>
             )}
 
             <View style={styles.inputWrap}>
-                <TextInput style={styles.input} placeholder={isBot ? "Ask GreenSort AI..." : "Type a message..."} placeholderTextColor="#9AA0A6" value={newMessage} onChangeText={setNewMessage} multiline />
+                <TextInput
+                    style={styles.input}
+                    placeholder={isBot ? "Ask GreenSort AI..." : "Type a message..."}
+                    placeholderTextColor="#9AA0A6"
+                    value={newMessage}
+                    onChangeText={setNewMessage}
+                    multiline
+                />
             </View>
 
             {newMessage.trim().length > 0 ? (
-                <TouchableOpacity onPress={() => handleSend(null)} activeOpacity={0.7}><Ionicons name="send" size={26} color="#007C00" style={{marginLeft: 10}} /></TouchableOpacity>
+                <TouchableOpacity onPress={() => handleSend(null)} activeOpacity={0.7}>
+                    <Ionicons name="send" size={26} color="#007C00" style={{marginLeft: 10}} />
+                </TouchableOpacity>
             ) : (
-                <TouchableOpacity onPress={() => handleSend('👍')} disabled={isBot} activeOpacity={0.7}><MaterialCommunityIcons name="thumb-up" size={28} color={isBot ? "#ccc" : "#007C00"} style={{marginLeft: 10}} /></TouchableOpacity>
+                <TouchableOpacity onPress={() => handleSend('👍')} disabled={isBot} activeOpacity={0.7}>
+                    <MaterialCommunityIcons name="thumb-up" size={28} color={isBot ? "#ccc" : "#007C00"} style={{marginLeft: 10}} />
+                </TouchableOpacity>
             )}
           </View>
       </View>
 
-      {isUploading && (
-          <View style={styles.uploadToast}><ActivityIndicator color="white" style={{marginRight: 10}} /><Text style={{color: 'white', fontWeight: '600'}}>Sending image...</Text></View>
-      )}
+      {isUploading ? (
+          <View style={styles.uploadToast}>
+              <ActivityIndicator color="white" style={{marginRight: 10}} />
+              <Text style={{color: 'white', fontWeight: '600'}}>Sending image...</Text>
+          </View>
+      ) : null}
     </KeyboardAvoidingView>
   );
 }
@@ -601,24 +722,47 @@ export default function ChatScreen() {
 const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#007C00', paddingBottom: 15, paddingHorizontal: 10, elevation: 4 },
   headerTitle: { fontSize: 18, fontWeight: 'bold', color: 'white' },
-  messageRow: { flexDirection: 'row', width: '100%', alignItems: 'flex-end' },
+
+  messageRow: { flexDirection: 'row', width: '100%', alignItems: 'flex-end', marginTop: 2 },
   chatAvatar: { width: 34, height: 34, borderRadius: 17, marginRight: 8, marginBottom: 2, backgroundColor: '#ddd' },
-  bubble: { maxWidth: '85%', paddingVertical: 10, paddingHorizontal: 15, borderRadius: 20 },
+  bubble: { maxWidth: screenWidth * 0.75, paddingVertical: 12, paddingHorizontal: 18, borderRadius: 22 },
   myBubble: { backgroundColor: '#007C00', borderBottomRightRadius: 6, shadowColor: '#007C00', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.18, shadowRadius: 3, elevation: 2 },
   theirBubble: { backgroundColor: '#FFFFFF', borderBottomLeftRadius: 6, borderWidth: 1, borderColor: '#ECEFF1', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2, elevation: 1 },
   msgText: { fontSize: 15, lineHeight: 21 },
+
   typingBubble: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14 },
   typingDot: { width: 7, height: 7, borderRadius: 3.5, backgroundColor: '#007C00', marginHorizontal: 2 },
+
   timePillWrap: { alignItems: 'center', marginVertical: 10 },
   timePill: { fontSize: 11, color: '#7A7A7A', fontWeight: '600', backgroundColor: 'rgba(0,0,0,0.04)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10, overflow: 'hidden' },
+
+  systemBanner: { flexDirection: 'row', alignItems: 'center', alignSelf: 'center', backgroundColor: '#E8F5E9', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12, marginBottom: 12, maxWidth: '92%', borderWidth: 1, borderColor: '#C8E6C9' },
+  systemText: { flex: 1, fontSize: 12, color: '#3E5641', lineHeight: 16 },
+
   replyBanner: { flexDirection: 'row', backgroundColor: '#F5F7FA', padding: 10, paddingHorizontal: 14, alignItems: 'center', borderTopLeftRadius: 12, borderTopRightRadius: 12 },
   replyAccent: { width: 3, height: 32, backgroundColor: '#007C00', borderRadius: 2, marginRight: 10 },
   replyBoxRendered: { padding: 8, paddingHorizontal: 10, borderRadius: 10, marginBottom: 8, borderLeftWidth: 3 },
+
   inputArea: { backgroundColor: 'white', borderTopWidth: 1, borderTopColor: '#ECEFF1', shadowColor: '#000', shadowOffset: { width: 0, height: -2 }, shadowOpacity: 0.04, shadowRadius: 4, elevation: 5 },
   inputContainer: { flexDirection: 'row', alignItems: 'flex-end', padding: 10, backgroundColor: 'white', paddingBottom: Platform.OS === 'ios' ? 25 : 10 },
   inputWrap: { flex: 1, backgroundColor: '#F2F4F7', borderRadius: 22, paddingHorizontal: 14, paddingVertical: Platform.OS === 'ios' ? 8 : 2, minHeight: 42, justifyContent: 'center', borderWidth: 1, borderColor: '#E5E8EC' },
   input: { fontSize: 15, color: '#1C1C1E', maxHeight: 100, padding: 0 },
-  
+
+  // 🟢 COMMUNITY POST CARD STYLES
+  communityInquiryCard: { flexDirection: 'row', backgroundColor: '#FFFFFF', borderRadius: 16, marginBottom: 10, width: screenWidth * 0.78, overflow: 'hidden', borderWidth: 1, borderColor: '#ECEFF1', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 6, elevation: 3 },
+  inquiryAccentBar: { width: 4 },
+  inquiryImageContainer: { width: 70, height: 88, borderRadius: 10, backgroundColor: '#F5F5F5', justifyContent: 'center', alignItems: 'center', margin: 10, marginRight: 4, overflow: 'hidden' },
+  inquiryImage: { width: '100%', height: '100%' },
+  inquiryDetails: { flex: 1, paddingVertical: 10, paddingHorizontal: 10, justifyContent: 'center' },
+  typeBadge: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, marginBottom: 6 },
+  typeBadgeText: { fontSize: 9.5, fontWeight: '800', letterSpacing: 0.6 },
+  inquiryTitle: { fontSize: 14, fontWeight: '800', color: '#1C1C1E', marginBottom: 3 },
+  inquiryDesc: { fontSize: 12, color: '#5F6368', lineHeight: 16, marginBottom: 6 },
+  metaRow: { flexDirection: 'row', alignItems: 'center', marginTop: 3 },
+  metaLabel: { fontSize: 11, fontWeight: '700', color: '#3E5641', marginLeft: 4, marginRight: 4 },
+  metaValue: { fontSize: 11, color: '#5F6368', flex: 1 },
+
+  // 🟢 REWARD CARD UI STYLES
   inquirySection: { alignItems: 'center', marginBottom: 15, width: '100%' },
   rewardCard: { width: screenWidth * 0.85, backgroundColor: 'white', borderRadius: 16, overflow: 'hidden', borderWidth: 1, borderColor: '#eee', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 5, elevation: 2 },
   rcHeader: { backgroundColor: '#0066FF', padding: 15, alignItems: 'center' },
@@ -643,7 +787,7 @@ const styles = StyleSheet.create({
   rcFooter: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 15, borderTopWidth: 1, borderTopColor: '#f0f0f0', paddingTop: 10 },
   rcBtn: { flex: 1, paddingVertical: 8, alignItems: 'center', backgroundColor: '#fcfcfc', borderRadius: 8, marginHorizontal: 5, borderWidth: 1, borderColor: '#f0f0f0' },
   rcBtnText: { fontSize: 11, color: '#aaa', fontWeight: '600' },
-  
+
   centerIntroWrapper: { alignItems: 'center', paddingVertical: 18, paddingHorizontal: 6 },
   heroCircle: { width: 96, height: 96, borderRadius: 48, backgroundColor: '#E8F5E9', justifyContent: 'center', alignItems: 'center', marginBottom: 14, borderWidth: 6, borderColor: '#F1F8E9' },
   centerTitle: { fontSize: 20, fontWeight: '800', color: '#1C1C1E', textAlign: 'center', marginBottom: 10, letterSpacing: 0.2 },
@@ -669,5 +813,5 @@ const styles = StyleSheet.create({
   newMsgBadge: { minWidth: 22, height: 22, paddingHorizontal: 6, borderRadius: 11, backgroundColor: '#FFFFFF', justifyContent: 'center', alignItems: 'center', marginRight: 8 },
   newMsgBadgeText: { color: '#007C00', fontWeight: '800', fontSize: 12 },
   newMsgText: { color: '#fff', fontWeight: '600', fontSize: 13, letterSpacing: 0.2 },
-  uploadToast: { position: 'absolute', top: 110, alignSelf: 'center', backgroundColor: 'rgba(0,0,0,0.78)', paddingHorizontal: 18, paddingVertical: 12, borderRadius: 24, flexDirection: 'row', alignItems: 'center' }
+  uploadToast: { position: 'absolute', top: 110, alignSelf: 'center', backgroundColor: 'rgba(0,0,0,0.78)', paddingHorizontal: 18, paddingVertical: 12, borderRadius: 24, flexDirection: 'row', alignItems: 'center' },
 });
