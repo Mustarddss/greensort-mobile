@@ -84,25 +84,25 @@ export default function LocationDetails() {
           const residentName = session.user.user_metadata?.full_name;
           const receiverName = location.officerName || location.name; 
 
+          // 🟢 ISINAMA NA NATIN YUNG WASTE IMAGE AT REWARD IMAGE SA IPAPASA
           const inquiryContext = {
               type: "Reward",
               wasteType: surrenderItem,
               wasteQty: requiredAmount,
               rewardName: rewardItem,
-              location: location.address || location.name
+              location: location.address || location.name,
+              wasteImage: location.wasteImageUrl || null,
+              rewardImage: location.imageUrl || null
           };
 
-          // 🟢 TINANGGAL YUNG RAW TEXT SA UNAHAN PARA CARD LANG ANG LUMABAS SA CHAT
           const inquiryText = `|||INQUIRY|||${JSON.stringify(inquiryContext)}`;
 
-          // 1. Check muna natin kung nag-message na sila dati (KINI-KEEP NATIN TO KASI AYAW MO MAGBURA)
           const { data: existingChat } = await supabase
               .from('messages')
               .select('id')
               .or(`and(sender_name.eq."${residentName}",receiver_name.eq."${receiverName}"),and(sender_name.eq."${receiverName}",receiver_name.eq."${residentName}")`)
               .limit(1);
 
-          // 2. Isesend natin yung Card! (TINANGGAL YUNG IF CONDITION PARA KAHIT NAKA-CHAT NA KAYO, MAG-SESEND PA RIN NG CARD)
           await supabase.from('messages').insert([{
               sender_name: residentName,
               receiver_name: receiverName,
@@ -110,7 +110,6 @@ export default function LocationDetails() {
               is_read: false
           }]);
 
-          // 3. Pagkatapos i-send, ibabato na natin yung Resident papunta sa Chat Screen
           router.push({ 
               pathname: '/chat', 
               params: { 

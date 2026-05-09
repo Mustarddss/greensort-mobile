@@ -182,6 +182,15 @@ export default function Login() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#ffffff' }}>
       <StatusBar style="dark" backgroundColor="#ffffff" />
+      
+      {/* 🟢 BACK BUTTON PARA MAKABALIK SA ONBOARDING */}
+      <TouchableOpacity 
+        style={styles.topBackButton} 
+        onPress={() => router.replace({ pathname: '/onboarding', params: { skip: 'true' } })}
+      >
+          <Ionicons name="arrow-back" size={28} color="#1C1C1E" />
+      </TouchableOpacity>
+
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
           
@@ -228,6 +237,11 @@ export default function Login() {
                     <Text style={styles.link}>Sign Up</Text>
                   </TouchableOpacity>
                 </View>
+
+                {/* 🟢 SWITCH TO CENTER LOGIN */}
+                <TouchableOpacity style={styles.centerLoginLink} onPress={() => router.push('/login-center')}>
+                    <Text style={styles.centerLoginText}>Are you a drop-off center? <Text style={{fontWeight: 'bold', color: '#007C00'}}>Login here</Text></Text>
+                </TouchableOpacity>
               </>
             )}
 
@@ -287,7 +301,7 @@ export default function Login() {
         </ScrollView>
       </KeyboardAvoidingView>
 
-      {/* 🟢 2FA LOGIN OTP MODAL (NAKA-BALOT NA NGAYON SA KEYBOARD AVOIDING VIEW PARA UMANGAT) */}
+      {/* 🟢 2FA LOGIN OTP MODAL */}
       <Modal visible={showLoginOtpModal} animationType="slide" transparent={true}>
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
           <View style={styles.modalOverlay}>
@@ -328,8 +342,9 @@ export default function Login() {
 }
 
 const styles = StyleSheet.create({
+  topBackButton: { paddingHorizontal: 25, paddingTop: Platform.OS === 'ios' ? 10 : 20, zIndex: 10 },
   scrollContainer: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: 30, paddingBottom: 20 },
-  logoContainer: { alignItems: 'flex-start', marginBottom: 20, marginTop: 20 },
+  logoContainer: { alignItems: 'flex-start', marginBottom: 20, marginTop: 10 },
   logoImage: { width: 120, height: 120, marginLeft: -10 },
   title: { fontSize: 28, fontWeight: 'bold', color: '#007C00', marginBottom: 5, textAlign: 'left' },
   subtitle: { fontSize: 14, color: '#888', marginBottom: 40, textAlign: 'left' },
@@ -341,6 +356,8 @@ const styles = StyleSheet.create({
   buttonText: { color: '#fff', fontSize: 16, fontWeight: 'bold', letterSpacing: 0.5 },
   footer: { flexDirection: 'row', justifyContent: 'center', marginTop: 30 },
   link: { color: '#007C00', fontWeight: 'bold' },
+  centerLoginLink: { marginTop: 25, alignItems: 'center' },
+  centerLoginText: { fontSize: 13, color: '#666' },
   
   forgotPasswordText: { color: '#007C00', fontSize: 13, fontWeight: 'bold', textAlign: 'right', marginTop: 10 },
   backButton: { padding: 15, alignItems: 'center', marginTop: 10 },

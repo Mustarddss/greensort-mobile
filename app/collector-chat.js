@@ -277,10 +277,10 @@ export default function CollectorChatScreen() {
                 {inquiryContext && (
                     <View style={styles.inquirySection}>
                         
-                        {/* 🟢 BANNER NA MAKIKITA LANG NI CENTER */}
+                        {/* BANNER NA MAKIKITA LANG NI CENTER */}
                         {!isMe && (
                             <Text style={styles.systemContactText}>
-                                <Text style={{fontWeight: 'bold'}}>{item.sender_name}</Text> contacted you regarding the {inquiryContext.rewardName || 'Reward'} Reward.
+                                <Text style={{fontWeight: 'bold'}}>{item.sender_name}</Text> contacted you regarding the {inquiryContext.rewardName || 'Reward'}.
                             </Text>
                         )}
 
@@ -298,9 +298,14 @@ export default function CollectorChatScreen() {
                                     <View style={{alignItems: 'center'}}>
                                         <Text style={styles.rcLabel}>Waste</Text>
                                         <View style={styles.wasteBox}>
-                                            <MaterialCommunityIcons name="recycle" size={32} color="#0066FF" />
+                                            {/* 🟢 DYNAMIC IMAGE O DEFAULT ICON */}
+                                            {inquiryContext.wasteImage ? (
+                                                <Image source={{uri: inquiryContext.wasteImage}} style={{width: '100%', height: '100%'}} resizeMode="cover" />
+                                            ) : (
+                                                <MaterialCommunityIcons name="recycle" size={32} color="#0066FF" />
+                                            )}
                                             <View style={styles.wasteBoxLabel}>
-                                                <Text style={{color:'white', fontSize: 9, fontWeight:'bold'}}>{inquiryContext.wasteType || 'Plastic'}</Text>
+                                                <Text style={{color:'white', fontSize: 9, fontWeight:'bold'}} numberOfLines={1}>{inquiryContext.wasteType || 'Plastic'}</Text>
                                             </View>
                                         </View>
                                     </View>
@@ -315,9 +320,14 @@ export default function CollectorChatScreen() {
                                     <View style={{alignItems: 'center'}}>
                                         <Text style={styles.rcLabel}>Reward</Text>
                                         <View style={styles.rewardBox}>
-                                            <MaterialCommunityIcons name="barley" size={32} color="#F9A826" />
+                                            {/* 🟢 DYNAMIC IMAGE O DEFAULT ICON */}
+                                            {inquiryContext.rewardImage ? (
+                                                <Image source={{uri: inquiryContext.rewardImage}} style={{width: '100%', height: '100%'}} resizeMode="cover" />
+                                            ) : (
+                                                <MaterialCommunityIcons name="barley" size={32} color="#F9A826" />
+                                            )}
                                             <View style={styles.rewardBoxLabel}>
-                                                <Text style={{color:'white', fontSize: 9, fontWeight:'bold'}}>{inquiryContext.rewardName || '1kg Rice'}</Text>
+                                                <Text style={{color:'white', fontSize: 9, fontWeight:'bold'}} numberOfLines={1}>{inquiryContext.rewardName || '1kg Rice'}</Text>
                                             </View>
                                         </View>
                                     </View>
@@ -328,7 +338,7 @@ export default function CollectorChatScreen() {
                                         <Text style={styles.rcColHeader}><MaterialCommunityIcons name="recycle" color="#00C853" /> Waste details</Text>
                                         <Text style={styles.rcDetailText}><Text style={{fontWeight: 'bold'}}>Type:</Text> {inquiryContext.wasteType}</Text>
                                         <Text style={styles.rcDetailText}><Text style={{fontWeight: 'bold'}}>Quantity:</Text> {inquiryContext.wasteQty}</Text>
-                                        <Text style={styles.rcDetailText}><Text style={{fontWeight: 'bold'}}>Note:</Text> Clean and dry recyclable plastic</Text>
+                                        <Text style={styles.rcDetailText}><Text style={{fontWeight: 'bold'}}>Note:</Text> Clean and dry recyclable items</Text>
                                         <View style={{flexDirection: 'row', marginTop: 5}}>
                                             <View style={styles.outlineBadge}><Text style={styles.outlineBadgeText}>Clean</Text></View>
                                             <View style={styles.outlineBadge}><Text style={styles.outlineBadgeText}>Dry</Text></View>
@@ -339,7 +349,6 @@ export default function CollectorChatScreen() {
                                         <Text style={styles.rcColHeader}><MaterialCommunityIcons name="gift" color="#F9A826" /> Reward details</Text>
                                         <Text style={styles.rcDetailText}><Text style={{fontWeight: 'bold'}}>Item:</Text> {inquiryContext.rewardName}</Text>
                                         <Text style={styles.rcDetailText}><Text style={{fontWeight: 'bold'}}>Stock:</Text> Available</Text>
-                                        <Text style={styles.rcDetailText}><Text style={{fontWeight: 'bold'}}>Note:</Text> Premium quality white rice</Text>
                                         <View style={{flexDirection: 'row', marginTop: 5}}>
                                             <View style={[styles.outlineBadge, {borderColor: '#00C853'}]}><Text style={[styles.outlineBadgeText, {color: '#00C853'}]}>In stock</Text></View>
                                         </View>
@@ -359,8 +368,8 @@ export default function CollectorChatScreen() {
                     </View>
                 )}
 
-                {/* 💬 4. NORMAL CHAT BUBBLES (LALABAS LANG KUNG MAY TEXT O IMAGE) */}
-                {/* 🟢 FIXED: TEXT SQUISH ISSUE BY RESTORING FLEX: 1 */}
+                {/* 💬 CHAT BUBBLES (LALABAS LANG KUNG MAY TEXT O IMAGE) */}
+                {/* 🟢 FIXED: Gumamit ng flexShrink para hindi mag-squish yung text! */}
                 {showBubble ? (
                     <View style={[styles.messageRow, isMe ? { justifyContent: 'flex-end' } : { justifyContent: 'flex-start' }]}>
                         
@@ -368,8 +377,8 @@ export default function CollectorChatScreen() {
                             <Image source={{ uri: chatUserAvatar }} style={styles.chatAvatar} />
                         )}
 
-                        <View style={{flex: 1, flexDirection: 'column', alignItems: isMe ? 'flex-end' : 'flex-start'}}>
-                            <View style={{flexDirection: 'row', alignItems: 'flex-end'}}>
+                        <View style={{flexDirection: 'column', alignItems: isMe ? 'flex-end' : 'flex-start', flexShrink: 1, maxWidth: isMe ? '100%' : '90%'}}>
+                            <View style={{flexDirection: 'row', alignItems: 'flex-end', flexShrink: 1}}>
                                 <TouchableOpacity activeOpacity={0.85} onLongPress={() => setReplyingTo(item)} style={[styles.bubble, isMe ? styles.myBubble : styles.theirBubble, (isThumbsUp || item.image_url) ? {backgroundColor: 'transparent', padding: 0, borderWidth: 0, elevation: 0, shadowOpacity: 0} : null]}>
                                     
                                     {item.reply_to_text ? (
@@ -488,7 +497,7 @@ const styles = StyleSheet.create({
   msgText: { fontSize: 15, lineHeight: 21 },
   
   // 🟢 REWARD CARD UI STYLES
-  inquirySection: { alignItems: 'center', marginBottom: 15, width: '100%' },
+  inquirySection: { width: '100%', marginBottom: 15 },
   rewardCard: { width: screenWidth * 0.85, backgroundColor: 'white', borderRadius: 16, overflow: 'hidden', borderWidth: 1, borderColor: '#eee', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 5, elevation: 2 },
   rcHeader: { backgroundColor: '#0066FF', padding: 15, alignItems: 'center' },
   rcPill: { backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, marginBottom: 8 },
@@ -520,10 +529,4 @@ const styles = StyleSheet.create({
   inputContainer: { flexDirection: 'row', alignItems: 'flex-end', padding: 10, paddingBottom: Platform.OS === 'ios' ? 25 : 15 },
   inputWrap: { flex: 1, backgroundColor: '#E4E6EB', borderRadius: 20, paddingHorizontal: 15, paddingVertical: Platform.OS === 'ios' ? 10 : 6, marginHorizontal: 10, minHeight: 40, justifyContent: 'center' },
   input: { fontSize: 15, color: '#1C1C1E', maxHeight: 100, padding: 0 },
-
-  newMsgButton: { position: 'absolute', bottom: Platform.OS === 'ios' ? 95 : 75, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', backgroundColor: '#0066FF', paddingLeft: 6, paddingRight: 14, paddingVertical: 6, borderRadius: 24, shadowColor: '#000', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.25, shadowRadius: 6, elevation: 6, zIndex: 50 },
-  newMsgBadge: { minWidth: 22, height: 22, paddingHorizontal: 6, borderRadius: 11, backgroundColor: '#FFFFFF', justifyContent: 'center', alignItems: 'center', marginRight: 8 },
-  newMsgBadgeText: { color: '#0066FF', fontWeight: '800', fontSize: 12 },
-  newMsgText: { color: '#fff', fontWeight: '600', fontSize: 13, letterSpacing: 0.2 },
-  uploadToast: { position: 'absolute', top: 110, alignSelf: 'center', backgroundColor: 'rgba(0,0,0,0.78)', paddingHorizontal: 18, paddingVertical: 12, borderRadius: 24, flexDirection: 'row', alignItems: 'center' },
 });

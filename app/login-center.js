@@ -79,7 +79,8 @@ export default function LoginCenter() {
 
                         <View style={styles.footer}>
                             <Text style={{ color: '#888' }}>Not registered yet? </Text>
-                            <TouchableOpacity onPress={() => router.push('/register-center')}><Text style={styles.link}>Apply Now</Text></TouchableOpacity>
+                            {/* 🟢 FIXED ROUTE PARA DIRETSO SA CENTER SIGNUP */}
+                            <TouchableOpacity onPress={() => router.push('/register-location')}><Text style={styles.link}>Apply Now</Text></TouchableOpacity>
                         </View>
                     </View>
                 </ScrollView>

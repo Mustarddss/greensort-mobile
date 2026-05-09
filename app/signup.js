@@ -139,6 +139,15 @@ export default function Signup() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#ffffff' }}>
       <StatusBar style="dark" backgroundColor="#ffffff" />
+      
+      {/* 🟢 BACK BUTTON PARA MAKABALIK SA LOGIN */}
+      <TouchableOpacity 
+        style={styles.topBackButton} 
+        onPress={() => router.back()}
+      >
+          <Ionicons name="arrow-back" size={28} color="#1C1C1E" />
+      </TouchableOpacity>
+
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
           
@@ -236,7 +245,8 @@ export default function Signup() {
 }
 
 const styles = StyleSheet.create({
-  scrollContainer: { flexGrow: 1, paddingHorizontal: 30, paddingTop: 20, paddingBottom: 50 },
+  topBackButton: { paddingHorizontal: 25, paddingTop: Platform.OS === 'ios' ? 10 : 20, zIndex: 10 },
+  scrollContainer: { flexGrow: 1, paddingHorizontal: 30, paddingTop: 10, paddingBottom: 50 },
   centerHeader: { alignItems: 'center', marginBottom: 10 },
   logoImage: { width: 200, height: 200 },
   headerTextContainer: { marginBottom: 25, alignItems: 'flex-start' },

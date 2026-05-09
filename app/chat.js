@@ -303,7 +303,6 @@ export default function ChatScreen() {
     return `${dayStr} • ${timeStr}`;
   };
 
-  // 🟢 BALIK YUNG ACCENT FUNCTION PARA SA COMMUNITY POSTS
   const getInquiryAccent = (type) => {
       switch ((type || '').toLowerCase()) {
           case 'trade':   return { icon: 'swap-horizontal', color: '#007C00', bg: '#E8F5E9', label: 'TRADE' };
@@ -456,7 +455,6 @@ export default function ChatScreen() {
           const timeDiffMins = prevItem ? (new Date(item.created_at) - new Date(prevItem.created_at)) / 60000 : 999;
           const timeDiffNextMins = nextItem ? (new Date(nextItem.created_at) - new Date(item.created_at)) / 60000 : 999;
 
-          // 🟢 PARSE INQUIRY PAYLOAD
           const textParts = item.text ? item.text.split('|||INQUIRY|||') : [''];
           const actualText = textParts[0].trim();
           let inquiryContext = null;
@@ -464,14 +462,14 @@ export default function ChatScreen() {
               try { inquiryContext = JSON.parse(textParts[1]); } catch(e){}
           }
 
-          // 🟢 KUNG REWARD OR COMMUNITY
+          // 🟢 TUKUYIN KUNG COMMUNITY O REWARD INQUIRY
           const isRewardInquiry = inquiryContext && inquiryContext.type === 'Reward';
           const isCommunityInquiry = inquiryContext && inquiryContext.type !== 'Reward';
 
           const showTimeHeader = !isSameSenderAsPrev || timeDiffMins > 1 || inquiryContext;
           const showBubble = actualText.length > 0 || item.reply_to_text || item.image_url;
           const isThumbsUp = actualText === '👍';
-          
+
           const accent = isCommunityInquiry ? getInquiryAccent(inquiryContext.type) : null;
 
           return (
@@ -483,7 +481,7 @@ export default function ChatScreen() {
                     </View>
                 ) : null}
 
-                {/* 🟢 1. SYSTEM BANNER PARA SA COMMUNITY POST (Hindi makikita ng nag-send) */}
+                {/* 🟢 1. SYSTEM BANNER (Makikita lang sa Community Inquiry at kung hindi ikaw ang nag-send) */}
                 {isCommunityInquiry && !isMe && (
                     <View style={styles.systemBanner}>
                         <Ionicons name="information-circle" size={14} color="#007C00" style={{marginRight: 6}} />
@@ -493,7 +491,7 @@ export default function ChatScreen() {
                     </View>
                 )}
 
-                {/* 🟢 2. COMMUNITY POST INQUIRY CARD (Original) */}
+                {/* 🟢 2. COMMUNITY POST CARD (Original UI for For Sale/Trade/Free) */}
                 {isCommunityInquiry && (
                     <TouchableOpacity activeOpacity={0.9} style={[styles.communityInquiryCard, isMe ? { alignSelf: 'flex-end' } : { alignSelf: 'flex-start' }]}>
                         <View style={[styles.inquiryAccentBar, { backgroundColor: accent?.color || '#007C00' }]} />
@@ -532,7 +530,7 @@ export default function ChatScreen() {
                     </TouchableOpacity>
                 )}
 
-                {/* 🟢 3. REWARD INQUIRY CARD PARA SA CENTER (Walang System Banner) */}
+                {/* 🟢 3. REWARD INQUIRY CARD (Para sa Center) + DYNAMIC IMAGES */}
                 {isRewardInquiry && (
                     <View style={styles.inquirySection}>
                         <View style={[styles.rewardCard, isMe ? { alignSelf: 'flex-end' } : { alignSelf: 'flex-start' }]}>
@@ -547,8 +545,13 @@ export default function ChatScreen() {
                                     <View style={{alignItems: 'center'}}>
                                         <Text style={styles.rcLabel}>Waste</Text>
                                         <View style={styles.wasteBox}>
-                                            <MaterialCommunityIcons name="recycle" size={32} color="#0066FF" />
-                                            <View style={styles.wasteBoxLabel}><Text style={{color:'white', fontSize: 9, fontWeight:'bold'}}>{inquiryContext.wasteType || 'Plastic'}</Text></View>
+                                            {/* 🟢 NAGLALAGAY NA NG IMAGE KUNG MERON */}
+                                            {inquiryContext.wasteImage ? (
+                                                <Image source={{uri: inquiryContext.wasteImage}} style={{width: '100%', height: '100%'}} resizeMode="cover" />
+                                            ) : (
+                                                <MaterialCommunityIcons name="recycle" size={32} color="#0066FF" />
+                                            )}
+                                            <View style={styles.wasteBoxLabel}><Text style={{color:'white', fontSize: 9, fontWeight:'bold'}} numberOfLines={1}>{inquiryContext.wasteType || 'Plastic'}</Text></View>
                                         </View>
                                     </View>
 
@@ -562,8 +565,13 @@ export default function ChatScreen() {
                                     <View style={{alignItems: 'center'}}>
                                         <Text style={styles.rcLabel}>Reward</Text>
                                         <View style={styles.rewardBox}>
-                                            <MaterialCommunityIcons name="barley" size={32} color="#F9A826" />
-                                            <View style={styles.rewardBoxLabel}><Text style={{color:'white', fontSize: 9, fontWeight:'bold'}}>{inquiryContext.rewardName || '1kg Rice'}</Text></View>
+                                            {/* 🟢 NAGLALAGAY NA NG IMAGE KUNG MERON */}
+                                            {inquiryContext.rewardImage ? (
+                                                <Image source={{uri: inquiryContext.rewardImage}} style={{width: '100%', height: '100%'}} resizeMode="cover" />
+                                            ) : (
+                                                <MaterialCommunityIcons name="barley" size={32} color="#F9A826" />
+                                            )}
+                                            <View style={styles.rewardBoxLabel}><Text style={{color:'white', fontSize: 9, fontWeight:'bold'}} numberOfLines={1}>{inquiryContext.rewardName || '1kg Rice'}</Text></View>
                                         </View>
                                     </View>
                                 </View>
@@ -573,7 +581,7 @@ export default function ChatScreen() {
                                         <Text style={styles.rcColHeader}><MaterialCommunityIcons name="recycle" color="#00C853" /> Waste details</Text>
                                         <Text style={styles.rcDetailText}><Text style={{fontWeight: 'bold'}}>Type:</Text> {inquiryContext.wasteType}</Text>
                                         <Text style={styles.rcDetailText}><Text style={{fontWeight: 'bold'}}>Quantity:</Text> {inquiryContext.wasteQty}</Text>
-                                        <Text style={styles.rcDetailText}><Text style={{fontWeight: 'bold'}}>Note:</Text> Clean and dry recyclable plastic</Text>
+                                        <Text style={styles.rcDetailText}><Text style={{fontWeight: 'bold'}}>Note:</Text> Clean and dry recyclable items</Text>
                                         <View style={{flexDirection: 'row', marginTop: 5}}>
                                             <View style={styles.outlineBadge}><Text style={styles.outlineBadgeText}>Clean</Text></View>
                                             <View style={styles.outlineBadge}><Text style={styles.outlineBadgeText}>Dry</Text></View>
@@ -583,7 +591,6 @@ export default function ChatScreen() {
                                         <Text style={styles.rcColHeader}><MaterialCommunityIcons name="gift" color="#F9A826" /> Reward details</Text>
                                         <Text style={styles.rcDetailText}><Text style={{fontWeight: 'bold'}}>Item:</Text> {inquiryContext.rewardName}</Text>
                                         <Text style={styles.rcDetailText}><Text style={{fontWeight: 'bold'}}>Stock:</Text> Available</Text>
-                                        <Text style={styles.rcDetailText}><Text style={{fontWeight: 'bold'}}>Note:</Text> Premium quality white rice</Text>
                                         <View style={{flexDirection: 'row', marginTop: 5}}>
                                             <View style={[styles.outlineBadge, {borderColor: '#00C853'}]}><Text style={[styles.outlineBadgeText, {color: '#00C853'}]}>In stock</Text></View>
                                         </View>
@@ -599,8 +606,8 @@ export default function ChatScreen() {
                     </View>
                 )}
 
-                {/* 💬 4. NORMAL CHAT BUBBLES (LALABAS LANG KUNG MAY TEXT O IMAGE) */}
-                {/* 🟢 FIXED: TEXT SQUISH ISSUE BY RESTORING FLEX: 1 */}
+                {/* 💬 CHAT BUBBLES */}
+                {/* 🟢 FIXED: Gumamit ng flexShrink para hindi mag-squish yung text! */}
                 {showBubble ? (
                     <View style={[styles.messageRow, isMe ? { justifyContent: 'flex-end' } : { justifyContent: 'flex-start' }]}>
                         
@@ -608,8 +615,8 @@ export default function ChatScreen() {
                             <Image source={{ uri: chatUserAvatar }} style={styles.chatAvatar} />
                         )}
 
-                        <View style={{flex: 1, flexDirection: 'column', alignItems: isMe ? 'flex-end' : 'flex-start'}}>
-                            <View style={{flexDirection: 'row', alignItems: 'flex-end'}}>
+                        <View style={{flexDirection: 'column', alignItems: isMe ? 'flex-end' : 'flex-start', flexShrink: 1, maxWidth: isMe ? '100%' : '90%'}}>
+                            <View style={{flexDirection: 'row', alignItems: 'flex-end', flexShrink: 1}}>
                                 <TouchableOpacity activeOpacity={0.85} onLongPress={() => setReplyingTo(item)} style={[styles.bubble, isMe ? styles.myBubble : styles.theirBubble, (isThumbsUp || item.image_url) ? {backgroundColor: 'transparent', padding: 0, borderWidth: 0, elevation: 0, shadowOpacity: 0} : null]}>
                                     
                                     {item.reply_to_text ? (
