@@ -107,7 +107,6 @@ export default function ChatScreen() {
           setMessages(uniqueMessages);
           setIsInitialLoading(false); 
       }
-      if (error) console.log("Error fetching messages:", error);
     };
 
     fetchSessionAndMessages();
@@ -462,14 +461,13 @@ export default function ChatScreen() {
               try { inquiryContext = JSON.parse(textParts[1]); } catch(e){}
           }
 
-          // 🟢 TUKUYIN KUNG COMMUNITY O REWARD INQUIRY
           const isRewardInquiry = inquiryContext && inquiryContext.type === 'Reward';
           const isCommunityInquiry = inquiryContext && inquiryContext.type !== 'Reward';
 
           const showTimeHeader = !isSameSenderAsPrev || timeDiffMins > 1 || inquiryContext;
           const showBubble = actualText.length > 0 || item.reply_to_text || item.image_url;
           const isThumbsUp = actualText === '👍';
-
+          
           const accent = isCommunityInquiry ? getInquiryAccent(inquiryContext.type) : null;
 
           return (
@@ -481,7 +479,7 @@ export default function ChatScreen() {
                     </View>
                 ) : null}
 
-                {/* 🟢 1. SYSTEM BANNER (Makikita lang sa Community Inquiry at kung hindi ikaw ang nag-send) */}
+                {/* 🟢 SYSTEM BANNER PARA SA COMMUNITY POST */}
                 {isCommunityInquiry && !isMe && (
                     <View style={styles.systemBanner}>
                         <Ionicons name="information-circle" size={14} color="#007C00" style={{marginRight: 6}} />
@@ -491,7 +489,7 @@ export default function ChatScreen() {
                     </View>
                 )}
 
-                {/* 🟢 2. COMMUNITY POST CARD (Original UI for For Sale/Trade/Free) */}
+                {/* 🟢 COMMUNITY POST INQUIRY CARD */}
                 {isCommunityInquiry && (
                     <TouchableOpacity activeOpacity={0.9} style={[styles.communityInquiryCard, isMe ? { alignSelf: 'flex-end' } : { alignSelf: 'flex-start' }]}>
                         <View style={[styles.inquiryAccentBar, { backgroundColor: accent?.color || '#007C00' }]} />
@@ -530,7 +528,7 @@ export default function ChatScreen() {
                     </TouchableOpacity>
                 )}
 
-                {/* 🟢 3. REWARD INQUIRY CARD (Para sa Center) + DYNAMIC IMAGES */}
+                {/* 🟢 REWARD INQUIRY CARD PARA KAY RESIDENT (PURE GREEN THEME!) */}
                 {isRewardInquiry && (
                     <View style={styles.inquirySection}>
                         <View style={[styles.rewardCard, isMe ? { alignSelf: 'flex-end' } : { alignSelf: 'flex-start' }]}>
@@ -545,11 +543,10 @@ export default function ChatScreen() {
                                     <View style={{alignItems: 'center'}}>
                                         <Text style={styles.rcLabel}>Waste</Text>
                                         <View style={styles.wasteBox}>
-                                            {/* 🟢 NAGLALAGAY NA NG IMAGE KUNG MERON */}
                                             {inquiryContext.wasteImage ? (
                                                 <Image source={{uri: inquiryContext.wasteImage}} style={{width: '100%', height: '100%'}} resizeMode="cover" />
                                             ) : (
-                                                <MaterialCommunityIcons name="recycle" size={32} color="#0066FF" />
+                                                <MaterialCommunityIcons name="recycle" size={32} color="#007C00" />
                                             )}
                                             <View style={styles.wasteBoxLabel}><Text style={{color:'white', fontSize: 9, fontWeight:'bold'}} numberOfLines={1}>{inquiryContext.wasteType || 'Plastic'}</Text></View>
                                         </View>
@@ -559,13 +556,12 @@ export default function ChatScreen() {
                                         <View style={styles.exchangeCircle}>
                                             <MaterialCommunityIcons name="swap-horizontal" size={20} color="white" />
                                         </View>
-                                        <Text style={{fontSize: 9, color: '#0066FF', marginTop: 4, fontWeight: 'bold'}}>exchange</Text>
+                                        <Text style={{fontSize: 9, color: '#007C00', marginTop: 4, fontWeight: 'bold'}}>exchange</Text>
                                     </View>
 
                                     <View style={{alignItems: 'center'}}>
                                         <Text style={styles.rcLabel}>Reward</Text>
                                         <View style={styles.rewardBox}>
-                                            {/* 🟢 NAGLALAGAY NA NG IMAGE KUNG MERON */}
                                             {inquiryContext.rewardImage ? (
                                                 <Image source={{uri: inquiryContext.rewardImage}} style={{width: '100%', height: '100%'}} resizeMode="cover" />
                                             ) : (
@@ -581,7 +577,7 @@ export default function ChatScreen() {
                                         <Text style={styles.rcColHeader}><MaterialCommunityIcons name="recycle" color="#00C853" /> Waste details</Text>
                                         <Text style={styles.rcDetailText}><Text style={{fontWeight: 'bold'}}>Type:</Text> {inquiryContext.wasteType}</Text>
                                         <Text style={styles.rcDetailText}><Text style={{fontWeight: 'bold'}}>Quantity:</Text> {inquiryContext.wasteQty}</Text>
-                                        <Text style={styles.rcDetailText}><Text style={{fontWeight: 'bold'}}>Note:</Text> Clean and dry recyclable items</Text>
+                                        <Text style={styles.rcDetailText}><Text style={{fontWeight: 'bold'}}>Note:</Text> Clean and dry recyclable plastic</Text>
                                         <View style={{flexDirection: 'row', marginTop: 5}}>
                                             <View style={styles.outlineBadge}><Text style={styles.outlineBadgeText}>Clean</Text></View>
                                             <View style={styles.outlineBadge}><Text style={styles.outlineBadgeText}>Dry</Text></View>
@@ -591,6 +587,7 @@ export default function ChatScreen() {
                                         <Text style={styles.rcColHeader}><MaterialCommunityIcons name="gift" color="#F9A826" /> Reward details</Text>
                                         <Text style={styles.rcDetailText}><Text style={{fontWeight: 'bold'}}>Item:</Text> {inquiryContext.rewardName}</Text>
                                         <Text style={styles.rcDetailText}><Text style={{fontWeight: 'bold'}}>Stock:</Text> Available</Text>
+                                        <Text style={styles.rcDetailText}><Text style={{fontWeight: 'bold'}}>Note:</Text> Premium quality white rice</Text>
                                         <View style={{flexDirection: 'row', marginTop: 5}}>
                                             <View style={[styles.outlineBadge, {borderColor: '#00C853'}]}><Text style={[styles.outlineBadgeText, {color: '#00C853'}]}>In stock</Text></View>
                                         </View>
@@ -599,15 +596,14 @@ export default function ChatScreen() {
 
                                 <View style={styles.rcFooter}>
                                     <TouchableOpacity style={[styles.rcBtn, {opacity: 0.4}]} disabled><Text style={styles.rcBtnText}>View center</Text></TouchableOpacity>
-                                    <TouchableOpacity style={styles.rcBtn} disabled><Text style={[styles.rcBtnText, {color: '#0066FF', fontWeight: 'bold'}]}>Exchange details sent!</Text></TouchableOpacity>
+                                    <TouchableOpacity style={styles.rcBtn} disabled><Text style={[styles.rcBtnText, {color: '#007C00', fontWeight: 'bold'}]}>Exchange details sent!</Text></TouchableOpacity>
                                 </View>
                             </View>
                         </View>
                     </View>
                 )}
 
-                {/* 💬 CHAT BUBBLES */}
-                {/* 🟢 FIXED: Gumamit ng flexShrink para hindi mag-squish yung text! */}
+                {/* 💬 NORMAL CHAT BUBBLES */}
                 {showBubble ? (
                     <View style={[styles.messageRow, isMe ? { justifyContent: 'flex-end' } : { justifyContent: 'flex-start' }]}>
                         
@@ -615,8 +611,8 @@ export default function ChatScreen() {
                             <Image source={{ uri: chatUserAvatar }} style={styles.chatAvatar} />
                         )}
 
-                        <View style={{flexDirection: 'column', alignItems: isMe ? 'flex-end' : 'flex-start', flexShrink: 1, maxWidth: isMe ? '100%' : '90%'}}>
-                            <View style={{flexDirection: 'row', alignItems: 'flex-end', flexShrink: 1}}>
+                        <View style={{flex: 1, flexDirection: 'column', alignItems: isMe ? 'flex-end' : 'flex-start'}}>
+                            <View style={{flexDirection: 'row', alignItems: 'flex-end'}}>
                                 <TouchableOpacity activeOpacity={0.85} onLongPress={() => setReplyingTo(item)} style={[styles.bubble, isMe ? styles.myBubble : styles.theirBubble, (isThumbsUp || item.image_url) ? {backgroundColor: 'transparent', padding: 0, borderWidth: 0, elevation: 0, shadowOpacity: 0} : null]}>
                                     
                                     {item.reply_to_text ? (
@@ -769,10 +765,10 @@ const styles = StyleSheet.create({
   metaLabel: { fontSize: 11, fontWeight: '700', color: '#3E5641', marginLeft: 4, marginRight: 4 },
   metaValue: { fontSize: 11, color: '#5F6368', flex: 1 },
 
-  // 🟢 REWARD CARD UI STYLES
+  // 🟢 REWARD CARD UI STYLES (PURE GREEN THEME)
   inquirySection: { alignItems: 'center', marginBottom: 15, width: '100%' },
   rewardCard: { width: screenWidth * 0.85, backgroundColor: 'white', borderRadius: 16, overflow: 'hidden', borderWidth: 1, borderColor: '#eee', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 5, elevation: 2 },
-  rcHeader: { backgroundColor: '#0066FF', padding: 15, alignItems: 'center' },
+  rcHeader: { backgroundColor: '#007C00', padding: 15, alignItems: 'center' },
   rcPill: { backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, marginBottom: 8 },
   rcPillText: { color: 'white', fontSize: 10, fontWeight: 'bold' },
   rcTitle: { color: 'white', fontSize: 16, fontWeight: 'bold' },
@@ -780,17 +776,17 @@ const styles = StyleSheet.create({
   rcBody: { padding: 15 },
   rcTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
   rcLabel: { fontSize: 11, color: '#555', fontWeight: '600', marginBottom: 8 },
-  wasteBox: { width: 80, height: 90, backgroundColor: '#E3F2FD', borderRadius: 12, justifyContent: 'center', alignItems: 'center', overflow: 'hidden' },
-  wasteBoxLabel: { position: 'absolute', bottom: 0, width: '100%', backgroundColor: '#0066FF', paddingVertical: 4, alignItems: 'center' },
-  exchangeCircle: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#0066FF', justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#E3F2FD' },
+  wasteBox: { width: 80, height: 90, backgroundColor: '#E8F5E9', borderRadius: 12, justifyContent: 'center', alignItems: 'center', overflow: 'hidden' },
+  wasteBoxLabel: { position: 'absolute', bottom: 0, width: '100%', backgroundColor: '#007C00', paddingVertical: 4, alignItems: 'center' },
+  exchangeCircle: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#007C00', justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#E8F5E9' },
   rewardBox: { width: 80, height: 90, backgroundColor: '#E8F5E9', borderRadius: 12, justifyContent: 'center', alignItems: 'center', overflow: 'hidden' },
   rewardBoxLabel: { position: 'absolute', bottom: 0, width: '100%', backgroundColor: '#4CAF50', paddingVertical: 4, alignItems: 'center' },
   rcDetailsRow: { flexDirection: 'row', justifyContent: 'space-between' },
   rcCol: { flex: 1, paddingRight: 5 },
   rcColHeader: { fontSize: 12, fontWeight: 'bold', color: '#333', marginBottom: 8 },
   rcDetailText: { fontSize: 10, color: '#555', marginBottom: 4, lineHeight: 14 },
-  outlineBadge: { borderWidth: 1, borderColor: '#0066FF', borderRadius: 10, paddingHorizontal: 6, paddingVertical: 2, marginRight: 5 },
-  outlineBadgeText: { fontSize: 9, color: '#0066FF', fontWeight: 'bold' },
+  outlineBadge: { borderWidth: 1, borderColor: '#007C00', borderRadius: 10, paddingHorizontal: 6, paddingVertical: 2, marginRight: 5 },
+  outlineBadgeText: { fontSize: 9, color: '#007C00', fontWeight: 'bold' },
   rcFooter: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 15, borderTopWidth: 1, borderTopColor: '#f0f0f0', paddingTop: 10 },
   rcBtn: { flex: 1, paddingVertical: 8, alignItems: 'center', backgroundColor: '#fcfcfc', borderRadius: 8, marginHorizontal: 5, borderWidth: 1, borderColor: '#f0f0f0' },
   rcBtnText: { fontSize: 11, color: '#aaa', fontWeight: '600' },
