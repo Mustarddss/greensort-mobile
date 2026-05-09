@@ -26,16 +26,25 @@ export default function QRGenerator() {
         const { data: { user } } = await supabase.auth.getUser();
         
         if (user) {
+            // 🟢 FIXED: KINUKUHA NA ANG PROFILE DATA PARA ISAMA SA QR!
+            const { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).single();
+
             const fullName = user.user_metadata?.full_name || 'GreenSort Resident';
             const targetReward = params.rewardName || 'None'; 
             const targetMaterial = params.materialType || 'Recyclables'; 
-            
-            // 🟢 ISAMA ANG BANKED DETAILS SA QR JSON DATA
+            const requiredKg = params.wasteQty || '0'; // 🟢 FIXED: SINASALO YUNG TARGET KG
+            const rewardImg = params.rewardImage || ''; // 🟢 FIXED: SINASALO YUNG REWARD PHOTO
+
+            // 🟢 ISAMA ANG BANKED DETAILS, ADDRESS, PIC, AT TARGET KG SA QR JSON DATA
             const qrContent = JSON.stringify({
                 email: user.email,
                 name: fullName,
+                address: profile?.address || profile?.full_address || (profile?.barangay ? `${profile.barangay}, ${profile.city}` : 'Address not provided'),
+                avatar: profile?.avatar_url || '',
                 targetReward: isBankedRedemption ? "Redeem Banked Points" : targetReward, 
                 targetMaterial: targetMaterial, 
+                wasteQty: requiredKg, 
+                rewardImage: rewardImg,
                 isBankedRedemption: isBankedRedemption, 
                 bankedKg: bankedKg, 
                 collectorEmail: collectorEmail, 
@@ -54,7 +63,7 @@ export default function QRGenerator() {
       }
     };
     getUser();
-  }, [params.rewardName, params.materialType, isBankedRedemption]);
+  }, [params.rewardName, params.materialType, params.wasteQty, isBankedRedemption]);
 
   return (
     <View style={styles.container}> 
@@ -85,23 +94,32 @@ export default function QRGenerator() {
             </View>
 
             {/* 🟢 GREEN TEXT EXACTLY LIKE THE PICTURE */}
-            <Text style={styles.instructionText}>
-                Please present this QR code to the assigned official. Your recyclables will be weighed and verified before reward processing.
-            </Text>
+            {isBankedRedemption ? (
+                <>
+                    <Text style={styles.instructionText}>Present this QR code to the collector.</Text>
+                    <Text style={[styles.instructionText, {fontSize: 12, marginTop: -15}]}>You are claiming your banked <Text style={{fontWeight:'bold'}}>{bankedKg}kg</Text> of <Text style={{fontWeight:'bold'}}>{params.materialType}</Text>.</Text>
+                </>
+            ) : (
+                <Text style={styles.instructionText}>
+                    Please present this QR code to the assigned official. Your recyclables will be weighed and verified before reward processing.
+                </Text>
+            )}
 
             {/* 🟢 BAGONG GUIDELINES PARA KAY RESIDENT (BANKED KG EXPLANATION) */}
-            <View style={styles.guidelineBox}>
-                <View style={styles.guidelineHeader}>
-                    <Ionicons name="information-circle" size={18} color="#007C00" />
-                    <Text style={styles.guidelineTitle}>How it works</Text>
+            {!isBankedRedemption && (
+                <View style={styles.guidelineBox}>
+                    <View style={styles.guidelineHeader}>
+                        <Ionicons name="information-circle" size={18} color="#007C00" />
+                        <Text style={styles.guidelineTitle}>How it works</Text>
+                    </View>
+                    <Text style={styles.guidelineText}>
+                        Once scanned by the center, your surrender details will be viewed for verification. 
+                        If your recyclables <Text style={{fontWeight: 'bold'}}>do not meet the target weight</Text> required for the reward, 
+                        the weighed amount will automatically be saved to your <Text style={{fontWeight: 'bold'}}>Banked Kg</Text>. 
+                        You can accumulate this and claim your reward some other day!
+                    </Text>
                 </View>
-                <Text style={styles.guidelineText}>
-                    Once scanned by the center, your surrender details will be viewed for verification. 
-                    If your recyclables <Text style={{fontWeight: 'bold'}}>do not meet the target weight</Text> required for the reward, 
-                    the weighed amount will automatically be saved to your <Text style={{fontWeight: 'bold'}}>Banked Kg</Text>. 
-                    You can accumulate this and claim your reward some other day!
-                </Text>
-            </View>
+            )}
 
             {/* 🟢 FLOATING GREEN SCAN ICON SA IBABA NG CARD */}
             <View style={styles.scanIconContainer}>

@@ -26,6 +26,8 @@ export default function ManageRewards() {
   const [formName, setFormName] = useState('');
   const [rewardQty, setRewardQty] = useState('1');
   const [rewardUnit, setRewardUnit] = useState('kg');
+  const [showRewardUnit, setShowRewardUnit] = useState(false); 
+
   const [formDesc, setFormDesc] = useState('');
   const [rewardImage, setRewardImage] = useState(null);
   const [wasteImage, setWasteImage] = useState(null);
@@ -35,6 +37,7 @@ export default function ManageRewards() {
   const [otherWasteType, setOtherWasteType] = useState('');
   const [wasteQty, setWasteQty] = useState('10');
   const [wasteUnit, setWasteUnit] = useState('kg');
+  const [showWasteUnit, setShowWasteUnit] = useState(false); 
 
   const predefinedChecklist = ['Remove caps and labels', 'Do not crush plastic bottles', 'Ensure items are totally dry', 'Sort waste into separate bags'];
   const [selectedChecklists, setSelectedChecklists] = useState([]);
@@ -42,6 +45,7 @@ export default function ManageRewards() {
 
   const [isBarangayOnly, setIsBarangayOnly] = useState(false);
   const [isStockAvailable, setIsStockAvailable] = useState(true);
+  const [stockQty, setStockQty] = useState('10'); 
   const [isCleanDryOnly, setIsCleanDryOnly] = useState(true);
 
   useEffect(() => {
@@ -71,19 +75,25 @@ export default function ManageRewards() {
     setFormName(item.name.replace(/^\d+(kg|pcs)\s+/, ''));
     setFormDesc(item.description);
     
-    const match = item.condition.match(/(\d+)(kg|pcs)\s+(.*)/);
+    const match = item.condition.match(/(\d+)(kg|pcs|L)\s+(.*)/);
     if (match) {
         setWasteQty(match[1]); setWasteUnit(match[2]); 
         const types = match[3].split(', ');
         const matchedTypes = types.filter(t => predefinedWasteTypes.includes(t));
         const customType = types.filter(t => !predefinedWasteTypes.includes(t)).join(', ');
-        setSelectedWasteTypes(matchedTypes);
+        
+        if (matchedTypes.length > 0) setSelectedWasteTypes([matchedTypes[0]]);
+        else setSelectedWasteTypes([]);
+
         setOtherWasteType(customType);
     }
 
     setRewardImage(item.image_url);
     setWasteImage(item.waste_image_url || null);
     setIsStockAvailable(item.is_available);
+    
+    setStockQty(item.stock_quantity ? item.stock_quantity.toString() : '1');
+
     setIsBarangayOnly(item.tags?.includes('BarangayOnly') || false);
     setIsCleanDryOnly(item.checklist?.includes('Must be 100% clean and dry') || false);
     setModalVisible(true);
@@ -92,41 +102,27 @@ export default function ManageRewards() {
   const processImage = async (uri) => {
     try {
         const manipResult = await ImageManipulator.manipulateAsync(
-            uri,
-            [],
-            { format: ImageManipulator.SaveFormat.JPEG }
+            uri, [], { format: ImageManipulator.SaveFormat.JPEG }
         );
 
         const actions = [];
         const MAX_SIZE = 2048;
 
         if (manipResult.width > MAX_SIZE || manipResult.height > MAX_SIZE) {
-            if (manipResult.width > manipResult.height) {
-                actions.push({ resize: { width: MAX_SIZE } });
-            } else {
-                actions.push({ resize: { height: MAX_SIZE } });
-            }
+            if (manipResult.width > manipResult.height) actions.push({ resize: { width: MAX_SIZE } });
+            else actions.push({ resize: { height: MAX_SIZE } });
         }
 
         const finalManip = await ImageManipulator.manipulateAsync(
-            uri,
-            actions,
-            { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG }
+            uri, actions, { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG }
         );
 
         return finalManip.uri;
-    } catch (error) {
-        console.log("Error compressing image:", error);
-        return uri; 
-    }
+    } catch (error) { return uri; }
   };
 
   const pickImage = async (type) => {
-    let result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      allowsEditing: false, 
-      quality: 1, 
-    });
+    let result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: false, quality: 1 });
     if (!result.canceled) {
         setIsSaving(true); 
         const compressedUri = await processImage(result.assets[0].uri);
@@ -137,75 +133,93 @@ export default function ManageRewards() {
     }
   };
 
-  const toggleSelection = (item, list, setList) => {
-      if (list.includes(item)) setList(list.filter(i => i !== item));
-      else setList([...list, item]);
+  const toggleWasteSelection = (item) => {
+      setSelectedWasteTypes([item]); 
+  };
+
+  const toggleChecklistSelection = (item) => {
+      if (selectedChecklists.includes(item)) setSelectedChecklists(selectedChecklists.filter(i => i !== item));
+      else setSelectedChecklists([...selectedChecklists, item]);
   };
 
   const handleSave = async () => {
     if (!formName || (selectedWasteTypes.length === 0 && !otherWasteType)) {
-        return Alert.alert("Incomplete", "Please provide a Reward Name and select at least one Accepted Waste Type.");
+        return Alert.alert("Incomplete", "Please provide a Reward Name and select ONE Accepted Waste Type.");
     }
     setIsSaving(true);
     
-    let uploadedRewardUrl = rewardImage;
-    if (rewardImage && !rewardImage.startsWith('http')) {
-        try {
-            const formData = new FormData();
-            formData.append('file', { uri: rewardImage, name: `reward_${Date.now()}.jpg`, type: 'image/jpeg' });
-            const { data, error } = await supabase.storage.from('post_images').upload(`rewards/${Date.now()}.jpg`, formData);
-            if (!error) {
-                const { data: urlData } = supabase.storage.from('post_images').getPublicUrl(data.path);
-                uploadedRewardUrl = urlData.publicUrl;
-            }
-        } catch(e) { console.log("Reward upload error", e); }
+    try {
+        let uploadedRewardUrl = rewardImage;
+        if (rewardImage && !rewardImage.startsWith('http')) {
+            try {
+                const formData = new FormData();
+                formData.append('file', { uri: rewardImage, name: `reward_${Date.now()}.jpg`, type: 'image/jpeg' });
+                const { data, error } = await supabase.storage.from('post_images').upload(`rewards/${Date.now()}.jpg`, formData);
+                if (!error) {
+                    const { data: urlData } = supabase.storage.from('post_images').getPublicUrl(data.path);
+                    uploadedRewardUrl = urlData.publicUrl;
+                }
+            } catch(e) { console.log("Reward upload error", e); }
+        }
+
+        let uploadedWasteUrl = wasteImage;
+        if (wasteImage && !wasteImage.startsWith('http')) {
+            try {
+                const formData = new FormData();
+                formData.append('file', { uri: wasteImage, name: `waste_${Date.now()}.jpg`, type: 'image/jpeg' });
+                const { data, error } = await supabase.storage.from('post_images').upload(`rewards/waste_${Date.now()}.jpg`, formData);
+                if (!error) {
+                    const { data: urlData } = supabase.storage.from('post_images').getPublicUrl(data.path);
+                    uploadedWasteUrl = urlData.publicUrl;
+                }
+            } catch(e) { console.log("Waste upload error", e); }
+        }
+
+        let finalWasteType = selectedWasteTypes.length > 0 ? selectedWasteTypes[0] : '';
+        if (otherWasteType.trim()) finalWasteType = otherWasteType.trim();
+        const finalCondition = `${wasteQty}${wasteUnit} ${finalWasteType}`;
+
+        let checklistArr = [];
+        if (isBarangayOnly) checklistArr.push("⚠️ OPEN FOR VERIFIED BARANGAY RESIDENTS ONLY.");
+        if (isCleanDryOnly) checklistArr.push("Must be 100% clean and dry.");
+        checklistArr.push(...selectedChecklists);
+        if (otherChecklist.trim()) checklistArr.push(otherChecklist.trim());
+        const finalChecklist = checklistArr.length > 0 ? "• " + checklistArr.join('\n• ') : "";
+
+        const cleanFormName = formName.replace(/^\d+\s*(kg|pcs)\s*/i, '').trim();
+        const parsedStock = parseInt(stockQty) || 0;
+
+        const rewardData = {
+            user_email: userEmail,
+            name: `${rewardQty}${rewardUnit} ${cleanFormName}`,
+            description: formDesc,
+            condition: finalCondition,
+            image_url: uploadedRewardUrl,
+            waste_image_url: uploadedWasteUrl, 
+            stock_quantity: parsedStock, 
+            is_available: parsedStock > 0 && isStockAvailable, 
+            checklist: finalChecklist,
+            tags: isBarangayOnly ? 'BarangayOnly' : 'General'
+        };
+
+        if (isEditing) {
+            const { error } = await supabase.from('rewards_inventory').update(rewardData).eq('id', selectedId);
+            if (error) throw error; 
+        } else {
+            const { error } = await supabase.from('rewards_inventory').insert([rewardData]);
+            if (error) throw error; 
+        }
+
+        setIsSaving(false); 
+        setModalVisible(false); 
+        fetchData();
+        Alert.alert("Success", "Reward saved successfully!");
+
+    } catch (error) {
+        setIsSaving(false);
+        Alert.alert("Database Error", error.message);
+        console.log("Save error: ", error);
     }
-
-    let uploadedWasteUrl = wasteImage;
-    if (wasteImage && !wasteImage.startsWith('http')) {
-        try {
-            const formData = new FormData();
-            formData.append('file', { uri: wasteImage, name: `waste_${Date.now()}.jpg`, type: 'image/jpeg' });
-            const { data, error } = await supabase.storage.from('post_images').upload(`rewards/waste_${Date.now()}.jpg`, formData);
-            if (!error) {
-                const { data: urlData } = supabase.storage.from('post_images').getPublicUrl(data.path);
-                uploadedWasteUrl = urlData.publicUrl;
-            }
-        } catch(e) { console.log("Waste upload error", e); }
-    }
-
-    const allWasteTypes = [...selectedWasteTypes];
-    if (otherWasteType.trim()) allWasteTypes.push(otherWasteType.trim());
-    const finalCondition = `${wasteQty}${wasteUnit} ${allWasteTypes.join(', ')}`;
-
-    let checklistArr = [];
-    if (isBarangayOnly) checklistArr.push("⚠️ OPEN FOR VERIFIED BARANGAY RESIDENTS ONLY.");
-    if (isCleanDryOnly) checklistArr.push("Must be 100% clean and dry.");
-    checklistArr.push(...selectedChecklists);
-    if (otherChecklist.trim()) checklistArr.push(otherChecklist.trim());
-    const finalChecklist = checklistArr.length > 0 ? "• " + checklistArr.join('\n• ') : "";
-
-    const cleanFormName = formName.replace(/^\d+\s*(kg|pcs)\s*/i, '').trim();
-
-    const rewardData = {
-        user_email: userEmail,
-        name: `${rewardQty}${rewardUnit} ${cleanFormName}`,
-        description: formDesc,
-        condition: finalCondition,
-        image_url: uploadedRewardUrl,
-        waste_image_url: uploadedWasteUrl, 
-        is_available: isStockAvailable,
-        checklist: finalChecklist,
-        tags: isBarangayOnly ? 'BarangayOnly' : 'General'
-    };
-
-    if (isEditing) {
-        await supabase.from('rewards_inventory').update(rewardData).eq('id', selectedId);
-    } else {
-        await supabase.from('rewards_inventory').insert([rewardData]);
-    }
-
-    setIsSaving(false); setModalVisible(false); fetchData();
   };
 
   const handleDelete = (id) => {
@@ -227,7 +241,7 @@ export default function ManageRewards() {
   const resetForm = () => { 
     setFormName(''); setFormDesc(''); setRewardQty('1'); setRewardUnit('kg');
     setSelectedWasteTypes([]); setOtherWasteType(''); setWasteQty('10'); setWasteUnit('kg');
-    setSelectedChecklists([]); setOtherChecklist('');
+    setSelectedChecklists([]); setOtherChecklist(''); setStockQty('10'); 
     setRewardImage(null); setWasteImage(null); 
     setIsStockAvailable(true); setIsBarangayOnly(false); setIsCleanDryOnly(true);
   };
@@ -261,7 +275,7 @@ export default function ManageRewards() {
         subTitle: 'Select recycle materials',
         icon: 'sync-circle-outline',
         details: [
-            { bold: 'Select one or more waste types you accept', text: ' — Plastic, Paper, Metal, Glass, E-waste, etc.' },
+            { bold: 'Select ONE waste type you accept', text: ' — Plastic, Paper, Metal, Glass, E-waste, etc.' },
             { bold: 'Specify the minimum quantity', text: ' required per exchange (e.g., 10 pieces of plastic bottles).' },
             { bold: 'A live exchange preview', text: ' will show users exactly what they bring and what they get.' }
         ]
@@ -323,6 +337,7 @@ export default function ManageRewards() {
                     </View>
                     <View style={{flex: 1, marginLeft: 15}}>
                         <Text style={styles.itemName}>{item.name}</Text>
+                        <Text style={{fontSize: 11, color: '#666', marginTop: 2}}><Text style={{fontWeight: 'bold'}}>Stock:</Text> {item.stock_quantity || 0}</Text>
                         <View style={styles.conditionBox}><Text style={styles.conditionText}>Requires: {item.condition}</Text></View>
                         {item.tags === 'BarangayOnly' && <Text style={{fontSize: 10, color: '#D32F2F', fontWeight: 'bold', marginTop: 4}}>* Brgy Residents Only</Text>}
                     </View>
@@ -363,9 +378,7 @@ export default function ManageRewards() {
             <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
                 <ScrollView contentContainerStyle={styles.modalBody} showsVerticalScrollIndicator={false}>
                     
-                    {/* 🟢 EXACT FIGMA ALIGNMENT FOR PHOTO UPLOADS */}
                     <View style={styles.photoUploadContainer}>
-                        
                         <View style={styles.photoColumn}>
                             <Text style={styles.photoLabelText}>Reward Photo</Text>
                             <TouchableOpacity activeOpacity={0.8} onPress={() => pickImage('reward')}>
@@ -377,8 +390,6 @@ export default function ManageRewards() {
                                             <MaterialCommunityIcons name="gift-outline" size={32} color="#0062FF" />
                                             <Text style={styles.uploadMainTxt}>Tap to Upload</Text>
                                             <Text style={styles.uploadSubTxt}>Reward Item</Text>
-                                            <Text style={styles.uploadSmallTxt}>JPG/PNG</Text>
-                                            <Text style={styles.uploadSmallTxt}>MAX 50 MB</Text>
                                         </View>
                                     )}
                                 </View>
@@ -400,18 +411,15 @@ export default function ManageRewards() {
                                             <MaterialCommunityIcons name="recycle" size={32} color="#0062FF" />
                                             <Text style={styles.uploadMainTxt}>Tap to Upload</Text>
                                             <Text style={styles.uploadSubTxt}>Waste Sample</Text>
-                                            <Text style={styles.uploadSmallTxt}>JPG/PNG</Text>
-                                            <Text style={styles.uploadSmallTxt}>MAX 50 MB</Text>
                                         </View>
                                     )}
                                 </View>
                             </TouchableOpacity>
                         </View>
-
                     </View>
                     
                     <Text style={styles.compressionNotice}>
-                        * Note: Photos exceeding max size will be automatically compressed to 2048px resolution to prevent blur and optimize performance.
+                        * Note: Photos exceeding max size will be automatically compressed.
                     </Text>
 
                     <View style={styles.cardSection}>
@@ -423,20 +431,32 @@ export default function ManageRewards() {
                         <Text style={styles.inputLabel}>Item Name:</Text>
                         <TextInput style={styles.inputField} placeholder="e.g. RICE" value={formName} onChangeText={setFormName} />
                         
-                        <Text style={styles.inputLabel}>Quantity:</Text>
+                        <Text style={styles.inputLabel}>Reward Amount (per exchange):</Text>
                         <View style={styles.rowInputs}>
                             <TextInput style={[styles.inputField, {flex: 1}]} keyboardType="numeric" placeholder="e.g. 10" value={rewardQty} onChangeText={setRewardQty} />
-                            <TouchableOpacity style={styles.unitToggle} onPress={() => setRewardUnit(rewardUnit === 'kg' ? 'pcs' : 'kg')}>
-                                <Text style={styles.unitToggleText}>{rewardUnit.toUpperCase()}</Text>
-                                <Ionicons name="chevron-down" size={14} color="#666" />
-                            </TouchableOpacity>
+                            <View style={{position: 'relative', zIndex: 10}}>
+                                <TouchableOpacity style={styles.unitToggle} onPress={() => setShowRewardUnit(!showRewardUnit)}>
+                                    <Text style={styles.unitToggleText}>{rewardUnit.toUpperCase()}</Text>
+                                    <Ionicons name={showRewardUnit ? "chevron-up" : "chevron-down"} size={14} color="#666" />
+                                </TouchableOpacity>
+                                
+                                {showRewardUnit && (
+                                    <View style={styles.dropdownBox}>
+                                        {['kg', 'pcs', 'L'].map(u => (
+                                            <TouchableOpacity key={u} style={styles.dropdownItem} onPress={() => {setRewardUnit(u); setShowRewardUnit(false);}}>
+                                                <Text style={styles.dropdownItemText}>{u.toUpperCase()}</Text>
+                                            </TouchableOpacity>
+                                        ))}
+                                    </View>
+                                )}
+                            </View>
                         </View>
 
                         <Text style={styles.inputLabel}>Description:</Text>
                         <TextInput style={[styles.inputField, {height: 60}]} multiline placeholder="write your rewards description here..." value={formDesc} onChangeText={setFormDesc} />
                     </View>
 
-                    <View style={styles.cardSection}>
+                    <View style={[styles.cardSection, {zIndex: -1}]}>
                         <View style={styles.sectionTitleRow}>
                             <MaterialCommunityIcons name="recycle" size={18} color="#0062FF" />
                             <Text style={styles.sectionHeaderTitle}>ACCEPTED WASTE TYPES</Text>
@@ -444,11 +464,15 @@ export default function ManageRewards() {
                         
                         <View style={styles.pillContainer}>
                             {predefinedWasteTypes.map(type => (
-                                <TouchableOpacity key={type} style={[styles.pillBtn, selectedWasteTypes.includes(type) && styles.pillBtnActive]} onPress={() => toggleSelection(type, selectedWasteTypes, setSelectedWasteTypes)}>
+                                <TouchableOpacity key={type} style={[styles.pillBtn, selectedWasteTypes.includes(type) && styles.pillBtnActive]} onPress={() => toggleWasteSelection(type)}>
                                     <Text style={[styles.pillTxt, selectedWasteTypes.includes(type) && styles.pillTxtActive]}>{type}</Text>
                                 </TouchableOpacity>
                             ))}
                         </View>
+                        
+                        <Text style={{fontSize: 11, color: '#D32F2F', marginTop: 2, marginBottom: 15, fontStyle: 'italic'}}>
+                            * Please pick only one accepted waste type.
+                        </Text>
                         
                         <Text style={styles.inputLabel}>Other:</Text>
                         <TextInput style={styles.inputField} placeholder="Type other material..." value={otherWasteType} onChangeText={setOtherWasteType} />
@@ -456,21 +480,33 @@ export default function ManageRewards() {
                         <Text style={styles.inputLabel}>Quantity Required:</Text>
                         <View style={styles.rowInputs}>
                             <TextInput style={[styles.inputField, {flex: 1}]} keyboardType="numeric" placeholder="e.g. 10" value={wasteQty} onChangeText={setWasteQty} />
-                            <TouchableOpacity style={styles.unitToggle} onPress={() => setWasteUnit(wasteUnit === 'kg' ? 'pcs' : 'kg')}>
-                                <Text style={styles.unitToggleText}>{wasteUnit.toUpperCase()}</Text>
-                                <Ionicons name="chevron-down" size={14} color="#666" />
-                            </TouchableOpacity>
+                            <View style={{position: 'relative', zIndex: 10}}>
+                                <TouchableOpacity style={styles.unitToggle} onPress={() => setShowWasteUnit(!showWasteUnit)}>
+                                    <Text style={styles.unitToggleText}>{wasteUnit.toUpperCase()}</Text>
+                                    <Ionicons name={showWasteUnit ? "chevron-up" : "chevron-down"} size={14} color="#666" />
+                                </TouchableOpacity>
+                                
+                                {showWasteUnit && (
+                                    <View style={styles.dropdownBox}>
+                                        {['kg', 'pcs', 'L'].map(u => (
+                                            <TouchableOpacity key={u} style={styles.dropdownItem} onPress={() => {setWasteUnit(u); setShowWasteUnit(false);}}>
+                                                <Text style={styles.dropdownItemText}>{u.toUpperCase()}</Text>
+                                            </TouchableOpacity>
+                                        ))}
+                                    </View>
+                                )}
+                            </View>
                         </View>
                     </View>
 
-                    <View style={styles.cardSection}>
+                    <View style={[styles.cardSection, {zIndex: -2}]}>
                         <View style={styles.sectionTitleRow}>
                             <Ionicons name="list" size={18} color="#0062FF" />
                             <Text style={styles.sectionHeaderTitle}>BEFORE YOU GO (CHECKLIST)</Text>
                         </View>
 
                         {predefinedChecklist.map(item => (
-                            <TouchableOpacity key={item} style={styles.checkRow} onPress={() => toggleSelection(item, selectedChecklists, setSelectedChecklists)}>
+                            <TouchableOpacity key={item} style={styles.checkRow} onPress={() => toggleChecklistSelection(item)}>
                                 <MaterialCommunityIcons name={selectedChecklists.includes(item) ? "checkbox-marked" : "checkbox-blank-outline"} size={20} color={selectedChecklists.includes(item) ? "#007C00" : "#999"} />
                                 <Text style={styles.checkText}>{item}</Text>
                             </TouchableOpacity>
@@ -479,10 +515,43 @@ export default function ManageRewards() {
                         <TextInput style={[styles.inputField, {marginTop: 10}]} placeholder="Add custom rule (Optional)..." value={otherChecklist} onChangeText={setOtherChecklist} />
                     </View>
 
-                    <View style={styles.cardSection}>
+                    <View style={[styles.cardSection, {zIndex: -3}]}>
                         <View style={styles.sectionTitleRow}>
                             <Ionicons name="eye" size={18} color="#0062FF" />
                             <Text style={styles.sectionHeaderTitle}>AVAILABILITY SETTINGS</Text>
+                        </View>
+
+                        <Text style={styles.inputLabel}>Available Stock Quantity:</Text>
+                        <TextInput 
+                            style={[styles.inputField, {marginBottom: 15}]} 
+                            keyboardType="numeric" 
+                            placeholder="e.g. 50" 
+                            value={stockQty} 
+                            onChangeText={(val) => {
+                                setStockQty(val);
+                                if (parseInt(val) <= 0 || !val) {
+                                    setIsStockAvailable(false);
+                                } else {
+                                    setIsStockAvailable(true);
+                                }
+                            }} 
+                        />
+
+                        <View style={styles.switchContainer}>
+                            <View style={{flex: 1, paddingRight: 10}}>
+                                <Text style={styles.switchTitle}>Stock Available</Text>
+                                <View style={[styles.availableBadge, !isStockAvailable && {backgroundColor: '#FFEBEE'}]}>
+                                    <Text style={[styles.availableBadgeText, !isStockAvailable && {color: '#D32F2F'}]}>
+                                        {isStockAvailable ? 'Available' : 'Out of Stock'}
+                                    </Text>
+                                </View>
+                            </View>
+                            <Switch 
+                                value={isStockAvailable} 
+                                onValueChange={setIsStockAvailable} 
+                                disabled={parseInt(stockQty) <= 0 || !stockQty} 
+                                trackColor={{ true: '#4CD964', false: '#E5E5EA' }} 
+                            />
                         </View>
 
                         <View style={styles.switchContainer}>
@@ -491,14 +560,6 @@ export default function ManageRewards() {
                                 <Text style={styles.switchSub}>Limit to your Barangay Location only</Text>
                             </View>
                             <Switch value={isBarangayOnly} onValueChange={setIsBarangayOnly} trackColor={{ true: '#4CD964', false: '#E5E5EA' }} />
-                        </View>
-
-                        <View style={styles.switchContainer}>
-                            <View style={{flex: 1, paddingRight: 10}}>
-                                <Text style={styles.switchTitle}>Stock Available</Text>
-                                <View style={styles.availableBadge}><Text style={styles.availableBadgeText}>Available</Text></View>
-                            </View>
-                            <Switch value={isStockAvailable} onValueChange={setIsStockAvailable} trackColor={{ true: '#4CD964', false: '#E5E5EA' }} />
                         </View>
 
                         <View style={[styles.switchContainer, {borderBottomWidth: 0, paddingBottom: 0}]}>
@@ -546,7 +607,7 @@ export default function ManageRewards() {
                                         <View style={styles.stepNumBox}>
                                             <Text style={styles.stepNumTxt}>{step.id}</Text>
                                         </View>
-                 a                       <Ionicons name={step.icon} size={22} color="#0062FF" style={{marginRight: 12}} />
+                                        <Ionicons name={step.icon} size={22} color="#0062FF" style={{marginRight: 12}} />
                                         <View style={{flex: 1}}>
                                             <Text style={styles.accordionTitle}>{step.title}</Text>
                                             <Text style={styles.accordionSubTitle}>{step.subTitle}</Text>
@@ -616,7 +677,6 @@ const styles = StyleSheet.create({
   modalSubText: { color: 'rgba(255,255,255,0.8)', fontSize: 12 },
   modalBody: { padding: 20 },
   
-  // 🟢 FIXED ALIGNMENT BASED ON FIGMA
   photoUploadContainer: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginTop: 10, marginBottom: 5 },
   photoColumn: { alignItems: 'center', marginHorizontal: 10 },
   swapIconContainer: { justifyContent: 'center', alignItems: 'center', marginTop: 15 },
@@ -648,8 +708,12 @@ const styles = StyleSheet.create({
   inputLabel: { fontSize: 12, color: '#666', fontWeight: '600', marginBottom: 6, marginTop: 10 },
   inputField: { backgroundColor: '#EAECEF', borderRadius: 10, padding: 14, fontSize: 13, color: '#333' },
   rowInputs: { flexDirection: 'row', gap: 10, alignItems: 'center' },
+  
   unitToggle: { backgroundColor: '#EAECEF', paddingHorizontal: 15, paddingVertical: 14, borderRadius: 10, flexDirection: 'row', alignItems: 'center', gap: 5 },
-  unitToggleText: { fontSize: 12, fontWeight: 'bold', color: '#555' },
+  unitToggleText: { fontSize: 12, fontWeight: 'bold', color: '#555', minWidth: 25, textAlign: 'center' },
+  dropdownBox: { position: 'absolute', top: '105%', right: 0, backgroundColor: 'white', borderWidth: 1, borderColor: '#EAECEF', borderRadius: 10, width: 70, elevation: 5, shadowColor: '#000', shadowOffset: {width:0, height:2}, shadowOpacity: 0.1, shadowRadius: 4 },
+  dropdownItem: { paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#f0f0f0', alignItems: 'center' },
+  dropdownItemText: { fontSize: 12, fontWeight: 'bold', color: '#333' },
 
   pillContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 10 },
   pillBtn: { backgroundColor: '#F0F0F0', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: '#EAECEF' },

@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState, useEffect } from 'react'; // 🟢 Added useState & useEffect
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, StatusBar, Platform, Animated, PanResponder, Dimensions, Linking, Alert } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -14,6 +14,9 @@ export default function LocationDetails() {
   const insets = useSafeAreaInsets();
   
   const location = params.data ? JSON.parse(params.data) : null;
+
+  // 🟢 ADDED: Real-time availability state
+  const [isRewardAvailable, setIsRewardAvailable] = useState(location ? !location.isClaimed : true);
 
   const pan = useRef(new Animated.ValueXY()).current;
   
@@ -74,6 +77,25 @@ export default function LocationDetails() {
   const rewardDesc = location.subText; 
   const requiredAmount = location.bringRequiredAmount || 'Any amount'; 
 
+  // 🟢 ADDED: Real-time checker sa database kung Out of Stock na ba si Center
+  useEffect(() => {
+      const checkAvailability = async () => {
+          if (location?.userEmail && rewardItem) {
+              const { data } = await supabase.from('rewards_inventory')
+                  .select('is_available')
+                  .eq('user_email', location.userEmail)
+                  .ilike('name', `%${rewardItem}%`)
+                  .limit(1)
+                  .single();
+                  
+              if (data) {
+                  setIsRewardAvailable(data.is_available);
+              }
+          }
+      };
+      checkAvailability();
+  }, []);
+
   const handleContactCenter = async () => {
       try {
           const { data: { session } } = await supabase.auth.getSession();
@@ -84,7 +106,6 @@ export default function LocationDetails() {
           const residentName = session.user.user_metadata?.full_name;
           const receiverName = location.officerName || location.name; 
 
-          // 🟢 ISINAMA NA NATIN YUNG WASTE IMAGE AT REWARD IMAGE SA IPAPASA
           const inquiryContext = {
               type: "Reward",
               wasteType: surrenderItem,
@@ -293,14 +314,23 @@ export default function LocationDetails() {
                   </View>
               </View>
 
-              {location.isClaimed ? (
+              {/* 🟢 UPDATED: Dinagdag yung checking kung isRewardAvailable at yung params sa QR */}
+              {!isRewardAvailable ? (
                   <View style={[styles.actionBtn, {backgroundColor: '#9E9E9E', elevation: 0}]}>
-                      <Text style={styles.actionText}>Reward Already Claimed</Text>
+                      <Text style={styles.actionText}>Out of Stock / Unavailable</Text>
                   </View>
               ) : (
                   <TouchableOpacity 
                       style={styles.actionBtn} 
-                      onPress={() => router.push({ pathname: '/qr-generator', params: { rewardName: location.rewardUnit, materialType: location.searchedWasteType || location.accepted[0] } })}
+                      onPress={() => router.push({ 
+                          pathname: '/qr-generator', 
+                          params: { 
+                              rewardName: location.rewardUnit, 
+                              materialType: location.searchedWasteType || location.accepted[0],
+                              wasteQty: requiredAmount,
+                              rewardImage: location.imageUrl || ''
+                          } 
+                      })}
                       activeOpacity={0.8}
                   >
                       <Text style={styles.actionText}>Surrender</Text>
