@@ -52,6 +52,7 @@ export default function ProjectsPage() {
               sellingPrice: item.selling_price,
               image: item.image_url,
               youtubeLink: item.youtube_link,
+              notes: item.notes || item.additional_notes || item.other_information || item.other_info || '',
               isDone: item.is_done || false,
               isOwnGuide: item.material_category === 'My OWN Guides' 
           }));
@@ -173,6 +174,7 @@ export default function ProjectsPage() {
               sellingPrice: insertedData.selling_price,
               image: insertedData.image_url,
               youtubeLink: insertedData.youtube_link,
+              notes: insertedData.notes || '',
               isDone: false,
               isOwnGuide: false
           };
@@ -323,6 +325,21 @@ export default function ProjectsPage() {
                             </View>
                         </View>
                     </View>
+
+                    {selectedProject.isOwnGuide && (
+                        <View style={styles.sectionCard}>
+                            <View style={{flexDirection: 'row', alignItems: 'center', marginBottom: 10}}>
+                                <MaterialCommunityIcons name="note-text-outline" size={20} color="#1976D2" />
+                                <Text style={[styles.sectionTitle, {marginLeft: 10, marginBottom: 0}]}>Other Information / Notes</Text>
+                            </View>
+
+                            {selectedProject.notes && selectedProject.notes.trim() ? (
+                                <Text style={styles.notesText}>{selectedProject.notes}</Text>
+                            ) : (
+                                <Text style={styles.notesEmptyText}>No additional notes added yet.</Text>
+                            )}
+                        </View>
+                    )}
 
                     {/* Tago ang "Mark as Done" button kapag OWN DIY GUIDE na kasi tapos na yon */}
                     {!selectedProject.isOwnGuide && (
@@ -558,6 +575,9 @@ const styles = StyleSheet.create({
   stepText: { color: '#546E7A', fontSize: 15, flex: 1, lineHeight: 22 },
   emptyState: { alignItems: 'center', marginTop: 50 },
   emptyText: { color: '#999', marginTop: 10, fontSize: 14 },
+  notesText: { color: '#546E7A', fontSize: 15, lineHeight: 23 },
+  notesEmptyText: { color: '#90A4AE', fontSize: 14, fontStyle: 'italic', lineHeight: 22 },
+  ownGuideNotesPreview: { color: '#78909C', fontSize: 13, lineHeight: 18, marginTop: -5, marginBottom: 12 },
 
   completeModalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'center', alignItems: 'center', paddingHorizontal: 24 },
   completeModalCard: { width: '100%', backgroundColor: 'white', borderRadius: 28, padding: 24, alignItems: 'center', elevation: 10 },

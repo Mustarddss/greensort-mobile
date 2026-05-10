@@ -31,7 +31,12 @@ export default function ScanPage() {
   const [titleModalVisible, setTitleModalVisible] = useState(false);
   const [successModalVisible, setSuccessModalVisible] = useState(false);
   const [ownProjectTitle, setOwnProjectTitle] = useState('');
+  const [ownProjectNotes, setOwnProjectNotes] = useState('');
   const [isCreatingDraft, setIsCreatingDraft] = useState(false);
+
+  const [upcycleSearchQuery, setUpcycleSearchQuery] = useState('');
+  const [isSearchingMoreIdeas, setIsSearchingMoreIdeas] = useState(false);
+  const [aiMoreProjects, setAiMoreProjects] = useState([]);
 
   const [currentFactIndex, setCurrentFactIndex] = useState(0);
 
@@ -145,6 +150,9 @@ export default function ScanPage() {
         const gptData = await fetchGPTAnalysis(base64Image, textInput);
 
         if (gptData) {
+            setAiMoreProjects([]);
+            setUpcycleSearchQuery('');
+
             setResult({
                 success: true,
                 detected: gptData.detected,
@@ -224,6 +232,93 @@ export default function ScanPage() {
       }
   };
 
+  const searchMoreUpcycleIdeas = async () => {
+    const query = upcycleSearchQuery.trim();
+
+    if (!query) {
+        Alert.alert("Search required", "Type what you want to make or what material you want to use.");
+        return;
+    }
+
+    if (!result?.detected) {
+        Alert.alert("Scan first", "Please scan or type a waste item first.");
+        return;
+    }
+
+    setIsSearchingMoreIdeas(true);
+
+    const promptText = `You are GreenSort AI, an expert in creative and practical upcycling ideas.
+
+    Waste item detected: "${result.detected}"
+    Material/category: "${result.category}"
+    User wants to search for: "${query}"
+
+    Generate 5 additional upcycling project ideas that are safe, useful, realistic, and related to the user's search.
+    Avoid hazardous projects. Do not suggest electronics or unsafe chemical modifications.
+
+    Respond strictly in pure JSON format:
+    {
+      "projects": [
+        { "title": "Project idea title", "difficulty": "Easy, Medium, or Hard", "youtubeLink": "https://www.youtube.com/results?search_query=..." }
+      ]
+    }`;
+
+    try {
+        const response = await fetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${process.env.EXPO_PUBLIC_OPENAI_API_KEY}`
+            },
+            body: JSON.stringify({
+                model: 'gpt-5.4',
+                messages: [{ role: 'user', content: promptText }],
+                temperature: 0.8,
+                max_completion_tokens: 900
+            })
+        });
+
+        const data = await response.json();
+
+        if (data.error) {
+            throw new Error(data.error.message);
+        }
+
+        const content = data.choices?.[0]?.message?.content || '';
+        const jsonMatch = content.match(/\{[\s\S]*\}/);
+
+        if (!jsonMatch) {
+            throw new Error("Invalid AI response format.");
+        }
+
+        const parsed = JSON.parse(jsonMatch[0]);
+        const newIdeas = parsed.projects || [];
+
+        if (newIdeas.length === 0) {
+            Alert.alert("No Ideas Found", "Try a different keyword.");
+            return;
+        }
+
+        setAiMoreProjects(prev => {
+            const existingTitles = new Set(prev.map(item => item.title?.toLowerCase()));
+            const originalTitles = new Set((result.projects || []).map(item => item.title?.toLowerCase()));
+
+            const uniqueIdeas = newIdeas.filter(item => {
+                const title = item.title?.toLowerCase();
+                return title && !existingTitles.has(title) && !originalTitles.has(title);
+            });
+
+            return [...uniqueIdeas, ...prev];
+        });
+
+    } catch (error) {
+        console.error("More Upcycle Search Error:", error);
+        Alert.alert("AI Search Error", error.message || "Could not search more upcycle ideas.");
+    } finally {
+        setIsSearchingMoreIdeas(false);
+    }
+  };
+
   const proceedToProject = (ideaObj) => {
     setModalVisible(false);
     if (result) {
@@ -242,7 +337,7 @@ export default function ScanPage() {
           const { data: { user } } = await supabase.auth.getUser();
           if (!user) throw new Error("Please log in first.");
 
-          const { error: dbError } = await supabase.from('saved_projects').insert([{
+          const draftPayload = {
               user_email: user.email,
               title: ownProjectTitle,
               material_category: 'My OWN Guides', 
@@ -253,14 +348,31 @@ export default function ScanPage() {
               steps: [],
               selling_price: '',
               image_url: image || 'https://images.unsplash.com/photo-1528323273322-d81458248d40?w=500', 
-              is_done: false 
-          }]);
+              is_done: false,
+              notes: ownProjectNotes.trim()
+          };
+
+          let { error: dbError } = await supabase
+              .from('saved_projects')
+              .insert([draftPayload]);
+
+          if (dbError && dbError.message && dbError.message.toLowerCase().includes('notes')) {
+              const fallbackPayload = { ...draftPayload };
+              delete fallbackPayload.notes;
+
+              const retry = await supabase
+                  .from('saved_projects')
+                  .insert([fallbackPayload]);
+
+              dbError = retry.error;
+          }
 
           if (dbError) throw dbError;
 
           setTitleModalVisible(false);
           setSuccessModalVisible(true);
           setOwnProjectTitle('');
+          setOwnProjectNotes('');
 
       } catch (error) {
           Alert.alert("Error", error.message);
@@ -507,7 +619,46 @@ export default function ScanPage() {
                           </TouchableOpacity>
 
                           <View style={{height: 1, backgroundColor: '#eee', marginBottom: 15}} />
-                          <Text style={{fontSize: 12, color: '#999', marginBottom: 10, fontWeight: 'bold'}}>OR TRY AI SUGGESTIONS:</Text>
+                          <Text style={{fontSize: 12, color: '#999', marginBottom: 10, fontWeight: 'bold'}}>SEARCH MORE UPCYCLE IDEAS WITH GREENSORT AI:</Text>
+
+                          <View style={styles.upcycleSearchBox}>
+                              <Ionicons name="search" size={18} color="#888" />
+                              <TextInput
+                                  style={styles.upcycleSearchInput}
+                                  placeholder="e.g. planter, organizer, lamp..."
+                                  placeholderTextColor="#999"
+                                  value={upcycleSearchQuery}
+                                  onChangeText={setUpcycleSearchQuery}
+                                  returnKeyType="search"
+                                  onSubmitEditing={searchMoreUpcycleIdeas}
+                              />
+                              <TouchableOpacity style={styles.upcycleSearchBtn} onPress={searchMoreUpcycleIdeas} disabled={isSearchingMoreIdeas}>
+                                  {isSearchingMoreIdeas ? (
+                                      <ActivityIndicator size="small" color="white" />
+                                  ) : (
+                                      <MaterialCommunityIcons name="robot" size={18} color="white" />
+                                  )}
+                              </TouchableOpacity>
+                          </View>
+
+                          {aiMoreProjects.length > 0 && (
+                              <>
+                                  <Text style={styles.aiResultLabel}>AI SEARCH RESULTS</Text>
+                                  {aiMoreProjects.map((ideaObj, i) => (
+                                      <TouchableOpacity key={`ai-${i}`} style={[styles.modalOption, styles.aiModalOption]} onPress={() => proceedToProject(ideaObj)}>
+                                          <View style={{flex: 1}}>
+                                              <Text style={styles.optionText}>{ideaObj.title}</Text>
+                                              <View style={[styles.difficultyTag, {backgroundColor: getDifficultyColor(ideaObj.difficulty) + '20'}]}>
+                                                  <Text style={[styles.difficultyText, {color: getDifficultyColor(ideaObj.difficulty)}]}>{ideaObj.difficulty || 'Normal'}</Text>
+                                              </View>
+                                          </View>
+                                          <MaterialCommunityIcons name="chevron-right" size={24} color="#ccc" />
+                                      </TouchableOpacity>
+                                  ))}
+                              </>
+                          )}
+
+                          <Text style={{fontSize: 12, color: '#999', marginBottom: 10, marginTop: 12, fontWeight: 'bold'}}>OR TRY AI SUGGESTIONS:</Text>
 
                           {result.projects && result.projects.map((ideaObj, i) => (
                               <TouchableOpacity key={i} style={styles.modalOption} onPress={() => proceedToProject(ideaObj)}>
@@ -532,6 +683,14 @@ export default function ScanPage() {
                     <Text style={styles.inputModalTitle}>Name your DIY Project</Text>
                     <Text style={styles.inputModalSub}>Give it a catchy name to start your upcycling journey!</Text>
                     <TextInput style={styles.titleInput} placeholder="e.g. My Custom Bottle Lamp" value={ownProjectTitle} onChangeText={setOwnProjectTitle} autoFocus />
+                    <TextInput
+                        style={styles.notesInput}
+                        placeholder="Add notes or other information (optional)"
+                        placeholderTextColor="#999"
+                        value={ownProjectNotes}
+                        onChangeText={setOwnProjectNotes}
+                        multiline
+                    />
                     <View style={styles.modalBtnRow}>
                         <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setTitleModalVisible(false)}><Text style={styles.modalCancelText}>Cancel</Text></TouchableOpacity>
                         <TouchableOpacity style={styles.modalProceedBtn} onPress={handleStartOwnProject} disabled={isCreatingDraft}>{isCreatingDraft ? <ActivityIndicator color="white" /> : <Text style={styles.modalProceedText}>Start Project</Text>}</TouchableOpacity>
@@ -653,12 +812,18 @@ const styles = StyleSheet.create({
   optionText: { fontSize: 16, color: '#333', fontWeight: 'bold', marginBottom: 4 },
   difficultyTag: { alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6 },
   difficultyText: { fontSize: 11, fontWeight: 'bold' },
+  upcycleSearchBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F5F7FA', borderRadius: 12, paddingLeft: 12, borderWidth: 1, borderColor: '#E0E0E0', marginBottom: 12 },
+  upcycleSearchInput: { flex: 1, paddingVertical: 12, paddingHorizontal: 10, fontSize: 13, color: '#333' },
+  upcycleSearchBtn: { width: 44, height: 44, backgroundColor: '#007C00', justifyContent: 'center', alignItems: 'center', borderTopRightRadius: 12, borderBottomRightRadius: 12 },
+  aiResultLabel: { fontSize: 11, color: '#007C00', fontWeight: '900', marginBottom: 8, marginTop: 4 },
+  aiModalOption: { backgroundColor: '#F8FFF9', borderRadius: 12, paddingHorizontal: 10, borderWidth: 1, borderColor: '#D7EED9', marginBottom: 8 },
 
   modalOverlayDark: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 20 },
   inputModalCard: { width: '100%', backgroundColor: 'white', borderRadius: 20, padding: 25, elevation: 10 },
   inputModalTitle: { fontSize: 20, fontWeight: 'bold', color: '#333', marginBottom: 5 },
   inputModalSub: { fontSize: 13, color: '#666', marginBottom: 20 },
-  titleInput: { backgroundColor: '#F5F7FA', borderWidth: 1, borderColor: '#E0E0E0', padding: 15, borderRadius: 12, fontSize: 16, color: '#333', marginBottom: 25 },
+  titleInput: { backgroundColor: '#F5F7FA', borderWidth: 1, borderColor: '#E0E0E0', padding: 15, borderRadius: 12, fontSize: 16, color: '#333', marginBottom: 12 },
+  notesInput: { backgroundColor: '#F5F7FA', borderWidth: 1, borderColor: '#E0E0E0', padding: 15, borderRadius: 12, fontSize: 14, color: '#333', marginBottom: 25, minHeight: 90, textAlignVertical: 'top' },
   modalBtnRow: { flexDirection: 'row', gap: 10 },
   modalCancelBtn: { flex: 1, paddingVertical: 14, borderRadius: 12, alignItems: 'center', backgroundColor: '#F5F5F5' },
   modalCancelText: { color: '#666', fontWeight: 'bold', fontSize: 15 },
