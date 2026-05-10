@@ -212,35 +212,37 @@ export default function ProcessSurrender() {
           const isExcess = inputKg > requiredKg;
           const excessKg = isExcess ? inputKg - requiredKg : 0;
 
-          const kgToBank = transactionType === 'Banked' || isShort ? inputKg : (saveExcess ? excessKg : 0);
-
-          if (kgToBank > 0) {
+          // 🟢 FIX: KAPAG REDEEM, MAGMI-MINUS. KAPAG HINDI, MAGA-ADD NG EXCESS.
+          if (isBankedRedemption) {
               const { data: existingBank, error: checkError } = await supabase.from('banked_materials')
-                  .select('*')
-                  .eq('resident_email', userData.email)
-                  .eq('center_email', user.email)
-                  .eq('material_type', wasteType)
-                  .maybeSingle(); 
+                  .select('*').eq('resident_email', userData.email).eq('center_email', user.email).eq('material_type', wasteType).maybeSingle();
               
               if (checkError && checkError.code !== 'PGRST116') {
                   throw new Error("Banked Check Error: " + checkError.message);
               }
               
               if (existingBank) {
-                  const { error: updateErr } = await supabase.from('banked_materials')
-                      .update({ kg_amount: existingBank.kg_amount + kgToBank })
-                      .eq('id', existingBank.id);
+                  const newAmount = Math.max(0, existingBank.kg_amount - inputKg);
+                  const { error: updateErr } = await supabase.from('banked_materials').update({ kg_amount: newAmount }).eq('id', existingBank.id);
                   if (updateErr) throw new Error("Bank Update Error: " + updateErr.message);
-              } else {
-                  const { error: insertErr } = await supabase.from('banked_materials')
-                      .insert([{ 
-                          resident_email: userData.email, 
-                          resident_name: userData.name, 
-                          center_email: user.email, 
-                          material_type: wasteType, 
-                          kg_amount: kgToBank 
-                      }]);
-                  if (insertErr) throw new Error("Bank Insert Error: " + insertErr.message);
+              }
+          } else {
+              const kgToBank = transactionType === 'Banked' || isShort ? inputKg : (saveExcess ? excessKg : 0);
+              if (kgToBank > 0) {
+                  const { data: existingBank, error: checkError } = await supabase.from('banked_materials')
+                      .select('*').eq('resident_email', userData.email).eq('center_email', user.email).eq('material_type', wasteType).maybeSingle(); 
+                  
+                  if (checkError && checkError.code !== 'PGRST116') {
+                      throw new Error("Banked Check Error: " + checkError.message);
+                  }
+                  
+                  if (existingBank) {
+                      const { error: updateErr } = await supabase.from('banked_materials').update({ kg_amount: existingBank.kg_amount + kgToBank }).eq('id', existingBank.id);
+                      if (updateErr) throw new Error("Bank Update Error: " + updateErr.message);
+                  } else {
+                      const { error: insertErr } = await supabase.from('banked_materials').insert([{ resident_email: userData.email, resident_name: userData.name, center_email: user.email, material_type: wasteType, kg_amount: kgToBank }]);
+                      if (insertErr) throw new Error("Bank Insert Error: " + insertErr.message);
+                  }
               }
           }
 
@@ -482,14 +484,14 @@ export default function ProcessSurrender() {
             <View style={styles.row}><Text style={styles.label}>Surrenderer</Text><Text style={styles.val}>{userData?.name}</Text></View>
             <View style={styles.row}><Text style={styles.label}>Waste Type</Text><Text style={styles.val}>{wasteType}</Text></View>
             
-           <View style={styles.row}>
-                 <Text style={styles.label}>Required Target</Text>
-                 <Text style={styles.valBlue}>
-        {isBankedRedemption 
-            ? (selectedReward ? `${selectedReward.condition.match(/(\d+)/)?.[1] || 0} kg` : 'N/A') 
-            : `${requiredKg} kg`}
-                     </Text>
-                </View>
+            <View style={styles.row}>
+                <Text style={styles.label}>Required Target</Text>
+                <Text style={styles.valBlue}>
+                    {isBankedRedemption 
+                        ? (selectedReward ? `${selectedReward.condition.match(/(\d+)/)?.[1] || 0} kg` : 'N/A') 
+                        : `${requiredKg} kg`}
+                </Text>
+            </View>
             
             <View style={styles.row}>
                 <Text style={styles.label}>Quantity Provided</Text>

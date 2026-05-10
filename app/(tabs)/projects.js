@@ -1,7 +1,7 @@
 import { FontAwesome5, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, BackHandler, FlatList, Image, Platform, ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View, Linking } from 'react-native';
+import { ActivityIndicator, BackHandler, FlatList, Image, Modal, Platform, ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View, Linking } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
 
@@ -23,6 +23,8 @@ export default function ProjectsPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [isGenerating, setIsGenerating] = useState(false); 
   const [isLoadingProjects, setIsLoadingProjects] = useState(true);
+  const [completedProjectModalVisible, setCompletedProjectModalVisible] = useState(false);
+  const [completedProject, setCompletedProject] = useState(null);
 
   const loadSavedProjects = async () => {
     try {
@@ -192,7 +194,8 @@ export default function ProjectsPage() {
 
   const toggleProjectStatus = async (projectId, currentStatus) => {
       const newStatus = !currentStatus;
-      
+      const targetProject = projects.find(p => p.id === projectId);
+
       setProjects(prev => prev.map(p => p.id === projectId ? { ...p, isDone: newStatus } : p));
       if (selectedProject && selectedProject.id === projectId) {
           setSelectedProject(prev => ({ ...prev, isDone: newStatus }));
@@ -205,14 +208,41 @@ export default function ProjectsPage() {
               .eq('id', projectId);
 
           if (error) throw error;
+
+          if (newStatus === true && targetProject) {
+              setCompletedProject({ ...targetProject, isDone: true });
+              setCompletedProjectModalVisible(true);
+          }
       } catch (error) {
           console.error("Error updating status:", error);
-          Alert.alert("Update Failed", "Could not mark project as done. Please try again.");
           setProjects(prev => prev.map(p => p.id === projectId ? { ...p, isDone: currentStatus } : p));
           if (selectedProject && selectedProject.id === projectId) {
               setSelectedProject(prev => ({ ...prev, isDone: currentStatus }));
           }
       }
+  };
+
+  const openCommunityPostFromProject = (postType) => {
+      if (!completedProject) return;
+
+      const cleanPrice = completedProject.sellingPrice
+          ? String(completedProject.sellingPrice).replace(/[₱]/g, '').trim()
+          : '';
+
+      setCompletedProjectModalVisible(false);
+
+      router.push({
+          pathname: '/(tabs)/dashboard',
+          params: {
+              autoCreatePost: 'true',
+              fromUpcycle: 'true',
+              postType: postType,
+              postTitle: completedProject.title || '',
+              postDesc: `Upcycled DIY Project: ${completedProject.title || ''}`,
+              postPrice: postType === 'For Sale' ? cleanPrice : '',
+              postImage: completedProject.image || ''
+          }
+      });
   };
 
   useEffect(() => {
@@ -312,13 +342,6 @@ export default function ProjectsPage() {
                         </TouchableOpacity>
                     )}
 
-                    {selectedProject.youtubeLink && !selectedProject.isOwnGuide && (
-                        <TouchableOpacity style={styles.youtubeButton} onPress={() => openYouTube(selectedProject.youtubeLink)}>
-                            <MaterialCommunityIcons name="youtube" size={28} color="white" style={{marginRight: 10}} />
-                            <Text style={styles.youtubeButtonText}>Watch YouTube Tutorial</Text>
-                        </TouchableOpacity>
-                    )}
-
                     <View style={styles.sectionCard}>
                         <Text style={styles.sectionTitle}>Required Materials</Text>
                         {selectedProject.materials.map((mat, i) => <View key={i} style={styles.listItem}><View style={styles.squareBullet} /><Text style={styles.listText}>{mat}</Text></View>)}
@@ -338,6 +361,47 @@ export default function ProjectsPage() {
                     )}
                 </View>
             </ScrollView>
+
+            <Modal
+                visible={completedProjectModalVisible}
+                transparent={true}
+                animationType="fade"
+                onRequestClose={() => setCompletedProjectModalVisible(false)}
+            >
+                <View style={styles.completeModalOverlay}>
+                    <View style={styles.completeModalCard}>
+                        <View style={styles.completeIconCircle}>
+                            <MaterialCommunityIcons name="check-decagram" size={42} color="white" />
+                        </View>
+
+                        <Text style={styles.completeModalTitle}>Project Completed!</Text>
+                        <Text style={styles.completeModalSub}>
+                            Do you want to share this upcycled project with the community?
+                        </Text>
+
+                        <View style={styles.completeOptionRow}>
+                            <TouchableOpacity style={styles.completeSmallBtn} onPress={() => openCommunityPostFromProject('For Sale')}>
+                                <MaterialCommunityIcons name="tag" size={20} color="#007C00" />
+                                <Text style={styles.completeSmallBtnText}>For Sale</Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity style={styles.completeSmallBtn} onPress={() => openCommunityPostFromProject('Trade')}>
+                                <MaterialCommunityIcons name="swap-horizontal" size={22} color="#007C00" />
+                                <Text style={styles.completeSmallBtnText}>Trade</Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity style={styles.completeSmallBtn} onPress={() => openCommunityPostFromProject('Free')}>
+                                <MaterialCommunityIcons name="gift-outline" size={20} color="#007C00" />
+                                <Text style={styles.completeSmallBtnText}>Free</Text>
+                            </TouchableOpacity>
+                        </View>
+
+                        <TouchableOpacity style={styles.completeCancelBtn} onPress={() => setCompletedProjectModalVisible(false)}>
+                            <Text style={styles.completeCancelText}>Not now, just save it</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </Modal>
         </View>
     );
   }
@@ -494,4 +558,15 @@ const styles = StyleSheet.create({
   stepText: { color: '#546E7A', fontSize: 15, flex: 1, lineHeight: 22 },
   emptyState: { alignItems: 'center', marginTop: 50 },
   emptyText: { color: '#999', marginTop: 10, fontSize: 14 },
+
+  completeModalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'center', alignItems: 'center', paddingHorizontal: 24 },
+  completeModalCard: { width: '100%', backgroundColor: 'white', borderRadius: 28, padding: 24, alignItems: 'center', elevation: 10 },
+  completeIconCircle: { width: 78, height: 78, borderRadius: 39, backgroundColor: '#007C00', justifyContent: 'center', alignItems: 'center', marginTop: -62, marginBottom: 14, borderWidth: 5, borderColor: 'white' },
+  completeModalTitle: { fontSize: 23, fontWeight: '900', color: '#263238', marginBottom: 8, textAlign: 'center' },
+  completeModalSub: { fontSize: 14, color: '#607D8B', textAlign: 'center', lineHeight: 21, marginBottom: 22 },
+  completeOptionRow: { flexDirection: 'row', gap: 10, width: '100%', marginBottom: 10 },
+  completeSmallBtn: { flex: 1, backgroundColor: '#E8F5E9', borderWidth: 1, borderColor: '#C8E6C9', borderRadius: 15, paddingVertical: 13, justifyContent: 'center', alignItems: 'center' },
+  completeSmallBtnText: { color: '#007C00', fontSize: 12, fontWeight: '800', marginTop: 4 },
+  completeCancelBtn: { paddingVertical: 12, paddingHorizontal: 18 },
+  completeCancelText: { color: '#78909C', fontWeight: '700', fontSize: 13 },
 });

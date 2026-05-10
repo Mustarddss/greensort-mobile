@@ -242,6 +242,26 @@ export default function Rewards() {
     }
   };
 
+  // 🟢 NEW: REAL-TIME LISTENER PARA SA OUT OF STOCK / AVAILABLE UPDATES
+  useEffect(() => {
+      const inventoryChannel = supabase.channel('realtime-inventory')
+          .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'rewards_inventory' }, (payload) => {
+              setResults(currentResults => 
+                  currentResults.map(loc => {
+                      if (loc.id === payload.new.id) {
+                          return { ...loc, isClaimed: !payload.new.is_available };
+                      }
+                      return loc;
+                  })
+              );
+          })
+          .subscribe();
+
+      return () => {
+          supabase.removeChannel(inventoryChannel);
+      };
+  }, []);
+
   return (
     <View style={{ flex: 1, backgroundColor: '#F5F7FA' }}>
         <StatusBar barStyle="light-content" backgroundColor="#007C00" translucent={true} />

@@ -1,20 +1,27 @@
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router'; 
-import { useCallback, useEffect, useState } from 'react';
+import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { useNavigation } from '@react-navigation/native'; 
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Image, Keyboard, KeyboardAvoidingView, Modal, Platform, RefreshControl, ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View, Dimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
 import { LinearGradient } from 'expo-linear-gradient';
 import MapView, { Marker } from 'react-native-maps';
 import * as Location from 'expo-location';
+import BankedKgModal from '../BankedKgModal';
 
 const screenWidth = Dimensions.get('window').width;
 
 export default function Dashboard() {
   const router = useRouter();
+  const navigation = useNavigation();
   const params = useLocalSearchParams(); 
   const insets = useSafeAreaInsets();
+
+  const feedScrollRef = useRef(null);
+  const lastFeedScrollY = useRef(0);
+  const [restoreFeedScrollY, setRestoreFeedScrollY] = useState(null);
   
   const [posts, setPosts] = useState([]); 
   const [selectedPost, setSelectedPost] = useState(null); 
@@ -32,6 +39,56 @@ export default function Dashboard() {
 
   const [userData, setUserData] = useState({ name: 'Loading...', kgRecycled: 0, submissions: 0, upcycleProjects: 0, bankedPoints: 0, avatar: null });
   const [form, setForm] = useState({ type: 'For Sale', title: '', desc: '', category: '', price: '', lookingFor: '', location: '', latitude: null, longitude: null, imageUris: [] });
+  const [showDIYShowcaseOption, setShowDIYShowcaseOption] = useState(false);
+  const [imageCaptions, setImageCaptions] = useState([]);
+  const [locationPickerVisible, setLocationPickerVisible] = useState(false);
+  const [locationSearch, setLocationSearch] = useState('');
+  const [tempLocation, setTempLocation] = useState({
+    latitude: 14.3262,
+    longitude: 120.9386,
+    latitudeDelta: 0.05,
+    longitudeDelta: 0.05
+  });
+  const [locationSuggestions, setLocationSuggestions] = useState([]);
+  const [isSearchingLocation, setIsSearchingLocation] = useState(false);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+
+  useEffect(() => {
+    if (params.autoCreatePost === 'true') {
+      const incomingImage = params.postImage ? [params.postImage] : [];
+
+      setSelectedPost(null);
+      setEditingPostId(null);
+      setShowDIYShowcaseOption(false);
+      setImageCaptions(incomingImage.map(() => ''));
+
+      setForm({
+        type: params.postType || 'For Sale',
+        title: params.postTitle || '',
+        desc: params.postDesc || '',
+        category: '',
+        price: params.postPrice || '',
+        lookingFor: '',
+        location: '',
+        latitude: null,
+        longitude: null,
+        imageUris: incomingImage
+      });
+
+      setIsCreating(true);
+
+      router.setParams({
+        autoCreatePost: '',
+        fromUpcycle: '',
+        postType: '',
+        postTitle: '',
+        postDesc: '',
+        postPrice: '',
+        postImage: ''
+      });
+    }
+  }, [params.autoCreatePost]);
+
   
   const [newComment, setNewComment] = useState('');
   const [replyingTo, setReplyingTo] = useState(null);
@@ -69,15 +126,80 @@ export default function Dashboard() {
     { title: "Harassment or bullying", desc: "Targeting, insulting, or threatening other members.", subCategories: [{ title: "Insulting behavior", desc: "Name-calling or derogatory remarks towards a user." }, { title: "Doxing", desc: "Sharing someone's private information or address publicly." }, { title: "Threatening", desc: "Any form of physical or emotional threat." }] }
   ];
 
+  const formatDetailedAddress = (address, latitude, longitude) => {
+    if (!address) {
+      return `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
+    }
+
+    const parts = [
+      address.name,
+      address.streetNumber,
+      address.street,
+      address.district,
+      address.subregion,
+      address.city,
+      address.region,
+      address.postalCode
+    ];
+
+    const cleanedParts = parts
+      .filter(Boolean)
+      .map(part => String(part).trim())
+      .filter((part, index, arr) => part.length > 0 && arr.indexOf(part) === index);
+
+    const detailedAddress = cleanedParts.join(', ');
+
+    if (detailedAddress && detailedAddress.length > 0) {
+      return detailedAddress;
+    }
+
+    return `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
+  };
+
+  const getLocalLocationSuggestions = (query) => {
+    const search = String(query || '').toLowerCase().trim();
+
+    const places = [
+      { title: 'SM City Dasmariñas', address: 'SM City Dasmariñas, Governor’s Drive, Dasmariñas, Cavite, Philippines', latitude: 14.3019, longitude: 120.9571 },
+      { title: 'SM City Trece Martires', address: 'SM City Trece Martires, Governor’s Drive, Trece Martires City, Cavite, Philippines', latitude: 14.2806, longitude: 120.8664 },
+      { title: 'SM City General Trias', address: 'SM City General Trias, Governor Ferrer Drive, General Trias, Cavite, Philippines', latitude: 14.3869, longitude: 120.8813 },
+      { title: 'SM City Molino', address: 'SM City Molino, Molino Road, Bacoor, Cavite, Philippines', latitude: 14.3838, longitude: 120.9762 },
+      { title: 'SM City Bacoor', address: 'SM City Bacoor, Aguinaldo Highway, Bacoor, Cavite, Philippines', latitude: 14.4447, longitude: 120.9501 },
+      { title: 'SM North EDSA', address: 'SM North EDSA, Epifanio de los Santos Avenue, Quezon City, Metro Manila, Philippines', latitude: 14.6561, longitude: 121.0290 },
+      { title: 'SM Fairview', address: 'SM Fairview, Regalado Highway, Novaliches, Quezon City, Metro Manila, Philippines', latitude: 14.7345, longitude: 121.0596 },
+      { title: 'SM Mall of Asia', address: 'SM Mall of Asia, Seaside Boulevard, Pasay City, Metro Manila, Philippines', latitude: 14.5352, longitude: 120.9822 },
+      { title: 'Robinsons Place Dasmariñas', address: 'Robinsons Place Dasmariñas, Aguinaldo Highway, Dasmariñas, Cavite, Philippines', latitude: 14.3291, longitude: 120.9367 },
+      { title: 'WalterMart Dasmariñas', address: 'WalterMart Dasmariñas, Aguinaldo Highway, Dasmariñas, Cavite, Philippines', latitude: 14.3298, longitude: 120.9407 },
+      { title: 'De La Salle Medical and Health Sciences Institute', address: 'DLSMHSI, Dasmariñas, Cavite, Philippines', latitude: 14.3296, longitude: 120.9419 },
+      { title: 'National University Dasmariñas', address: 'NU Dasmariñas, SM City Dasmariñas Complex, Dasmariñas, Cavite, Philippines', latitude: 14.3019, longitude: 120.9571 },
+      { title: 'General Trias City Hall', address: 'General Trias City Hall, General Trias, Cavite, Philippines', latitude: 14.3868, longitude: 120.8816 },
+      { title: 'Dasmariñas City Hall', address: 'Dasmariñas City Hall, Dasmariñas, Cavite, Philippines', latitude: 14.3294, longitude: 120.9367 },
+      { title: 'Silang Municipal Hall', address: 'Silang Municipal Hall, Silang, Cavite, Philippines', latitude: 14.2158, longitude: 120.9715 }
+    ];
+
+    if (!search) return [];
+
+    return places
+      .filter(place =>
+        place.title.toLowerCase().includes(search) ||
+        place.address.toLowerCase().includes(search)
+      )
+      .slice(0, 6)
+      .map((place, index) => ({
+        id: `local-${index}-${place.latitude}-${place.longitude}`,
+        ...place
+      }));
+  };
+
   useEffect(() => { 
-    // 1. Dashboard Changes Channel
     const uniqueTopic = `dashboard-changes-${Date.now()}`;
     const msgChannel = supabase.channel(uniqueTopic)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, () => { fetchUserSessionAndData(); })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications' }, () => { fetchUserSessionAndData(); })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'banked_materials' }, () => { fetchUserSessionAndData(); })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'surrender_logs' }, () => { fetchUserSessionAndData(); })
       .subscribe();
 
-    // 2. Presence Channel
     const uniquePresenceTopic = `app-presence-${Date.now()}`;
     const presenceChannel = supabase.channel(uniquePresenceTopic);
     
@@ -85,7 +207,7 @@ export default function Dashboard() {
         const { data: { user } } = await supabase.auth.getUser();
         if (user) {
             presenceChannel
-                .on('presence', { event: 'sync' }, () => { /* no log */ })
+                .on('presence', { event: 'sync' }, () => {})
                 .subscribe(async (status) => {
                     if (status === 'SUBSCRIBED') {
                         await presenceChannel.track({ user_id: user.id, online_at: new Date().toISOString() });
@@ -95,7 +217,6 @@ export default function Dashboard() {
     };
     setupPresence();
 
-    // 3. Clean up
     return () => { 
         supabase.removeChannel(msgChannel); 
         supabase.removeChannel(presenceChannel); 
@@ -103,6 +224,67 @@ export default function Dashboard() {
   }, []);
 
   useFocusEffect(useCallback(() => { fetchUserSessionAndData(); }, [params.openPostTitle]));
+
+  useEffect(() => {
+    const parent = navigation.getParent?.();
+
+    if (!parent) return;
+
+    parent.setOptions({
+      tabBarStyle: isCreating
+        ? { display: 'none' }
+        : {
+            height: 65,
+            paddingBottom: 8,
+            paddingTop: 6,
+            backgroundColor: 'white',
+            borderTopWidth: 1,
+            borderTopColor: '#E0E0E0'
+          }
+    });
+  }, [isCreating, navigation]);
+
+  useEffect(() => {
+    if (!isCreating) return;
+
+    const typedLocation = String(form.location || '').trim();
+
+    if (typedLocation.length < 2) {
+      setLocationSuggestions([]);
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      searchTypedLocation(typedLocation, false, false);
+    }, 700);
+
+    return () => clearTimeout(timer);
+  }, [form.location, isCreating]);
+
+  useEffect(() => {
+    const showSub = Keyboard.addListener('keyboardDidShow', () => setKeyboardVisible(true));
+    const hideSub = Keyboard.addListener('keyboardDidHide', () => setKeyboardVisible(false));
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (selectedPost || restoreFeedScrollY === null) return;
+
+    const timer = setTimeout(() => {
+      feedScrollRef.current?.scrollTo({
+        y: restoreFeedScrollY,
+        animated: false
+      });
+
+      setRestoreFeedScrollY(null);
+    }, 80);
+
+    return () => clearTimeout(timer);
+  }, [selectedPost, restoreFeedScrollY]);
 
   const fetchUserSessionAndData = async (isRefresh = false) => {
     const { data: { session } } = await supabase.auth.getSession();
@@ -114,7 +296,6 @@ export default function Dashboard() {
       try { await supabase.from('profiles').update({ last_login: new Date().toISOString() }).eq('email', userEmail); } catch (err) {}
 
       try {
-          // 🟢 ETO YUNG BINAGO: Kukunin muna yung Surrender Logs para sa Total Submissions at Total KG
           const { data: logs, error: logsError } = await supabase.from('surrender_logs').select('*').eq('resident_email', userEmail);
           if (logs && !logsError) {
               totalSubmissions = logs.length;
@@ -123,23 +304,21 @@ export default function Dashboard() {
               });
           }
 
-          // 🟢 Kukunin naman ang Banked KG sa BAGONG table na ginawa natin kanina
           const { data: bankedData, error: bankedError } = await supabase.from('banked_materials').select('*').eq('resident_email', userEmail);
           
           if (bankedData && !bankedError) {
               bankedData.forEach(bankItem => {
                   const weight = Number(bankItem.kg_amount) || 0;
-                  bankedKg += weight; // Dagdag sa total na nakikita sa malaking green box
+                  bankedKg += weight; 
                   
                   const cEmail = bankItem.center_email; 
                   const wType = bankItem.material_type || 'Others';
                   
                   if (!bankedGroup[cEmail]) bankedGroup[cEmail] = {};
                   if (!bankedGroup[cEmail][wType]) bankedGroup[cEmail][wType] = 0;
-                  bankedGroup[cEmail][wType] += weight; // Group by center and material
+                  bankedGroup[cEmail][wType] += weight; 
               });
 
-              // I-format para sa Modal List
               const finalBankedList = [];
               for (const email of Object.keys(bankedGroup)) {
                   const { data: center } = await supabase.from('dropoff_applications').select('program_name, barangay').eq('user_email', email).single();
@@ -183,8 +362,11 @@ export default function Dashboard() {
 
   const handleEditAction = () => {
     const post = selectedPostForOptions;
-    setOptionsModalVisible(false); setEditingPostId(post.id);
     const existingImages = post.image ? post.image.split(',') : [];
+    setOptionsModalVisible(false);
+    setEditingPostId(post.id);
+    setShowDIYShowcaseOption(post.type === 'DIY Showcase');
+    setImageCaptions(existingImages.map(() => ''));
     setForm({ type: post.type, title: post.title, desc: post.desc, category: 'Other', price: post.price.replace('₱','').replace('Trade: ','').replace('Market Value: ','').replace('₱',''), lookingFor: post.price.includes('Trade') ? post.price.replace('Trade: ','') : '', location: post.location, latitude: post.latitude, longitude: post.longitude, imageUris: existingImages });
     setIsCreating(true);
   };
@@ -223,12 +405,12 @@ export default function Dashboard() {
                 if (fileSizeInMB > 250) { Alert.alert("File Too Large", `An image exceeds 250MB and was skipped.`); } 
                 else { validUris.push(asset.uri); }
             }
-            setForm(prev => { const combined = [...prev.imageUris, ...validUris]; const capped = combined.slice(0, 5); return { ...prev, imageUris: capped }; });
+            setForm(prev => { const combined = [...prev.imageUris, ...validUris]; const capped = combined.slice(0, 5); setImageCaptions(prevCaps => [...prevCaps, ...validUris.map(() => '')].slice(0, 5)); return { ...prev, imageUris: capped }; });
         }
     } catch (error) { Alert.alert("Error", "Could not open gallery."); }
   };
 
-  const removeImage = (indexToRemove) => { setForm(prev => ({ ...prev, imageUris: prev.imageUris.filter((_, index) => index !== indexToRemove) })); };
+  const removeImage = (indexToRemove) => { setForm(prev => ({ ...prev, imageUris: prev.imageUris.filter((_, index) => index !== indexToRemove) })); setImageCaptions(prev => prev.filter((_, index) => index !== indexToRemove)); };
 
   const handleMapPress = async (e) => {
     const { latitude, longitude } = e.nativeEvent.coordinate;
@@ -237,8 +419,222 @@ export default function Dashboard() {
         let { status } = await Location.requestForegroundPermissionsAsync();
         if (status !== 'granted') return;
         let geocode = await Location.reverseGeocodeAsync({ latitude, longitude });
-        if (geocode.length > 0) { const address = geocode[0]; const locationName = [address.district || address.subregion, address.city || address.region].filter(Boolean).join(', '); if (locationName) setForm(prev => ({ ...prev, location: locationName })); }
+        if (geocode.length > 0) {
+            const locationName = formatDetailedAddress(geocode[0], latitude, longitude);
+            if (locationName) setForm(prev => ({ ...prev, location: locationName }));
+        }
     } catch (error) {}
+  };
+
+  const openLocationPicker = () => {
+    Keyboard.dismiss();
+    setTempLocation({
+      latitude: form.latitude || 14.3262,
+      longitude: form.longitude || 120.9386,
+      latitudeDelta: 0.03,
+      longitudeDelta: 0.03
+    });
+    setLocationSearch(form.location || '');
+    setLocationPickerVisible(true);
+  };
+
+  const handleLocationPickerPress = async (e) => {
+    const { latitude, longitude } = e.nativeEvent.coordinate;
+
+    setTempLocation(prev => ({
+      ...prev,
+      latitude,
+      longitude
+    }));
+
+    try {
+      const geocode = await Location.reverseGeocodeAsync({ latitude, longitude });
+
+      if (geocode.length > 0) {
+        const locationName = formatDetailedAddress(geocode[0], latitude, longitude);
+
+        if (locationName) {
+          setLocationSearch(locationName);
+        }
+      }
+    } catch (error) {}
+  };
+
+  const useCurrentLocationForPost = async () => {
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+
+      if (status !== 'granted') {
+        Alert.alert('Permission needed', 'Please allow location access to use your current location.');
+        return;
+      }
+
+      const current = await Location.getCurrentPositionAsync({});
+      const latitude = current.coords.latitude;
+      const longitude = current.coords.longitude;
+
+      setTempLocation({
+        latitude,
+        longitude,
+        latitudeDelta: 0.01,
+        longitudeDelta: 0.01
+      });
+
+      try {
+        const geocode = await Location.reverseGeocodeAsync({ latitude, longitude });
+
+        if (geocode.length > 0) {
+          const address = geocode[0];
+          const locationName = [
+            address.name,
+            address.street,
+            address.district || address.subregion,
+            address.city || address.region
+          ].filter(Boolean).join(', ');
+
+          if (locationName) {
+            setLocationSearch(locationName);
+          }
+        }
+      } catch (error) {}
+    } catch (error) {
+      Alert.alert('Location Error', 'Could not get your current location.');
+    }
+  };
+
+  const confirmPickedLocation = () => {
+    setForm(prev => ({
+      ...prev,
+      location: locationSearch || `${tempLocation.latitude.toFixed(6)}, ${tempLocation.longitude.toFixed(6)}`,
+      latitude: tempLocation.latitude,
+      longitude: tempLocation.longitude
+    }));
+
+    setLocationPickerVisible(false);
+  };
+
+  const searchTypedLocation = async (queryText = form.location, shouldPinFirst = true, showAlert = true) => {
+    if (shouldPinFirst) Keyboard.dismiss();
+
+    const query = String(queryText || '').trim();
+
+    if (!query) {
+      if (showAlert) {
+        Alert.alert('Enter Location', 'Please type a location first.');
+      }
+      return;
+    }
+
+    try {
+      setIsSearchingLocation(true);
+
+      const localMatches = getLocalLocationSuggestions(query);
+
+      if (localMatches.length > 0) {
+        setLocationSuggestions(localMatches);
+
+        if (shouldPinFirst) {
+          selectLocationSuggestion(localMatches[0], false);
+        }
+
+        return;
+      }
+
+      const searchQueries = [
+        `${query}, Cavite, Philippines`,
+        `${query}, Philippines`,
+        query
+      ];
+
+      let results = [];
+
+      for (const q of searchQueries) {
+        try {
+          const found = await Location.geocodeAsync(q);
+          if (found && found.length > 0) {
+            results = found;
+            break;
+          }
+        } catch (error) {}
+      }
+
+      if (!results || results.length === 0) {
+        if (showAlert) {
+          Alert.alert('Location not found', 'Try adding more details like street, barangay, city, or landmark.');
+        }
+        setLocationSuggestions([]);
+        return;
+      }
+
+      const suggestions = [];
+
+      for (let i = 0; i < Math.min(results.length, 5); i++) {
+        const item = results[i];
+
+        try {
+          const reverse = await Location.reverseGeocodeAsync({
+            latitude: item.latitude,
+            longitude: item.longitude
+          });
+
+          const detailedName = reverse.length > 0
+            ? formatDetailedAddress(reverse[0], item.latitude, item.longitude)
+            : `${item.latitude.toFixed(6)}, ${item.longitude.toFixed(6)}`;
+
+          suggestions.push({
+            id: `${item.latitude}-${item.longitude}-${i}`,
+            title: detailedName.split(',')[0] || query,
+            address: detailedName,
+            latitude: item.latitude,
+            longitude: item.longitude
+          });
+        } catch (error) {
+          suggestions.push({
+            id: `${item.latitude}-${item.longitude}-${i}`,
+            title: query,
+            address: `${item.latitude.toFixed(6)}, ${item.longitude.toFixed(6)}`,
+            latitude: item.latitude,
+            longitude: item.longitude
+          });
+        }
+      }
+
+      setLocationSuggestions(suggestions);
+
+      if (suggestions.length > 0 && shouldPinFirst) {
+        selectLocationSuggestion(suggestions[0], false);
+      }
+    } catch (error) {
+      if (showAlert) {
+        Alert.alert('Search Failed', 'Could not search that location. Please try again.');
+      }
+    } finally {
+      setIsSearchingLocation(false);
+    }
+  };
+
+  const selectLocationSuggestion = (place, clearList = true) => {
+    Keyboard.dismiss();
+
+    setForm(prev => ({
+      ...prev,
+      location: place.address,
+      latitude: place.latitude,
+      longitude: place.longitude
+    }));
+
+    setTempLocation({
+      latitude: place.latitude,
+      longitude: place.longitude,
+      latitudeDelta: 0.01,
+      longitudeDelta: 0.01
+    });
+
+    setLocationSearch(place.address);
+
+    if (clearList) {
+      setLocationSuggestions([]);
+    }
   };
 
   const handlePostSubmit = async () => {
@@ -265,6 +661,11 @@ export default function Dashboard() {
     3. Is completely unrelated to recycling, upcycling, eco-friendly living, or trading pre-loved/waste items.
     4. Contains gibberish.
     5. Mismatch between Type and Content.
+    6. If it's a trade post but doesn't specify what they're looking for, or if it's for sale but doesn't have a price.
+    7. Contains unrealistic prices (e.g. ₱999,999 for a plastic bottle) or trade requests (e.g. asking for a car in exchange for recyclables).
+    8. The description, item name, and pictures don't match. Example: title says "Plastic Bottles" but the description is about "Old Clothes" and the picture is a broken chair or random unrelated photo.
+    9. if free food is being offered, it must be clearly stated in the title or description to avoid confusion and potential safety issues.
+    
 
     Respond strictly in pure JSON format:
     {
@@ -293,7 +694,14 @@ export default function Dashboard() {
     else if (form.type === 'Trade') finalPriceDisplay = `Trade: ${form.lookingFor}`;
     else finalPriceDisplay = `₱${form.price}`;
 
-    const postData = { user: userData.name, avatar: userData.avatar, type: form.type, title: form.title, desc: form.desc, price: finalPriceDisplay, location: form.location, latitude: form.latitude, longitude: form.longitude, image: imagesToSave, status: aiStatus, ai_reason: aiReason };
+    const captionText = imageCaptions
+      .map((caption, index) => caption?.trim() ? `Photo ${index + 1}: ${caption.trim()}` : '')
+      .filter(Boolean)
+      .join('\n');
+
+    const finalDesc = captionText ? `${form.desc}\n\nPhoto Captions:\n${captionText}` : form.desc;
+
+    const postData = { user: userData.name, avatar: userData.avatar, type: form.type, title: form.title, desc: finalDesc, price: finalPriceDisplay, location: form.location, latitude: form.latitude, longitude: form.longitude, image: imagesToSave, status: aiStatus, ai_reason: aiReason };
     let dbError = null;
 
     if (editingPostId) { const { error } = await supabase.from('posts').update(postData).eq('id', editingPostId); dbError = error; } 
@@ -301,7 +709,7 @@ export default function Dashboard() {
     
     setIsUploading(false);
     if (dbError) { Alert.alert("Database Error 🛑", dbError.message); return; }
-    setEditingPostId(null); setIsCreating(false); setForm({ type: 'For Sale', title: '', desc: '', category: '', price: '', lookingFor: '', location: '', latitude: null, longitude: null, imageUris: [] }); fetchPosts(); 
+    setEditingPostId(null); setIsCreating(false); setShowDIYShowcaseOption(false); setImageCaptions([]); setForm({ type: 'For Sale', title: '', desc: '', category: '', price: '', lookingFor: '', location: '', latitude: null, longitude: null, imageUris: [] }); fetchPosts(); 
 
     if (aiStatus === 'flagged') { Alert.alert("Post Flagged Detected ⚠️", `Your post was hidden due to: ${aiReason}. You can appeal this from your feed.`); } 
     else { Alert.alert("Success", editingPostId ? "Post updated!" : "Post uploaded!"); }
@@ -315,10 +723,51 @@ export default function Dashboard() {
 
   const handleLike = async (post) => {
     const hasLiked = post.liked_by && post.liked_by.includes(userData.name);
-    let newLikedBy = post.liked_by ? [...post.liked_by] : []; let newLikes = post.likes || 0;
-    if (hasLiked) { newLikedBy = newLikedBy.filter(name => name !== userData.name); newLikes = Math.max(0, newLikes - 1); } 
-    else { newLikedBy.push(userData.name); newLikes += 1; if (post.user !== userData.name) { await supabase.from('notifications').insert([{ owner_name: post.user, actor_name: userData.name, actor_avatar: userData.avatar, action: 'liked', post_title: post.title, is_read: false }]); } }
-    setPosts(posts.map(p => p.id === post.id ? { ...p, likes: newLikes, liked_by: newLikedBy } : p)); await supabase.from('posts').update({ likes: newLikes, liked_by: newLikedBy }).eq('id', post.id);
+    let newLikedBy = post.liked_by ? [...post.liked_by] : [];
+    let newLikes = post.likes || 0;
+
+    if (hasLiked) {
+      newLikedBy = newLikedBy.filter(name => name !== userData.name);
+      newLikes = Math.max(0, newLikes - 1);
+    } else {
+      newLikedBy.push(userData.name);
+      newLikes += 1;
+
+      if (post.user !== userData.name) {
+        await supabase.from('notifications').insert([{
+          owner_name: post.user,
+          actor_name: userData.name,
+          actor_avatar: userData.avatar,
+          action: 'liked',
+          post_title: post.title,
+          is_read: false
+        }]);
+      }
+    }
+
+    const updatedPost = {
+      ...post,
+      likes: newLikes,
+      liked_by: newLikedBy
+    };
+
+    setPosts(prevPosts =>
+      prevPosts.map(p =>
+        p.id === post.id ? { ...p, likes: newLikes, liked_by: newLikedBy } : p
+      )
+    );
+
+    if (selectedPost && selectedPost.id === post.id) {
+      setSelectedPost(updatedPost);
+    }
+
+    await supabase
+      .from('posts')
+      .update({
+        likes: newLikes,
+        liked_by: newLikedBy
+      })
+      .eq('id', post.id);
   };
 
   const handleCommentLike = async (comment) => {
@@ -426,12 +875,41 @@ export default function Dashboard() {
 
   const formatTime = (dateString) => { const diffMins = Math.floor((new Date() - new Date(dateString)) / 60000); if (diffMins < 1) return 'Just now'; if (diffMins < 60) return `${diffMins}m ago`; if (diffMins < 1440) return `${Math.floor(diffMins / 60)}h ago`; return `${Math.floor(diffMins / 1440)}d ago`; };
 
+  const extractPhotoCaptions = (desc = '') => {
+    const lines = desc.split('\n');
+    const captionStartIndex = lines.findIndex(line =>
+      line.trim().toLowerCase() === 'photo captions:'
+    );
+
+    if (captionStartIndex === -1) return [];
+
+    return lines
+      .slice(captionStartIndex + 1)
+      .map(line => {
+        const match = line.match(/^Photo\s+(\d+):\s*(.*)$/i);
+        return match ? match[2].trim() : '';
+      });
+  };
+
+  const cleanPostDescription = (desc = '') => {
+    const captionStartIndex = desc.toLowerCase().indexOf('photo captions:');
+
+    if (captionStartIndex === -1) {
+      return desc;
+    }
+
+    return desc.substring(0, captionStartIndex).trim();
+  };
+
   if (selectedPost) {
     const mainComments = postComments.filter(c => !c.parent_id);
     const getReplies = (parentId) => postComments.filter(c => c.parent_id === parentId);
     
     const postImagesArray = selectedPost.image ? selectedPost.image.split(',') : [];
-    const isDIY = selectedPost.type === 'DIY Project'; 
+    const photoCaptions = extractPhotoCaptions(selectedPost.desc || '');
+    const cleanDescription = cleanPostDescription(selectedPost.desc || '');
+    const isDIY = selectedPost.type === 'DIY Project';
+    const isSelectedPostOwner = selectedPost.user === userData.name;
 
     return (
       <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
@@ -439,7 +917,14 @@ export default function Dashboard() {
         
         <View style={[styles.subHeader, { paddingTop: Math.max(insets.top, 20) + 15, paddingBottom: 15, borderBottomLeftRadius: 0, borderBottomRightRadius: 0, zIndex: 10 }]}>
             <View style={styles.subHeaderRow}>
-                <TouchableOpacity onPress={() => {setSelectedPost(null); setReplyingTo(null); setEditingCommentId(null); setNewComment(''); router.setParams({ openPostTitle: null });}} style={styles.backButton}>
+                <TouchableOpacity onPress={() => {
+                    setRestoreFeedScrollY(lastFeedScrollY.current);
+                    setSelectedPost(null);
+                    setReplyingTo(null);
+                    setEditingCommentId(null);
+                    setNewComment('');
+                    router.setParams({ openPostTitle: null });
+                }} style={styles.backButton}>
                     <Ionicons name="arrow-back" size={24} color="white" />
                 </TouchableOpacity>
                 <View style={{alignItems: 'center'}}>
@@ -464,7 +949,23 @@ export default function Dashboard() {
                         scrollEventThrottle={16}
                     >
                         {postImagesArray.map((imgUrl, idx) => (
-                            <Image key={idx} source={{ uri: imgUrl }} style={{width: screenWidth, height: 350, resizeMode: 'cover', backgroundColor: '#eee'}} />
+                            <View key={idx} style={{width: screenWidth, height: 350}}>
+                                <Image
+                                    source={{ uri: imgUrl }}
+                                    style={{width: screenWidth, height: 350, resizeMode: 'contain', backgroundColor: '#F7F7F7'}}
+                                />
+
+                                {photoCaptions[idx] ? (
+                                    <LinearGradient
+                                        colors={['transparent', 'rgba(0,0,0,0.78)']}
+                                        style={styles.photoCaptionOverlay}
+                                    >
+                                        <Text style={styles.photoCaptionText} numberOfLines={3}>
+                                            {photoCaptions[idx]}
+                                        </Text>
+                                    </LinearGradient>
+                                ) : null}
+                            </View>
                         ))}
                     </ScrollView>
                     
@@ -515,19 +1016,23 @@ export default function Dashboard() {
                     <View style={{flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 25}}>
                         <View style={{flex: 1, paddingRight: 10}}>
                             {isDIY && <Text style={{fontSize: 12, color: '#00A86B', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: 1}}>Market Value:</Text>}
-                            <Text style={{fontSize: isDIY ? 28 : 32, fontWeight: 'bold', color: '#00A86B'}}>{selectedPost.price.replace('Market Value: ', '')}</Text>
+                            <Text style={{fontSize: isDIY ? 24 : 26, fontWeight: '900', color: '#00A86B', letterSpacing: -0.5}}>{selectedPost.price.replace('Market Value: ', '')}</Text>
                             <Text style={{fontSize: 14, color: '#8E8E93', marginTop: 2}}>{selectedPost.likes || 0} people liked this</Text>
                         </View>
 
                         <View style={{alignItems: 'flex-end'}}>
-                            <TouchableOpacity onPress={() => handleLike(selectedPost)}>
+                            <TouchableOpacity activeOpacity={0.7} onPress={() => handleLike(selectedPost)}>
                                 <Ionicons name={selectedPost.liked_by?.includes(userData.name) ? "heart" : "heart-outline"} size={34} color={selectedPost.liked_by?.includes(userData.name) ? "#FF1744" : "#8E8E93"} />
                             </TouchableOpacity>
                         </View>
                     </View>
 
                     <Text style={{fontSize: 18, fontWeight: 'bold', color: '#1C1C1E', marginBottom: 10}}>Description</Text>
-                    <Text style={{fontSize: 15, color: '#3C3C43', lineHeight: 24, marginBottom: 30}}>{selectedPost.desc}</Text>
+                    <View style={styles.descriptionCard}>
+                        <Text style={styles.descriptionText}>
+                            {cleanDescription}
+                        </Text>
+                    </View>
 
                     <View style={{borderTopWidth: 1, borderTopColor: '#E5E5EA', borderBottomWidth: 1, borderBottomColor: '#E5E5EA', paddingVertical: 20, marginBottom: 25}}>
                         <View style={{flexDirection: 'row', marginBottom: 20}}>
@@ -572,8 +1077,8 @@ export default function Dashboard() {
                                       <View style={{flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4}}>
                                           <Text style={{fontWeight: '600', fontSize: 14, color: comment.is_deleted ? '#8E8E93' : '#1C1C1E'}}>{comment.user_name}</Text>
                                           {!comment.is_deleted ? (
-                                              <TouchableOpacity onPress={() => handleCommentOptions(comment)}>
-                                                  <Ionicons name="ellipsis-horizontal" size={16} color="#8E8E93" />
+                                              <TouchableOpacity onPress={() => { setSelectedCommentForOptions(comment); setCommentOptionsModalVisible(true); }}>
+                                                  <Ionicons name="ellipsis-horizontal" size={18} color="#8E8E93" />
                                               </TouchableOpacity>
                                           ) : null}
                                       </View>
@@ -605,8 +1110,8 @@ export default function Dashboard() {
                                           <View style={{flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4}}>
                                               <Text style={{fontWeight: '600', fontSize: 13, color: reply.is_deleted ? '#8E8E93' : '#1C1C1E'}}>{reply.user_name}</Text>
                                               {!reply.is_deleted ? (
-                                                  <TouchableOpacity onPress={() => handleCommentOptions(reply)}>
-                                                      <Ionicons name="ellipsis-horizontal" size={16} color="#8E8E93" />
+                                                  <TouchableOpacity onPress={() => { setSelectedCommentForOptions(reply); setCommentOptionsModalVisible(true); }}>
+                                                      <Ionicons name="ellipsis-horizontal" size={18} color="#8E8E93" />
                                                   </TouchableOpacity>
                                               ) : null}
                                           </View>
@@ -648,22 +1153,48 @@ export default function Dashboard() {
             </View>
         </KeyboardAvoidingView>
 
-        {/* MODALS */}
+        {/* 🟢 TINAWAG YUNG MODAL COMPONENT */}
+        <BankedKgModal 
+            visible={isBankedModalVisible} 
+            onClose={() => setBankedModalVisible(false)} 
+            bankedDetails={bankedDetails} 
+        />
+
         <Modal visible={commentOptionsModalVisible} animationType="slide" transparent={true} onRequestClose={() => setCommentOptionsModalVisible(false)}>
           <TouchableOpacity style={{flex: 1, backgroundColor: 'transparent', justifyContent: 'flex-end'}} activeOpacity={1} onPress={() => setCommentOptionsModalVisible(false)}>
             <TouchableOpacity activeOpacity={1} style={styles.darkModalSheet}>
               <View style={{width: 40, height: 5, backgroundColor: '#555', borderRadius: 5, alignSelf: 'center', marginTop: 15, marginBottom: 20}} />
+
               <View style={styles.darkMenuContainer}>
-                  {selectedCommentForOptions?.user_name === userData.name ? (
+                  {(selectedCommentForOptions?.user_name === userData.name || isSelectedPostOwner) ? (
                       <>
-                          <TouchableOpacity style={styles.darkMenuItem} onPress={handleEditCommentAction}><Ionicons name="pencil" size={22} color="#fff" style={{marginRight: 15}} /><Text style={styles.darkMenuText}>Edit Comment</Text></TouchableOpacity>
-                          <TouchableOpacity style={[styles.darkMenuItem, { borderBottomWidth: 0 }]} onPress={handleDeleteCommentAction}><Ionicons name="trash-outline" size={22} color="#FF3B30" style={{marginRight: 15}} /><Text style={[styles.darkMenuText, { color: '#FF3B30', fontWeight: 'bold' }]} >Delete Comment</Text></TouchableOpacity>
+                          {selectedCommentForOptions?.user_name === userData.name ? (
+                              <TouchableOpacity style={styles.darkMenuItem} onPress={handleEditCommentAction}>
+                                  <Ionicons name="pencil" size={22} color="#fff" style={{marginRight: 15}} />
+                                  <Text style={styles.darkMenuText}>Edit Comment</Text>
+                              </TouchableOpacity>
+                          ) : null}
+
+                          <TouchableOpacity style={[styles.darkMenuItem, { borderBottomWidth: 0 }]} onPress={handleDeleteCommentAction}>
+                              <Ionicons name="trash-outline" size={22} color="#FF3B30" style={{marginRight: 15}} />
+                              <Text style={[styles.darkMenuText, { color: '#FF3B30', fontWeight: 'bold' }]}>
+                                  Delete Comment
+                              </Text>
+                          </TouchableOpacity>
                       </>
                   ) : (
-                      <TouchableOpacity style={[styles.darkMenuItem, { borderBottomWidth: 0 }]} onPress={handleReportCommentAction}><Ionicons name="warning-outline" size={22} color="#FF3B30" style={{marginRight: 15}} /><Text style={[styles.darkMenuText, { color: '#FF3B30', fontWeight: 'bold' }]}>Report Comment</Text></TouchableOpacity>
+                      <TouchableOpacity style={[styles.darkMenuItem, { borderBottomWidth: 0 }]} onPress={handleReportCommentAction}>
+                          <Ionicons name="warning-outline" size={22} color="#FF3B30" style={{marginRight: 15}} />
+                          <Text style={[styles.darkMenuText, { color: '#FF3B30', fontWeight: 'bold' }]}>
+                              Report Comment
+                          </Text>
+                      </TouchableOpacity>
                   )}
               </View>
-              <TouchableOpacity style={styles.darkCancelBtn} onPress={() => setCommentOptionsModalVisible(false)}><Text style={{color: '#fff', fontWeight: 'bold'}}>Cancel</Text></TouchableOpacity>
+
+              <TouchableOpacity style={styles.darkCancelBtn} onPress={() => setCommentOptionsModalVisible(false)}>
+                  <Text style={{color: '#fff', fontWeight: 'bold'}}>Cancel</Text>
+              </TouchableOpacity>
             </TouchableOpacity>
           </TouchableOpacity>
         </Modal>
@@ -713,7 +1244,7 @@ export default function Dashboard() {
                   </View>
                   <TextInput style={styles.darkTextInput} placeholder="Add additional details (optional)..." placeholderTextColor="#888" multiline={true} returnKeyType="done" blurOnSubmit={true} onSubmitEditing={() => Keyboard.dismiss()} value={reportAdditionalInfo} onChangeText={setReportAdditionalInfo} />
                   <TouchableOpacity style={{backgroundColor: '#FF3B30', padding: 18, borderRadius: 15, alignItems: 'center'}} onPress={() => submitCommentReport(`${selectedMainCommentReason.title}: ${selectedCommentSubReason.title}`)}><Text style={{color: 'white', fontWeight: 'bold', fontSize: 16}}>Submit Report</Text></TouchableOpacity>
-                  <TouchableOpacity style={[styles.darkCancelBtn, {marginTop: 10}]} onPress={() => setReportStep(2)}><Text style={{color: '#fff', fontWeight: 'bold'}}>Back</Text></TouchableOpacity>
+                  <TouchableOpacity style={[styles.darkCancelBtn, {marginTop: 10}]} onPress={() => setCommentReportStep(2)}><Text style={{color: '#fff', fontWeight: 'bold'}}>Back</Text></TouchableOpacity>
                 </View>
               )}
             </TouchableOpacity>
@@ -731,7 +1262,7 @@ export default function Dashboard() {
           
           <View style={[styles.subHeader, { paddingTop: Math.max(insets.top, 20) + 15, paddingBottom: 25 }]}>
               <View style={styles.subHeaderRow}>
-                  <TouchableOpacity onPress={() => {setIsCreating(false); setEditingPostId(null);}} style={styles.backButton}>
+                  <TouchableOpacity onPress={() => {setIsCreating(false); setEditingPostId(null); setShowDIYShowcaseOption(false); setImageCaptions([]);}} style={styles.backButton}>
                       <Ionicons name="arrow-back" size={24} color="white" />
                   </TouchableOpacity>
                   <View style={{alignItems: 'center'}}>
@@ -741,8 +1272,20 @@ export default function Dashboard() {
               </View>
           </View>
 
-          <KeyboardAvoidingView style={{flex: 1}} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+          <KeyboardAvoidingView style={{flex: 1}} behavior={Platform.OS === "ios" ? "padding" : undefined} keyboardVerticalOffset={Platform.OS === "ios" ? 80 : 0}>
             <ScrollView contentContainerStyle={styles.createContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+              <View style={styles.guidelineCard}>
+                  <View style={styles.guidelineHeader}>
+                      <MaterialCommunityIcons name="clipboard-check-outline" size={22} color="#007C00" />
+                      <Text style={styles.guidelineTitle}>Create Post Guidelines</Text>
+                  </View>
+                  <Text style={styles.guidelineText}>• Use clear photos and captions for every image.</Text>
+                  <Text style={styles.guidelineText}>• Add the exact meet-up location using the map.</Text>
+                  <Text style={styles.guidelineText}>• Post only recyclable, reusable, or upcycled items.</Text>
+              </View>
+
+              <View style={styles.formSection}>
+              <Text style={styles.formSectionTitle}>Post Details</Text>
               <Text style={styles.label}>Post Type</Text>
               
               <View style={styles.typeRow}>{['For Sale', 'Trade', 'Free'].map(type => (<TouchableOpacity key={type} style={[styles.typeBtn, form.type === type && styles.typeBtnActive, {borderColor: form.type === type ? '#007C00' : '#E0E0E0'}]} onPress={() => setForm({...form, type: type})}><Text style={[styles.typeBtnText, form.type === type && {color: '#007C00'}]}>{type}</Text></TouchableOpacity>))}</View>
@@ -753,19 +1296,75 @@ export default function Dashboard() {
               {form.type === 'For Sale' ? (<><Text style={styles.label}>Price *</Text><View style={styles.inputIconWrap}><Text style={{color: '#999', marginRight: 5}}>₱</Text><TextInput style={{flex: 1}} placeholder="0.00" keyboardType="numeric" value={form.price} onChangeText={(t) => setForm({...form, price: t})}/></View></>) : null}
               {form.type === 'Trade' ? (<><Text style={styles.label}>Looking For *</Text><TextInput style={styles.input} placeholder="e.g. Glass bottles..." value={form.lookingFor} onChangeText={(t) => setForm({...form, lookingFor: t})}/></>) : null}
               
+              </View>
+
               <Text style={styles.label}>Location Details</Text>
-              <TextInput style={styles.input} placeholder="Barangay, City" value={form.location} onChangeText={(t) => setForm({...form, location: t})} />
-              
+              <View style={styles.locationSearchBox}>
+                  <TextInput
+                      style={styles.locationSearchTextInput}
+                      placeholder="Type place, mall, street, or landmark"
+                      value={form.location}
+                      onChangeText={(t) => {
+                          setForm({...form, location: t});
+                      }}
+                      returnKeyType="search"
+                      onSubmitEditing={() => searchTypedLocation(form.location, true, true)}
+                  />
+                  {form.location?.length > 0 && (
+                      <TouchableOpacity onPress={() => { setForm({...form, location: ''}); setLocationSuggestions([]); }}>
+                          <Ionicons name="close-circle" size={18} color="#B0BEC5" />
+                      </TouchableOpacity>
+                  )}
+                  <TouchableOpacity style={styles.locationPinBtn} onPress={() => searchTypedLocation(form.location, true, true)} disabled={isSearchingLocation}>
+                      {isSearchingLocation ? (
+                          <ActivityIndicator size="small" color="white" />
+                      ) : (
+                          <MaterialCommunityIcons name="map-marker-radius" size={22} color="white" />
+                      )}
+                  </TouchableOpacity>
+              </View>
+
+              {isSearchingLocation && (
+                  <Text style={styles.searchingLocationText}>Searching recommended locations...</Text>
+              )}
+
+              {locationSuggestions.length > 0 && (
+                  <View style={styles.suggestionsCard}>
+                      <Text style={styles.suggestionsTitle}>Recommended Locations</Text>
+                      {locationSuggestions.map((place) => (
+                          <TouchableOpacity key={place.id} style={styles.suggestionItem} onPress={() => selectLocationSuggestion(place)}>
+                              <View style={styles.suggestionIcon}>
+                                  <MaterialCommunityIcons name="map-marker" size={18} color="#007C00" />
+                              </View>
+                              <View style={{flex: 1}}>
+                                  <Text style={styles.suggestionTitle} numberOfLines={1}>{place.title}</Text>
+                                  <Text style={styles.suggestionAddress} numberOfLines={2}>{place.address}</Text>
+                              </View>
+                          </TouchableOpacity>
+                      ))}
+                  </View>
+              )}
+
               <Text style={[styles.label, {marginTop: 15}]}>Pin your Location *</Text>
               <Text style={{fontSize: 12, color: '#666', marginBottom: 10}}>Move/drag the map below if the pinned location is incorrect.</Text>
               
               <View style={styles.mapBox}>
                   <MapView
                       style={styles.map}
-                      initialRegion={{ latitude: 14.3262, longitude: 120.9386, latitudeDelta: 0.05, longitudeDelta: 0.05 }}
+                      region={{
+                          latitude: form.latitude || 14.3262,
+                          longitude: form.longitude || 120.9386,
+                          latitudeDelta: form.latitude && form.longitude ? 0.01 : 0.05,
+                          longitudeDelta: form.latitude && form.longitude ? 0.01 : 0.05
+                      }}
                       onPress={handleMapPress}
                   >
-                      {(form.latitude && form.longitude) ? (<Marker coordinate={{latitude: form.latitude, longitude: form.longitude}} title={form.location || "Meet-up Spot"} />) : null}
+                      {(form.latitude && form.longitude) ? (
+                          <Marker
+                              coordinate={{latitude: form.latitude, longitude: form.longitude}}
+                              title={form.location || "Meet-up Spot"}
+                          />
+                      ) : null}
                   </MapView>
               </View>
 
@@ -776,11 +1375,25 @@ export default function Dashboard() {
               
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{gap: 10, paddingVertical: 10}} keyboardShouldPersistTaps="handled">
                   {form.imageUris.map((uri, index) => (
-                      <View key={index} style={{position: 'relative'}}>
-                          <Image source={{ uri: uri }} style={{width: 120, height: 120, borderRadius: 12, backgroundColor: '#eee'}} resizeMode="cover" />
+                      <View key={index} style={{position: 'relative', width: 150}}>
+                          <Image source={{ uri: uri }} style={{width: 150, height: 120, borderRadius: 12, backgroundColor: '#eee'}} resizeMode="cover" />
                           <TouchableOpacity style={{position: 'absolute', top: -5, right: -5, backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 15, padding: 4}} onPress={() => removeImage(index)}>
                               <Ionicons name="close" size={16} color="white" />
                           </TouchableOpacity>
+                          <TextInput
+                              style={styles.captionInput}
+                              placeholder={`Caption for photo ${index + 1}`}
+                              placeholderTextColor="#999"
+                              value={imageCaptions[index] || ''}
+                              onChangeText={(text) => {
+                                  setImageCaptions(prev => {
+                                      const next = [...prev];
+                                      next[index] = text;
+                                      return next;
+                                  });
+                              }}
+                              multiline
+                          />
                       </View>
                   ))}
                   
@@ -797,9 +1410,87 @@ export default function Dashboard() {
                    isUploading ? (<ActivityIndicator color="white" />) : 
                    (<Text style={{color: 'white', fontWeight: 'bold'}}>{editingPostId ? 'SAVE CHANGES' : 'POST NOW'}</Text>)}
               </TouchableOpacity>
-              <View style={{height: 100}} />
+              <View style={{height: keyboardVisible ? 280 : 30}} />
             </ScrollView>
           </KeyboardAvoidingView>
+
+          <Modal
+            visible={locationPickerVisible}
+            animationType="slide"
+            transparent={false}
+            onRequestClose={() => setLocationPickerVisible(false)}
+          >
+            <View style={styles.locationModalContainer}>
+              <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+              <View style={[styles.locationModalHeader, { paddingTop: Math.max(insets.top, 20) + 10 }]}>
+                  <TouchableOpacity onPress={() => setLocationPickerVisible(false)} style={styles.locationBackBtn}>
+                      <Ionicons name="arrow-back" size={24} color="#263238" />
+                  </TouchableOpacity>
+                  <View style={{alignItems: 'center'}}>
+                      <Text style={styles.locationModalTitle}>Enter Location</Text>
+                      <Text style={styles.locationModalSub}>Pin the exact meet-up place.</Text>
+                  </View>
+                  <TouchableOpacity onPress={useCurrentLocationForPost} style={styles.locationBackBtn}>
+                      <MaterialCommunityIcons name="crosshairs-gps" size={23} color="#007C00" />
+                  </TouchableOpacity>
+              </View>
+
+              <View style={styles.locationSearchWrap}>
+                  <Ionicons name="search" size={22} color="#999" />
+                  <TextInput
+                      value={locationSearch}
+                      onChangeText={setLocationSearch}
+                      placeholder="Search or type address..."
+                      placeholderTextColor="#999"
+                      style={styles.locationSearchInput}
+                      returnKeyType="search"
+                      onSubmitEditing={() => searchTypedLocation(locationSearch, true, true)}
+                  />
+                  <TouchableOpacity style={styles.modalSearchBtn} onPress={() => searchTypedLocation(locationSearch, true, true)} disabled={isSearchingLocation}>
+                      {isSearchingLocation ? (
+                          <ActivityIndicator size="small" color="#007C00" />
+                      ) : (
+                          <MaterialCommunityIcons name="map-search" size={22} color="#007C00" />
+                      )}
+                  </TouchableOpacity>
+              </View>
+
+              <Text style={styles.locationMapHelper}>Tap anywhere on the map to move the pin.</Text>
+
+              <View style={styles.fullMapBox}>
+                  <MapView
+                      style={styles.fullMap}
+                      region={tempLocation}
+                      onRegionChangeComplete={setTempLocation}
+                      onPress={handleLocationPickerPress}
+                  >
+                      <Marker
+                          coordinate={{
+                              latitude: tempLocation.latitude,
+                              longitude: tempLocation.longitude
+                          }}
+                      />
+                  </MapView>
+
+                  <TouchableOpacity style={styles.currentLocationFloating} onPress={useCurrentLocationForPost}>
+                      <MaterialCommunityIcons name="crosshairs-gps" size={24} color="#007C00" />
+                  </TouchableOpacity>
+              </View>
+
+              <View style={styles.locationBottomPanel}>
+                  <View style={{flexDirection: 'row', alignItems: 'center', marginBottom: 12}}>
+                      <MaterialCommunityIcons name="map-marker" size={22} color="#007C00" />
+                      <Text style={styles.pickedLocationText} numberOfLines={2}>
+                          {locationSearch || 'Selected pin location'}
+                      </Text>
+                  </View>
+
+                  <TouchableOpacity style={styles.confirmLocationBtn} onPress={confirmPickedLocation}>
+                      <Text style={styles.confirmLocationText}>Confirm Location</Text>
+                  </TouchableOpacity>
+              </View>
+            </View>
+          </Modal>
         </View>
       );
   }
@@ -829,8 +1520,17 @@ export default function Dashboard() {
         </View>
       </View>
 
-      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}>
-        
+<ScrollView
+        ref={feedScrollRef}
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+        keyboardShouldPersistTaps="always"
+        scrollEventThrottle={16}
+        onScroll={(event) => {
+            lastFeedScrollY.current = event.nativeEvent.contentOffset.y;
+        }}
+      >        
         <View style={styles.tipCard}>
             <View style={styles.tipHeader}><MaterialCommunityIcons name="lightbulb-on-outline" size={20} color="#FBC02D" /><Text style={styles.tipTitle}>Eco Tip of the Day</Text></View>
             <Text style={styles.tipText}>Rinse and dry your recyclables before disposal.</Text>
@@ -838,18 +1538,30 @@ export default function Dashboard() {
 
         <Text style={[styles.sectionTitle, { marginBottom: 10, marginTop: 5 }]}>Eco Impact</Text>
         
-        <TouchableOpacity activeOpacity={0.9} onPress={() => setBankedModalVisible(true)}>
-            <LinearGradient colors={['#007C00', '#004d00']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.pointsBanner}>
-                <View style={styles.pointsTitleWrap}>
-                    <MaterialCommunityIcons name="safe" size={28} color="#FFD54F" />
-                    <View>
-                        <Text style={styles.pointsTitle}>Banked KG (Points)</Text>
-                        <Text style={{color: 'rgba(255,255,255,0.7)', fontSize: 10, marginLeft: 8}}>Tap to view breakdown</Text>
-                    </View>
+       <TouchableOpacity 
+    activeOpacity={0.8} 
+    onPress={() => {
+        Keyboard.dismiss();
+        // 🟢 FIX: Pinipilit nito si React Native na i-render AGAD yung modal
+        requestAnimationFrame(() => {
+            setBankedModalVisible(true);
+        });
+    }}
+>
+    
+    <View pointerEvents="none">
+        <LinearGradient colors={['#007C00', '#004d00']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.pointsBanner}>
+            <View style={styles.pointsTitleWrap}>
+                <MaterialCommunityIcons name="safe" size={28} color="#FFD54F" />
+                <View>
+                    <Text style={styles.pointsTitle}>Banked KG (Points)</Text>
+                    <Text style={{color: 'rgba(255,255,255,0.7)', fontSize: 10, marginLeft: 8}}>Tap to view breakdown</Text>
                 </View>
-                <Text style={styles.pointsValue}>{userData.bankedPoints} <Text style={{fontSize: 14, fontWeight: 'normal'}}>KG</Text></Text>
-            </LinearGradient>
-        </TouchableOpacity>
+            </View>
+            <Text style={styles.pointsValue}>{userData.bankedPoints} <Text style={{fontSize: 14, fontWeight: 'normal'}}>KG</Text></Text>
+        </LinearGradient>
+    </View>
+</TouchableOpacity>
 
         <View style={styles.impactRow}>
             <ImpactCard value={userData.kgRecycled} unit="kg recycled" icon="chart-line-variant" color="#007C00" bgColor="#E8F5E9" />
@@ -875,6 +1587,8 @@ export default function Dashboard() {
             filteredPosts.map((post) => {
                 const isOwner = post.user === userData.name;
                 const firstImageUrl = post.image ? post.image.split(',')[0] : null;
+                const feedPhotoCaptions = extractPhotoCaptions(post.desc || '');
+                const feedCleanDesc = cleanPostDescription(post.desc || '');
 
                 if (post.status === 'flagged' && isOwner) {
                     return (
@@ -911,9 +1625,11 @@ export default function Dashboard() {
                         
                         <TouchableOpacity onPress={() => openPostDetails(post)}>
                             <Text style={styles.postTitle}>{post.title}</Text>
-                            <Text style={styles.postDesc} numberOfLines={2}>{post.desc}</Text>
+                            <Text style={styles.postDesc} numberOfLines={2}>{feedCleanDesc}</Text>
                             <View style={{position: 'relative'}}>
-                                {firstImageUrl && <Image source={{ uri: firstImageUrl }} style={styles.postImage} />}
+                                {firstImageUrl && (
+                                    <Image source={{ uri: firstImageUrl }} style={styles.postImage} />
+                                )}
                                 {post.image && post.image.includes(',') && (
                                     <View style={{position: 'absolute', top: 10, right: 10, backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 10, flexDirection: 'row', alignItems: 'center'}}>
                                         <MaterialCommunityIcons name="layers-outline" size={14} color="white" style={{marginRight: 4}} />
@@ -925,7 +1641,7 @@ export default function Dashboard() {
                         
                         <View style={styles.postFooter}>
                             <View style={{flexDirection: 'row', alignItems: 'center', gap: 15}}>
-                                <TouchableOpacity style={styles.iconRow} onPress={() => handleLike(post)}><Ionicons name={post.liked_by?.includes(userData.name) ? "heart" : "heart-outline"} size={24} color={post.liked_by?.includes(userData.name) ? "#FF1744" : "#666"} /><Text style={styles.iconText}>{post.likes}</Text></TouchableOpacity>
+                                <TouchableOpacity activeOpacity={0.7} style={styles.iconRow} onPress={() => handleLike(post)}><Ionicons name={post.liked_by?.includes(userData.name) ? "heart" : "heart-outline"} size={24} color={post.liked_by?.includes(userData.name) ? "#FF1744" : "#666"} /><Text style={styles.iconText}>{post.likes}</Text></TouchableOpacity>
                                 <TouchableOpacity style={styles.iconRow} onPress={() => openPostDetails(post)}><Ionicons name="chatbubble-outline" size={22} color="#666" /><Text style={styles.iconText}>{post.comments}</Text></TouchableOpacity>
                             </View>
                             
@@ -953,36 +1669,7 @@ export default function Dashboard() {
         <View style={{height: 100}} /> 
       </ScrollView>
 
-      {/* ALL MODALS (Banked, Options, Report) */}
-      <Modal visible={isBankedModalVisible} animationType="slide" transparent={true} onRequestClose={() => setBankedModalVisible(false)}>
-        <View style={styles.modalOverlayDark}>
-          <View style={styles.bankedModalCard}>
-            <View style={styles.bankedModalHeader}><MaterialCommunityIcons name="safe" size={28} color="#FFD54F" /><View style={{flex: 1, marginLeft: 10}}><Text style={styles.bankedModalTitle}>My Banked KG</Text></View><TouchableOpacity onPress={() => setBankedModalVisible(false)}><Ionicons name="close-circle" size={28} color="#fff" /></TouchableOpacity></View>
-            <ScrollView style={styles.bankedModalContent} showsVerticalScrollIndicator={false}>
-               <Text style={styles.bankedModalDesc}>Select an item to generate a QR Code and redeem your banked KG!</Text>
-               {bankedDetails.length === 0 ? (
-                  <View style={{alignItems: 'center', marginTop: 30}}><MaterialCommunityIcons name="leaf-off" size={50} color="#ddd" /><Text style={{textAlign: 'center', color: '#999', marginTop: 10}}>You don't have any banked items yet.</Text></View>
-               ) : (
-                  bankedDetails.map((center, index) => (
-                     <View key={index} style={styles.bankedCenterCard}>
-                        <View style={styles.bankedCenterHeader}><MaterialCommunityIcons name="store" size={18} color="#007C00" /><Text style={styles.bankedCenterName}>{center.location}</Text></View>
-                        <View style={styles.bankedMaterialsList}>
-                           {center.materials.map((mat, i) => (
-                               <TouchableOpacity key={i} style={styles.bankedMaterialRow} activeOpacity={0.7} onPress={() => { setBankedModalVisible(false); router.push({ pathname: '/qr-generator', params: { isBankedRedemption: 'true', collectorEmail: center.email, materialType: mat.type, bankedKg: mat.kg, rewardName: 'Redeem Banked Points' } }); }}>
-                                   <Text style={styles.bankedMaterialType}>{mat.type}</Text>
-                                   <View style={{flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#E8F5E9', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8}}><Text style={styles.bankedMaterialKg}>{mat.kg.toFixed(1)} kg</Text><MaterialCommunityIcons name="qrcode-scan" size={14} color="#007C00" /></View>
-                               </TouchableOpacity>
-                           ))}
-                        </View>
-                     </View>
-                  ))
-               )}
-               <View style={{height: 20}}/>
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
-
+      {/* MODALS */}
       <Modal visible={optionsModalVisible} animationType="slide" transparent={true} onRequestClose={() => setOptionsModalVisible(false)}>
         <TouchableOpacity style={{flex: 1, backgroundColor: 'transparent', justifyContent: 'flex-end'}} activeOpacity={1} onPress={() => setOptionsModalVisible(false)}>
           <TouchableOpacity activeOpacity={1} style={styles.darkModalSheet}>
@@ -1056,23 +1743,68 @@ const styles = StyleSheet.create({
   subHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', width: '100%' },
   subHeaderTitle: { color: 'white', fontSize: 20, fontWeight: 'bold' },
   backButton: { backgroundColor: 'rgba(255,255,255,0.2)', padding: 8, borderRadius: 12 },
-  scrollView: { flex: 1 }, scrollContent: { paddingHorizontal: 20, paddingTop: 10 }, tipCard: { backgroundColor: '#FFF3E0', padding: 16, borderRadius: 16, marginBottom: 20, borderWidth: 1, borderColor: '#FFE0B2' }, tipHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 }, tipTitle: { fontSize: 14, fontWeight: 'bold', color: '#EF6C00', marginLeft: 8 }, tipText: { fontSize: 12, color: '#E65100', lineHeight: 18 }, 
+  scrollView: { flex: 1 }, scrollContent: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 120 }, tipCard: { backgroundColor: '#FFF3E0', padding: 16, borderRadius: 16, marginBottom: 20, borderWidth: 1, borderColor: '#FFE0B2' }, tipHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 }, tipTitle: { fontSize: 14, fontWeight: 'bold', color: '#EF6C00', marginLeft: 8 }, tipText: { fontSize: 12, color: '#E65100', lineHeight: 18 }, 
   pointsBanner: { borderRadius: 16, padding: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15, elevation: 3 }, 
   pointsTitleWrap: { flexDirection: 'row', alignItems: 'center' }, pointsTitle: { color: 'white', fontSize: 16, fontWeight: '600', marginLeft: 8 }, pointsValue: { color: 'white', fontSize: 26, fontWeight: 'bold' },
   impactRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 25, gap: 10 }, impactCard: { flex: 1, backgroundColor: 'white', paddingVertical: 18, borderRadius: 16, alignItems: 'center', elevation: 2 }, impactIconBg: { padding: 10, borderRadius: 12, marginBottom: 10 }, impactValue: { fontSize: 18, fontWeight: 'bold' }, impactUnit: { fontSize: 10, color: '#90A4AE', textAlign: 'center', marginTop: 2 }, sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, marginTop: 15, zIndex: 10 }, sectionTitle: { fontSize: 20, fontWeight: 'bold', color: '#263238' }, searchContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'white', borderRadius: 12, marginBottom: 15, paddingHorizontal: 10, borderWidth: 1, borderColor: '#eee' }, searchInput: { flex: 1, paddingVertical: 12, paddingHorizontal: 10, fontSize: 14, color: '#333' }, 
   topMessageBtn: { justifyContent: 'center', alignItems: 'center', position: 'relative' }, badgeDot: { position: 'absolute', top: -5, right: -5, backgroundColor: '#FF1744', borderRadius: 10, paddingHorizontal: 5, paddingVertical: 2, minWidth: 20, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'white' }, badgeDotText: { color: 'white', fontSize: 10, fontWeight: 'bold' },
   addPostBtn: { backgroundColor: '#007C00', width: 48, height: 48, borderRadius: 24, justifyContent: 'center', alignItems: 'center', elevation: 6, shadowColor: '#000', shadowOffset: {width: 0, height: 2}, shadowOpacity: 0.3, shadowRadius: 3, zIndex: 100 }, 
   filterPill: { paddingHorizontal: 20, paddingVertical: 8, backgroundColor: 'white', borderRadius: 20, marginRight: 10, elevation: 1, borderWidth: 1, borderColor: '#eee' }, activePill: { backgroundColor: '#263238', borderColor: '#263238' }, filterText: { fontSize: 13, color: '#666', fontWeight: '600' }, activeFilterText: { color: 'white' }, 
-  postCard: { backgroundColor: 'white', borderRadius: 16, padding: 15, marginBottom: 15, elevation: 2 }, myPostCardBorder: { backgroundColor: '#F1F8E9', borderWidth: 1, borderColor: '#C8E6C9' }, meBadge: { backgroundColor: '#007C00', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }, meBadgeText: { color: 'white', fontSize: 8, fontWeight: 'bold' },
-  postHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 }, postAvatar: { width: 40, height: 40, borderRadius: 20 }, postUser: { fontWeight: 'bold', fontSize: 14, color: '#333' }, postTime: { fontSize: 11, color: '#999' }, typeBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10 }, postTitle: { fontSize: 16, fontWeight: 'bold', color: '#333', marginBottom: 5 }, postDesc: { fontSize: 13, color: '#666', marginBottom: 10 }, postImage: { width: '100%', aspectRatio: 16 / 9, borderRadius: 12, marginBottom: 15, resizeMode: 'cover', backgroundColor: '#f0f0f0' }, 
+  postCard: { backgroundColor: 'white', borderRadius: 18, padding: 15, marginBottom: 15, elevation: 2, shadowColor: '#000', shadowOffset: {width: 0, height: 2}, shadowOpacity: 0.05, shadowRadius: 4 }, myPostCardBorder: { backgroundColor: '#F1F8E9', borderWidth: 1, borderColor: '#C8E6C9' }, meBadge: { backgroundColor: '#007C00', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }, meBadgeText: { color: 'white', fontSize: 8, fontWeight: 'bold' },
+  postHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 }, postAvatar: { width: 40, height: 40, borderRadius: 20 }, postUser: { fontWeight: 'bold', fontSize: 14, color: '#333' }, postTime: { fontSize: 11, color: '#999' }, typeBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10 }, postTitle: { fontSize: 16, fontWeight: 'bold', color: '#333', marginBottom: 5 }, postDesc: { fontSize: 13, color: '#78909C', marginBottom: 12, lineHeight: 18 }, postImage: { width: '100%', aspectRatio: 16 / 9, borderRadius: 14, marginBottom: 15, resizeMode: 'cover', backgroundColor: '#f0f0f0' }, 
   postFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, 
   iconRow: { flexDirection: 'row', alignItems: 'center', gap: 5, padding: 5 }, 
   iconText: { fontSize: 14, color: '#666' }, 
-  postPrice: { fontSize: 16, fontWeight: 'bold', color: '#007C00' },
+  postPrice: { fontSize: 18, fontWeight: '900', color: '#007C00' },
   
-  contactBtn: { backgroundColor: '#007C00', paddingHorizontal: 15, paddingVertical: 8, borderRadius: 8 }, contactText: { color: 'white', fontWeight: 'bold', fontSize: 12 }, footerInput: { padding: 15, backgroundColor: 'white', borderTopWidth: 1, borderTopColor: '#eee', flexDirection: 'row', alignItems: 'flex-end', gap: 10 }, statusBanner: { backgroundColor: '#E8F5E9', padding: 8, paddingHorizontal: 15, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, inputField: { flex: 1, backgroundColor: '#F5F5F5', borderRadius: 20, paddingHorizontal: 15, paddingVertical: 10, maxHeight: 100 }, sendBtn: { width: 40, height: 40, backgroundColor: '#007C00', borderRadius: 20, justifyContent: 'center', alignItems: 'center', marginBottom: 2 }, createContent: { padding: 20 }, label: { fontSize: 14, fontWeight: '700', color: '#333', marginBottom: 4, marginTop: 15 }, input: { backgroundColor: '#F5F7FA', borderRadius: 10, padding: 15, borderWidth: 1, borderColor: '#F0F0F0' }, inputIconWrap: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F5F7FA', borderRadius: 10, paddingHorizontal: 15, paddingVertical: 12, borderWidth: 1, borderColor: '#F0F0F0' }, typeRow: { flexDirection: 'row', gap: 10 }, typeBtn: { flex: 1, paddingVertical: 15, borderRadius: 12, borderWidth: 1, alignItems: 'center', borderColor: '#E0E0E0' }, typeBtnActive: { borderColor: '#007C00', backgroundColor: '#E8F5E9' }, typeBtnText: { fontSize: 12, fontWeight: '600', color: '#666' }, imageUploadBox: { width: '100%', aspectRatio: 16 / 9, borderWidth: 1, borderColor: '#ddd', borderStyle: 'dashed', borderRadius: 12, justifyContent: 'center', alignItems: 'center', backgroundColor: '#FAFAFA', marginTop: 15 }, submitBtn: { padding: 15, borderRadius: 12, backgroundColor: '#007C00', alignItems: 'center', marginTop: 30 },
+  contactBtn: { backgroundColor: '#007C00', paddingHorizontal: 15, paddingVertical: 8, borderRadius: 8 }, contactText: { color: 'white', fontWeight: 'bold', fontSize: 12 }, footerInput: { padding: 14, backgroundColor: 'white', borderTopWidth: 1, borderTopColor: '#eee', flexDirection: 'row', alignItems: 'flex-end', gap: 10, elevation: 8, shadowColor: '#000', shadowOffset: {width: 0, height: -3}, shadowOpacity: 0.06, shadowRadius: 8 }, statusBanner: { backgroundColor: '#E8F5E9', padding: 8, paddingHorizontal: 15, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, inputField: { flex: 1, backgroundColor: '#F5F7FA', borderRadius: 22, paddingHorizontal: 15, paddingVertical: 10, maxHeight: 100, borderWidth: 1, borderColor: '#ECEFF1' }, sendBtn: { width: 40, height: 40, backgroundColor: '#007C00', borderRadius: 20, justifyContent: 'center', alignItems: 'center', marginBottom: 2 }, createContent: { padding: 20, paddingBottom: 60 }, label: { fontSize: 14, fontWeight: '700', color: '#333', marginBottom: 4, marginTop: 15 }, input: { backgroundColor: '#F5F7FA', borderRadius: 10, padding: 15, borderWidth: 1, borderColor: '#F0F0F0' }, inputIconWrap: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F5F7FA', borderRadius: 10, paddingHorizontal: 15, paddingVertical: 12, borderWidth: 1, borderColor: '#F0F0F0' }, typeRow: { flexDirection: 'row', gap: 10 }, typeBtn: { flex: 1, paddingVertical: 15, borderRadius: 12, borderWidth: 1, alignItems: 'center', borderColor: '#E0E0E0' }, typeBtnActive: { borderColor: '#007C00', backgroundColor: '#E8F5E9' }, typeBtnText: { fontSize: 12, fontWeight: '600', color: '#666' }, imageUploadBox: { width: '100%', aspectRatio: 16 / 9, borderWidth: 1, borderColor: '#ddd', borderStyle: 'dashed', borderRadius: 12, justifyContent: 'center', alignItems: 'center', backgroundColor: '#FAFAFA', marginTop: 15 }, submitBtn: { padding: 15, borderRadius: 12, backgroundColor: '#007C00', alignItems: 'center', marginTop: 30 },
   darkModalSheet: { backgroundColor: '#1C1C1E', borderTopLeftRadius: 25, borderTopRightRadius: 25, paddingHorizontal: 20, paddingBottom: 35, shadowColor: '#000', shadowOffset: { width: 0, height: -2 }, shadowOpacity: 0.2, shadowRadius: 10, elevation: 15 }, darkMenuContainer: { backgroundColor: '#2C2C2E', borderRadius: 15, overflow: 'hidden', marginBottom: 15 }, darkMenuItem: { flexDirection: 'row', alignItems: 'center', padding: 18, borderBottomWidth: 1, borderBottomColor: '#3A3A3C' }, darkMenuText: { fontSize: 16, color: '#fff' }, darkCancelBtn: { padding: 18, backgroundColor: '#2C2C2E', borderRadius: 15, alignItems: 'center' },
-  darkTextInput: { backgroundColor: '#2C2C2E', color: 'white', borderRadius: 12, padding: 15, height: 90, textAlignVertical: 'top', marginBottom: 20, borderWidth: 1, borderColor: '#3A3A3C', fontSize: 15 },
-  modalOverlayDark: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 20 }, bankedModalCard: { width: '100%', maxHeight: '80%', backgroundColor: '#F4F6F8', borderRadius: 20, overflow: 'hidden', elevation: 10 }, bankedModalHeader: { backgroundColor: '#007C00', padding: 20, flexDirection: 'row', alignItems: 'center' }, bankedModalTitle: { color: 'white', fontSize: 18, fontWeight: 'bold' }, bankedModalContent: { padding: 20 }, bankedModalDesc: { fontSize: 13, color: '#666', marginBottom: 20, lineHeight: 18 }, bankedCenterCard: { backgroundColor: 'white', borderRadius: 12, padding: 15, marginBottom: 15, elevation: 2 }, bankedCenterHeader: { flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: '#eee', paddingBottom: 10, marginBottom: 10 }, bankedCenterName: { fontWeight: 'bold', color: '#333', fontSize: 14, marginLeft: 8 }, bankedMaterialsList: { paddingHorizontal: 5 }, bankedMaterialRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 0.5, borderBottomColor: '#f0f0f0' }, bankedMaterialType: { color: '#333', fontSize: 14, fontWeight: '600' }, bankedMaterialKg: { fontWeight: 'bold', color: '#007C00', fontSize: 14 },
-  mapBox: { width: '100%', height: 200, borderRadius: 12, overflow: 'hidden', marginTop: 10, borderWidth: 1, borderColor: '#ddd' }, map: { width: '100%', height: '100%' }
+  
+  guidelineCard: { backgroundColor: '#E8F5E9', borderRadius: 16, padding: 16, marginBottom: 18, borderWidth: 1, borderColor: '#C8E6C9' },
+  guidelineHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
+  guidelineTitle: { marginLeft: 8, fontSize: 15, fontWeight: '900', color: '#007C00' },
+  guidelineText: { fontSize: 12, color: '#2E7D32', lineHeight: 19 },
+  formSection: { backgroundColor: 'white', borderRadius: 18, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: '#ECEFF1' },
+  formSectionTitle: { fontSize: 17, fontWeight: '900', color: '#263238', marginBottom: 10 },
+  helperText: { fontSize: 12, color: '#78909C', lineHeight: 18, marginBottom: 12 },
+  locationSelectBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F5F7FA', borderRadius: 16, padding: 14, borderWidth: 1, borderColor: '#E0E0E0' },
+  locationIconCircle: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#E8F5E9', justifyContent: 'center', alignItems: 'center', marginRight: 12 },
+  locationSelectLabel: { fontSize: 11, color: '#78909C', fontWeight: '700', marginBottom: 3 },
+  locationSelectText: { fontSize: 14, color: '#263238', fontWeight: '700', lineHeight: 19 },
+  miniMapBox: { height: 150, borderRadius: 16, overflow: 'hidden', marginTop: 12, borderWidth: 1, borderColor: '#E0E0E0' },
+  miniMap: { width: '100%', height: '100%' },
+  locationModalContainer: { flex: 1, backgroundColor: '#FFFFFF' },
+  locationModalHeader: { paddingHorizontal: 18, paddingBottom: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  locationBackBtn: { width: 42, height: 42, borderRadius: 14, backgroundColor: '#F5F7FA', justifyContent: 'center', alignItems: 'center' },
+  locationModalTitle: { fontSize: 22, fontWeight: '900', color: '#263238' },
+  locationModalSub: { fontSize: 12, color: '#90A4AE', marginTop: 3 },
+  locationSearchWrap: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F5F5F5', borderRadius: 24, marginHorizontal: 20, paddingHorizontal: 16, height: 54, marginTop: 4 },
+  locationSearchInput: { flex: 1, marginLeft: 10, fontSize: 14, color: '#263238' },
+  locationMapHelper: { marginHorizontal: 22, marginTop: 14, marginBottom: 8, fontSize: 12, color: '#D32F2F' },
+  fullMapBox: { flex: 1, overflow: 'hidden' },
+  fullMap: { width: '100%', height: '100%' },
+  currentLocationFloating: { position: 'absolute', right: 16, top: 16, width: 44, height: 44, borderRadius: 12, backgroundColor: 'white', justifyContent: 'center', alignItems: 'center', elevation: 5 },
+  locationBottomPanel: { backgroundColor: 'white', padding: 18, borderTopLeftRadius: 22, borderTopRightRadius: 22, elevation: 12 },
+  pickedLocationText: { flex: 1, marginLeft: 8, color: '#263238', fontSize: 14, fontWeight: '700', lineHeight: 19 },
+  confirmLocationBtn: { backgroundColor: '#FFC107', borderRadius: 20, paddingVertical: 16, alignItems: 'center' },
+  confirmLocationText: { color: '#111', fontWeight: '900', fontSize: 15 },
+
+    locationSearchBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFFFFF', borderRadius: 14, borderWidth: 1, borderColor: '#E0E0E0', overflow: 'hidden' },
+  locationSearchTextInput: { flex: 1, paddingVertical: 14, paddingHorizontal: 14, fontSize: 14, color: '#263238' },
+  locationPinBtn: { width: 48, height: 48, backgroundColor: '#007C00', justifyContent: 'center', alignItems: 'center', marginLeft: 8 },
+  locationInputRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F5F7FA', borderRadius: 12, borderWidth: 1, borderColor: '#F0F0F0', overflow: 'hidden' },
+  locationInput: { flex: 1, padding: 15, color: '#333', fontSize: 14 },
+  locationSearchBtn: { width: 52, height: 52, backgroundColor: '#007C00', justifyContent: 'center', alignItems: 'center' },
+  searchingLocationText: { fontSize: 11, color: '#78909C', marginTop: 8, marginLeft: 4 },
+  suggestionsCard: { backgroundColor: 'white', borderRadius: 16, marginTop: 10, borderWidth: 1, borderColor: '#E0E0E0', overflow: 'hidden', zIndex: 50, elevation: 8 },
+  suggestionsTitle: { paddingHorizontal: 14, paddingTop: 12, paddingBottom: 6, fontSize: 12, color: '#007C00', fontWeight: '900', textTransform: 'uppercase' },
+  suggestionItem: { flexDirection: 'row', paddingHorizontal: 14, paddingVertical: 12, borderTopWidth: 1, borderTopColor: '#F0F0F0', alignItems: 'center' },
+  suggestionIcon: { width: 34, height: 34, borderRadius: 17, backgroundColor: '#E8F5E9', justifyContent: 'center', alignItems: 'center', marginRight: 10 },
+  suggestionTitle: { fontSize: 14, fontWeight: '900', color: '#263238', marginBottom: 2 },
+  suggestionAddress: { fontSize: 12, color: '#78909C', lineHeight: 16 },
+  modalSearchBtn: { width: 38, height: 38, borderRadius: 19, backgroundColor: 'white', justifyContent: 'center', alignItems: 'center' },
+  mapBox: { width: '100%', height: 230, borderRadius: 18, overflow: 'hidden', borderWidth: 1, borderColor: '#E0E0E0', backgroundColor: '#E8F5E9', marginBottom: 15 },
+  map: { width: '100%', height: '100%' },
+  captionInput: { marginTop: 8, backgroundColor: '#F5F7FA', borderRadius: 10, borderWidth: 1, borderColor: '#E0E0E0', paddingHorizontal: 10, paddingVertical: 8, fontSize: 12, color: '#333', minHeight: 44, textAlignVertical: 'top' },
+  darkTextInput: { backgroundColor: '#2C2C2E', color: 'white', borderRadius: 12, padding: 15, height: 90, textAlignVertical: 'top', marginBottom: 20, borderWidth: 1, borderColor: '#3A3A3C', fontSize: 15 }
 });

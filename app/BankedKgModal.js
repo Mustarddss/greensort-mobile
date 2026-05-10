@@ -37,31 +37,45 @@ export default function BankedKgModal({ visible, onClose, bankedDetails }) {
                             <Text style={styles.bankedCenterName}>{center.location}</Text>
                           </View>
                           <View style={styles.bankedMaterialsList}>
-                             {center.materials.map((mat, i) => (
-                                 <View key={i} style={styles.bankedMaterialRow}>
-                                     <Text style={styles.bankedMaterialType}>{mat.type}</Text>
-                                     <TouchableOpacity 
-                                        activeOpacity={0.7} 
-                                        style={styles.qrBadge}
-                                        onPress={() => { 
-                                          onClose(); 
-                                          router.push({ 
-                                            pathname: '/qr-generator', 
-                                            params: { 
-                                              isBankedRedemption: 'true', 
-                                              collectorEmail: center.email, 
-                                              materialType: mat.type, 
-                                              bankedKg: mat.kg, 
-                                              rewardName: 'Redeem Banked Points' 
-                                            } 
-                                          }); 
-                                        }}
-                                     >
-                                       <Text style={styles.bankedMaterialKg}>{mat.kg.toFixed(1)} kg</Text>
-                                       <MaterialCommunityIcons name="qrcode-scan" size={14} color="#007C00" />
-                                     </TouchableOpacity>
-                                 </View>
-                             ))}
+                             {center.materials.map((mat, i) => {
+                                 // 🟢 LOGIC: I-check kung ubos na ba ang points
+                                 const isClaimed = mat.kg <= 0;
+
+                                 return (
+                                     <View key={i} style={[styles.bankedMaterialRow, isClaimed && {opacity: 0.6}]}>
+                                         <Text style={[styles.bankedMaterialType, isClaimed && {color: '#888', textDecorationLine: 'line-through'}]}>
+                                             {mat.type}
+                                         </Text>
+                                         <TouchableOpacity 
+                                            activeOpacity={0.7} 
+                                            style={[styles.qrBadge, isClaimed && {backgroundColor: '#F0F0F0'}]}
+                                            disabled={isClaimed} // I-disable pag 0 na
+                                            onPress={() => { 
+                                              onClose(); 
+                                              router.push({ 
+                                                pathname: '/qr-generator', 
+                                                params: { 
+                                                  isBankedRedemption: 'true', 
+                                                  collectorEmail: center.email, 
+                                                  materialType: mat.type, 
+                                                  bankedKg: mat.kg, 
+                                                  rewardName: 'Redeem Banked Points' 
+                                                } 
+                                              }); 
+                                            }}
+                                         >
+                                            <Text style={[styles.bankedMaterialKg, isClaimed && {color: '#888', fontSize: 12}]}>
+                                                {isClaimed ? 'Claimed' : `${mat.kg.toFixed(1)} kg`}
+                                            </Text>
+                                            {isClaimed ? (
+                                                <MaterialCommunityIcons name="check-circle" size={14} color="#888" />
+                                            ) : (
+                                                <MaterialCommunityIcons name="qrcode-scan" size={14} color="#007C00" />
+                                            )}
+                                         </TouchableOpacity>
+                                     </View>
+                                 );
+                             })}
                           </View>
                        </View>
                     ))}
@@ -89,5 +103,6 @@ const styles = StyleSheet.create({
   bankedMaterialsList: { paddingHorizontal: 5 }, 
   bankedMaterialRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 0.5, borderBottomColor: '#f0f0f0' }, 
   bankedMaterialType: { color: '#333', fontSize: 14, fontWeight: '600' }, 
+  bankedMaterialKg: { fontWeight: 'bold', color: '#007C00', fontSize: 14 },
   qrBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#E8F5E9', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 }
 });
