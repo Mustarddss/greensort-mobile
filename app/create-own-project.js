@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Image, KeyboardAvoidingView, Platform, Alert, ActivityIndicator, StatusBar } from 'react-native';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Image, KeyboardAvoidingView, Platform, Alert, ActivityIndicator, StatusBar, Modal } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons, MaterialCommunityIcons, FontAwesome5 } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -17,9 +17,13 @@ export default function CreateOwnProject() {
   const [procedures, setProcedures] = useState('');
   const [marketValue, setMarketValue] = useState('');
   const [finalImage, setFinalImage] = useState(null);
+  const [notes, setNotes] = useState('');
+  const [checkedMaterials, setCheckedMaterials] = useState({});
+  const [checkedSteps, setCheckedSteps] = useState({});
   
   const [isSaving, setIsSaving] = useState(false);
   const [isLoadingDraft, setIsLoadingDraft] = useState(false);
+  const [postChoiceModalVisible, setPostChoiceModalVisible] = useState(false);
 
   // 🟢 KUNG IN-OPEN MULA SA UPCYCLE IDEAS (ON GOING), I-LOAD ANG DATA
   useEffect(() => {
@@ -40,6 +44,9 @@ export default function CreateOwnProject() {
                       if (data.steps && data.steps.length > 0) setProcedures(data.steps.join('\n'));
                       if (data.selling_price) setMarketValue(data.selling_price.replace('₱', ''));
                       if (data.image_url && !data.image_url.includes('unsplash')) setFinalImage(data.image_url);
+                      setNotes(data.notes || data.additional_notes || data.other_information || data.other_info || '');
+                      setCheckedMaterials(data.checked_materials || {});
+                      setCheckedSteps(data.checked_steps || {});
                   }
               } catch (error) {
                   console.log("Draft load error:", error);
@@ -65,30 +72,41 @@ export default function CreateOwnProject() {
     }
   };
 
+  const materialsArray = materials
+    .split('\n')
+    .map(item => item.trim())
+    .filter(item => item !== '');
+
+  const stepsArray = procedures
+    .split('\n')
+    .map(item => item.trim())
+    .filter(item => item !== '');
+
+  const toggleMaterialCheck = (index) => {
+    setCheckedMaterials(prev => ({
+      ...prev,
+      [index]: !prev[index]
+    }));
+  };
+
+  const toggleStepCheck = (index) => {
+    setCheckedSteps(prev => ({
+      ...prev,
+      [index]: !prev[index]
+    }));
+  };
+
   const handleDone = () => {
     if (!title || !materials || !procedures || !marketValue || !finalImage) {
       Alert.alert("Incomplete", "Please fill in all fields and upload a photo of your final output.");
       return;
     }
 
-    Alert.alert(
-      "Project Completed! 🎉",
-      "Do you want to post your work in the community to let others see your own DIY project?",
-      [
-        {
-          text: "No, just save it",
-          style: "cancel",
-          onPress: () => saveProject(false)
-        },
-        {
-          text: "Yes, I want to post it!",
-          onPress: () => saveProject(true)
-        }
-      ]
-    );
+    setPostChoiceModalVisible(true);
   };
 
-  const saveProject = async (shouldPostToCommunity) => {
+  const saveProject = async (shouldPostToCommunity, postType = 'DIY Project') => {
+    setPostChoiceModalVisible(false);
     setIsSaving(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -109,7 +127,7 @@ export default function CreateOwnProject() {
       }
 
       if (shouldPostToCommunity) {
-          const postDesc = `⚙️ Difficulty: ${difficulty}\n\n📦 Materials Needed:\n${materials}\n\n🛠️ Step-by-Step Procedure:\n${procedures}`;
+          const postDesc = `⚙️ Difficulty: ${difficulty}\n\n📦 Materials Needed:\n${materials}\n\n🛠️ Step-by-Step Procedure:\n${procedures}${notes.trim() ? `\n\n📝 Notes & Reminders:\n${notes}` : ''}`;
           
           const postData = { 
               user: userName, 
@@ -130,20 +148,48 @@ export default function CreateOwnProject() {
           if (postError) throw postError;
       }
 
-      const materialsArray = materials.split('\n').filter(m => m.trim() !== '');
-      const stepsArray = procedures.split('\n').filter(s => s.trim() !== '');
-
       // 🟢 UPDATE ANG EXISTING DRAFT IMBES NA MAG-INSERT
       if (params.projectId) {
-          const { error: updateError } = await supabase.from('saved_projects').update({
+          const updatePayload = {
               title: title,
               difficulty: difficulty,
               materials: materialsArray,
               steps: stepsArray,
               selling_price: `₱${marketValue}`,
               image_url: uploadedImageUrl,
-              is_done: true // 🟢 MARKED AS DONE NA
-          }).eq('id', params.projectId);
+              is_done: true,
+              notes: notes,
+              checked_materials: checkedMaterials,
+              checked_steps: checkedSteps
+          };
+
+          let { error: updateError } = await supabase
+              .from('saved_projects')
+              .update(updatePayload)
+              .eq('id', params.projectId);
+
+          // Fallback para hindi mag-crash kung wala pa yung bagong columns sa Supabase
+          if (updateError && updateError.message) {
+              const msg = updateError.message.toLowerCase();
+
+              if (
+                  msg.includes('notes') ||
+                  msg.includes('checked_materials') ||
+                  msg.includes('checked_steps')
+              ) {
+                  const fallbackPayload = { ...updatePayload };
+                  delete fallbackPayload.notes;
+                  delete fallbackPayload.checked_materials;
+                  delete fallbackPayload.checked_steps;
+
+                  const retry = await supabase
+                      .from('saved_projects')
+                      .update(fallbackPayload)
+                      .eq('id', params.projectId);
+
+                  updateError = retry.error;
+              }
+          }
 
           if (updateError) throw updateError;
       }
@@ -210,13 +256,134 @@ export default function CreateOwnProject() {
             ))}
         </View>
 
-        <Text style={styles.label}>Required Materials *</Text>
-        <Text style={styles.subLabel}>List down everything you used (e.g., Scissors, Glue, Paint)</Text>
-        <TextInput style={[styles.input, styles.textArea]} placeholder="- 1x Plastic Bottle&#10;- Scissor&#10;- Paint" multiline numberOfLines={4} value={materials} onChangeText={setMaterials} textAlignVertical="top" />
+        <View style={styles.formCard}>
+            <View style={styles.formCardHeader}>
+                <MaterialCommunityIcons name="hammer-screwdriver" size={20} color="#007C00" />
+                <View style={{flex: 1}}>
+                    <Text style={[styles.label, {marginTop: 0}]}>Required Materials *</Text>
+                    <Text style={styles.subLabel}>List each material on a new line.</Text>
+                </View>
+            </View>
 
-        <Text style={styles.label}>Step-by-Step Procedure *</Text>
-        <Text style={styles.subLabel}>Track your DIY process. How did you make it?</Text>
-        <TextInput style={[styles.input, styles.textArea, {height: 150}]} placeholder="Step 1: Clean the bottle.&#10;Step 2: Cut the top part..." multiline value={procedures} onChangeText={setProcedures} textAlignVertical="top" />
+            <TextInput
+                style={[styles.input, styles.textArea]}
+                placeholder={"- 1x Plastic Bottle\n- Scissor\n- Paint"}
+                multiline
+                numberOfLines={4}
+                value={materials}
+                onChangeText={setMaterials}
+                textAlignVertical="top"
+            />
+
+            {materialsArray.length > 0 && (
+                <View style={styles.checklistPreview}>
+                    <Text style={styles.previewTitle}>Material Checklist Preview</Text>
+                    {materialsArray.map((item, index) => (
+                        <TouchableOpacity
+                            key={index}
+                            activeOpacity={0.8}
+                            style={[
+                                styles.checkItem,
+                                checkedMaterials[index] && styles.checkItemActive
+                            ]}
+                            onPress={() => toggleMaterialCheck(index)}
+                        >
+                            <MaterialCommunityIcons
+                                name={checkedMaterials[index] ? "checkbox-marked-circle" : "checkbox-blank-circle-outline"}
+                                size={22}
+                                color={checkedMaterials[index] ? "#007C00" : "#90A4AE"}
+                            />
+                            <Text style={[
+                                styles.checkItemText,
+                                checkedMaterials[index] && styles.checkItemTextDone
+                            ]}>
+                                {item.replace(/^-\s*/, '')}
+                            </Text>
+                        </TouchableOpacity>
+                    ))}
+                </View>
+            )}
+        </View>
+
+        <View style={styles.formCard}>
+            <View style={styles.formCardHeader}>
+                <MaterialCommunityIcons name="clipboard-list-outline" size={21} color="#007C00" />
+                <View style={{flex: 1}}>
+                    <Text style={[styles.label, {marginTop: 0}]}>Step-by-Step Procedure *</Text>
+                    <Text style={styles.subLabel}>Write each step on a new line.</Text>
+                </View>
+            </View>
+            <TextInput
+                style={[styles.input, styles.textArea, {height: 150}]}
+                placeholder={"Step 1: Clean the bottle.\nStep 2: Cut the top part..."}
+                multiline
+                value={procedures}
+                onChangeText={setProcedures}
+                textAlignVertical="top"
+            />
+
+            {stepsArray.length > 0 && (
+                <View style={styles.checklistPreview}>
+                    <Text style={styles.previewTitle}>Procedure Checklist Preview</Text>
+                    {stepsArray.map((item, index) => (
+                        <TouchableOpacity
+                            key={index}
+                            activeOpacity={0.8}
+                            style={[
+                                styles.stepCheckCard,
+                                checkedSteps[index] && styles.stepCheckCardDone
+                            ]}
+                            onPress={() => toggleStepCheck(index)}
+                        >
+                            <View style={[
+                                styles.stepNumberCircle,
+                                checkedSteps[index] && styles.stepNumberCircleDone
+                            ]}>
+                                {checkedSteps[index] ? (
+                                    <MaterialCommunityIcons name="check" size={18} color="white" />
+                                ) : (
+                                    <Text style={styles.stepNumberText}>{index + 1}</Text>
+                                )}
+                            </View>
+
+                            <View style={{flex: 1}}>
+                                <Text style={[
+                                    styles.stepPreviewTitle,
+                                    checkedSteps[index] && styles.stepPreviewTitleDone
+                                ]}>
+                                    Step {index + 1}
+                                </Text>
+                                <Text style={[
+                                    styles.stepPreviewText,
+                                    checkedSteps[index] && styles.stepPreviewTextDone
+                                ]}>
+                                    {item.replace(/^Step\s*\d+\s*:/i, '').trim()}
+                                </Text>
+                            </View>
+                        </TouchableOpacity>
+                    ))}
+                </View>
+            )}
+        </View>
+
+        <View style={styles.formCard}>
+            <View style={styles.formCardHeader}>
+                <MaterialCommunityIcons name="note-edit-outline" size={21} color="#FF9800" />
+                <View style={{flex: 1}}>
+                    <Text style={[styles.label, {marginTop: 0}]}>Notes & Reminders</Text>
+                    <Text style={styles.subLabel}>Optional reminders, measurements, mistakes to avoid, or design ideas.</Text>
+                </View>
+            </View>
+
+            <TextInput
+                style={[styles.input, styles.notesInput]}
+                placeholder={"Example:\n- Let the paint dry overnight\n- Buy stronger glue\n- Try adding ribbon design"}
+                multiline
+                value={notes}
+                onChangeText={setNotes}
+                textAlignVertical="top"
+            />
+        </View>
 
         <Text style={styles.label}>Market Value (₱) *</Text>
         <Text style={styles.subLabel}>How much do you think this is worth if sold?</Text>
@@ -236,6 +403,52 @@ export default function CreateOwnProject() {
         
         <View style={{height: 40}} />
       </ScrollView>
+
+      <Modal
+        visible={postChoiceModalVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setPostChoiceModalVisible(false)}
+      >
+        <View style={styles.completeModalOverlay}>
+          <View style={styles.completeModalCard}>
+            <View style={styles.completeIconCircle}>
+              <MaterialCommunityIcons name="check-decagram" size={42} color="white" />
+            </View>
+
+            <Text style={styles.completeModalTitle}>Project Completed!</Text>
+            <Text style={styles.completeModalSub}>
+              Do you want to share your finished DIY project with the community?
+            </Text>
+
+            <View style={styles.completeOptionRow}>
+              <TouchableOpacity style={styles.completeSmallBtn} onPress={() => saveProject(true, 'For Sale')}>
+                <MaterialCommunityIcons name="tag" size={20} color="#007C00" />
+                <Text style={styles.completeSmallBtnText}>For Sale</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.completeSmallBtn} onPress={() => saveProject(true, 'Trade')}>
+                <MaterialCommunityIcons name="swap-horizontal" size={22} color="#007C00" />
+                <Text style={styles.completeSmallBtnText}>Trade</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.completeSmallBtn} onPress={() => saveProject(true, 'Free')}>
+                <MaterialCommunityIcons name="gift-outline" size={20} color="#007C00" />
+                <Text style={styles.completeSmallBtnText}>Free</Text>
+              </TouchableOpacity>
+            </View>
+
+            <TouchableOpacity style={styles.completeShowcaseBtn} onPress={() => saveProject(true, 'DIY Project')}>
+              <MaterialCommunityIcons name="creation" size={20} color="white" />
+              <Text style={styles.completeShowcaseText}>Post as DIY Project Showcase</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.completeCancelBtn} onPress={() => saveProject(false)}>
+              <Text style={styles.completeCancelText}>No thanks, just save it</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
@@ -246,7 +459,7 @@ const styles = StyleSheet.create({
   backButton: { padding: 8, backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 12 },
   headerTitle: { color: 'white', fontSize: 18, fontWeight: 'bold', letterSpacing: 1 },
   headerSub: { color: 'rgba(255,255,255,0.8)', fontSize: 12, marginTop: 2 },
-  scrollContent: { padding: 20 },
+  scrollContent: { padding: 20, paddingBottom: 50 },
   label: { fontSize: 15, fontWeight: 'bold', color: '#333', marginTop: 15, marginBottom: 4 },
   subLabel: { fontSize: 11, color: '#888', marginBottom: 8, fontStyle: 'italic' },
   input: { backgroundColor: 'white', borderRadius: 12, padding: 15, borderWidth: 1, borderColor: '#E5E5EA', fontSize: 14, color: '#333', elevation: 1 },
@@ -259,9 +472,39 @@ const styles = StyleSheet.create({
   currencyIcon: { fontSize: 16, color: '#666', fontWeight: 'bold', marginRight: 10 },
   priceInput: { flex: 1, paddingVertical: 15, fontSize: 16, color: '#333', fontWeight: 'bold' },
   imageUploadBox: { width: '100%', height: 200, borderRadius: 16, borderWidth: 2, borderColor: '#C8E6C9', borderStyle: 'dashed', backgroundColor: '#F1F8E9', overflow: 'hidden', marginTop: 5 },
+  formCard: { backgroundColor: 'white', borderRadius: 18, padding: 14, marginTop: 14, borderWidth: 1, borderColor: '#ECEFF1', elevation: 1 },
+  formCardHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginBottom: 10 },
+  checklistPreview: { marginTop: 12, gap: 9 },
+  previewTitle: { fontSize: 12, fontWeight: '900', color: '#007C00', marginBottom: 2, textTransform: 'uppercase' },
+  checkItem: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FAFAFA', borderWidth: 1, borderColor: '#EEEEEE', borderRadius: 14, paddingHorizontal: 12, paddingVertical: 11 },
+  checkItemActive: { backgroundColor: '#E8F5E9', borderColor: '#A5D6A7' },
+  checkItemText: { flex: 1, marginLeft: 9, color: '#455A64', fontSize: 13, fontWeight: '700', lineHeight: 18 },
+  checkItemTextDone: { color: '#2E7D32', textDecorationLine: 'line-through' },
+  stepCheckCard: { flexDirection: 'row', backgroundColor: '#FAFAFA', borderRadius: 16, padding: 13, borderWidth: 1, borderColor: '#EEEEEE' },
+  stepCheckCardDone: { backgroundColor: '#E8F5E9', borderColor: '#A5D6A7' },
+  stepNumberCircle: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#007C00', justifyContent: 'center', alignItems: 'center', marginRight: 12 },
+  stepNumberCircleDone: { backgroundColor: '#2E7D32' },
+  stepNumberText: { color: 'white', fontWeight: '900', fontSize: 14 },
+  stepPreviewTitle: { color: '#263238', fontSize: 13, fontWeight: '900', marginBottom: 3 },
+  stepPreviewTitleDone: { color: '#2E7D32' },
+  stepPreviewText: { color: '#546E7A', fontSize: 13, lineHeight: 19 },
+  stepPreviewTextDone: { color: '#607D8B', textDecorationLine: 'line-through' },
+  notesInput: { minHeight: 120, textAlignVertical: 'top' },
   uploadedImage: { width: '100%', height: '100%', resizeMode: 'cover' },
   placeholderBox: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   placeholderText: { color: '#007C00', fontWeight: '600', marginTop: 10, fontSize: 13 },
+  completeModalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'center', alignItems: 'center', paddingHorizontal: 24 },
+  completeModalCard: { width: '100%', backgroundColor: 'white', borderRadius: 28, padding: 24, alignItems: 'center', elevation: 10 },
+  completeIconCircle: { width: 78, height: 78, borderRadius: 39, backgroundColor: '#007C00', justifyContent: 'center', alignItems: 'center', marginTop: -62, marginBottom: 14, borderWidth: 5, borderColor: 'white' },
+  completeModalTitle: { fontSize: 23, fontWeight: '900', color: '#263238', marginBottom: 8, textAlign: 'center' },
+  completeModalSub: { fontSize: 14, color: '#607D8B', textAlign: 'center', lineHeight: 21, marginBottom: 22 },
+  completeOptionRow: { flexDirection: 'row', gap: 10, width: '100%', marginBottom: 12 },
+  completeSmallBtn: { flex: 1, backgroundColor: '#E8F5E9', borderWidth: 1, borderColor: '#C8E6C9', borderRadius: 15, paddingVertical: 13, justifyContent: 'center', alignItems: 'center' },
+  completeSmallBtnText: { color: '#007C00', fontSize: 12, fontWeight: '800', marginTop: 4 },
+  completeShowcaseBtn: { width: '100%', backgroundColor: '#007C00', paddingVertical: 14, borderRadius: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 8 },
+  completeShowcaseText: { color: 'white', fontSize: 13, fontWeight: '900' },
+  completeCancelBtn: { paddingVertical: 12, paddingHorizontal: 18 },
+  completeCancelText: { color: '#78909C', fontWeight: '700', fontSize: 13 },
   submitBtn: { backgroundColor: '#007C00', flexDirection: 'row', paddingVertical: 18, borderRadius: 15, justifyContent: 'center', alignItems: 'center', marginTop: 35, elevation: 4, shadowColor: '#007C00', shadowOffset: {width: 0, height: 4}, shadowOpacity: 0.3, shadowRadius: 5 },
   submitBtnText: { color: 'white', fontSize: 16, fontWeight: 'bold', letterSpacing: 0.5 }
 });

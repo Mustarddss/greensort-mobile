@@ -291,7 +291,7 @@ export default function Dashboard() {
     if (session?.user) {
       const fullName = session.user.user_metadata?.full_name || 'GreenSort Member';
       const userEmail = session.user.email;
-      let totalKg = 0; let totalSubmissions = 0; let bankedKg = 0; let bankedGroup = {};
+      let totalKg = 0; let totalSubmissions = 0; let bankedKg = 0; let bankedGroup = {}; let totalUpcycleProjects = 0;
 
       try { await supabase.from('profiles').update({ last_login: new Date().toISOString() }).eq('email', userEmail); } catch (err) {}
 
@@ -302,6 +302,17 @@ export default function Dashboard() {
               logs.forEach(log => {
                   totalKg += Number(log.weight_kg) || 0;
               });
+          }
+
+          // 🟢 Count completed upcycle projects for Eco Impact
+          const { count: completedProjectsCount, error: projectsCountError } = await supabase
+              .from('saved_projects')
+              .select('*', { count: 'exact', head: true })
+              .eq('user_email', userEmail)
+              .eq('is_done', true);
+
+          if (!projectsCountError) {
+              totalUpcycleProjects = completedProjectsCount || 0;
           }
 
           const { data: bankedData, error: bankedError } = await supabase.from('banked_materials').select('*').eq('resident_email', userEmail);
@@ -330,7 +341,7 @@ export default function Dashboard() {
           }
       } catch (err) {}
 
-      setUserData({ name: fullName, kgRecycled: totalKg.toFixed(1), submissions: totalSubmissions, upcycleProjects: 0, bankedPoints: bankedKg.toFixed(1), avatar: session.user.user_metadata?.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(fullName)}&background=00C853&color=fff&bold=true` });
+      setUserData({ name: fullName, kgRecycled: totalKg.toFixed(1), submissions: totalSubmissions, upcycleProjects: totalUpcycleProjects, bankedPoints: bankedKg.toFixed(1), avatar: session.user.user_metadata?.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(fullName)}&background=00C853&color=fff&bold=true` });
 
       const { count: notifCount } = await supabase.from('notifications').select('*', { count: 'exact', head: true }).eq('owner_name', fullName).eq('is_read', false);
       setUnreadNotifs(notifCount || 0);

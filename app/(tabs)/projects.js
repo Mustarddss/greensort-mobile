@@ -1,7 +1,7 @@
 import { FontAwesome5, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, BackHandler, FlatList, Image, Modal, Platform, ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View, Linking } from 'react-native';
+import { ActivityIndicator, Alert, BackHandler, FlatList, Image, Modal, Platform, ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View, Linking } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
 
@@ -29,6 +29,7 @@ export default function ProjectsPage() {
   const [checkedSteps, setCheckedSteps] = useState({});
   const [projectPersonalNotes, setProjectPersonalNotes] = useState('');
   const [isSavingProjectNotes, setIsSavingProjectNotes] = useState(false);
+  const [guidelinesVisible, setGuidelinesVisible] = useState(false);
 
   const loadSavedProjects = async () => {
     try {
@@ -820,6 +821,84 @@ const styles = StyleSheet.create({
   personalNotesInput: { minHeight: 120, backgroundColor: '#F8FAFB', borderRadius: 16, borderWidth: 1, borderColor: '#E0E0E0', padding: 14, color: '#263238', fontSize: 14, lineHeight: 21, textAlignVertical: 'top', marginBottom: 14 },
   saveNotesBtn: { backgroundColor: '#007C00', paddingVertical: 13, borderRadius: 14, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8 },
   saveNotesText: { color: 'white', fontSize: 14, fontWeight: '900' },
+  guidelineWarningBtn: {
+    marginLeft: 8,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center'
+  },
+  guidelinesOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'center',
+    paddingHorizontal: 20
+  },
+  guidelinesModal: {
+    backgroundColor: 'white',
+    borderRadius: 28,
+    padding: 20,
+    maxHeight: '80%'
+  },
+  guidelinesTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20
+  },
+  guidelinesTitle: {
+    fontSize: 22,
+    fontWeight: '900',
+    color: '#1565C0'
+  },
+  guidelinesSub: {
+    color: '#78909C',
+    marginTop: 4,
+    fontSize: 12
+  },
+  guidelinesCloseBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#F5F7FA',
+    justifyContent: 'center',
+    alignItems: 'center'
+  },
+  guidelineStepCard: {
+    flexDirection: 'row',
+    backgroundColor: '#F8FBFF',
+    borderWidth: 1,
+    borderColor: '#D6E8FF',
+    borderRadius: 18,
+    padding: 14,
+    marginBottom: 12
+  },
+  guidelineNumber: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    backgroundColor: '#1565C0',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12
+  },
+  guidelineNumberText: {
+    color: 'white',
+    fontWeight: '900'
+  },
+  guidelineCardTitle: {
+    fontSize: 14,
+    fontWeight: '900',
+    color: '#1565C0',
+    marginBottom: 4
+  },
+  guidelineCardDesc: {
+    fontSize: 12,
+    color: '#607D8B',
+    lineHeight: 18
+  },
   materialsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   materialChip: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F1F8E9', borderWidth: 1, borderColor: '#C8E6C9', paddingHorizontal: 14, paddingVertical: 10, borderRadius: 16 },
   materialChipText: { marginLeft: 8, color: '#2E7D32', fontSize: 13, fontWeight: '700' },

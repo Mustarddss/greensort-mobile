@@ -69,7 +69,41 @@ export default function ScanPage() {
     CRITICAL RULE IF IT IS A BRAND-NEW UNOPENED ITEM: If the image shows a brand-new, unopened product (like a sealed water bottle, packaged snack, or boxed item), classify it based on the packaging material (e.g., "Recyclable Plastic" for a plastic bottle) but include in the recycling tips that the user should remove any non-recyclable components (like caps, labels, or wrappers) before recycling.
     CRITICAL RULE IF IT IS A FOOD ITEM: If the image contains food waste, classify it as "Organic Waste" and in the recycling tips, suggest composting if possible, or proper disposal methods if not.
     CRITICAL RULE IF IT IS A MIXED MATERIAL ITEM: If the item is made of mixed materials (like a juice box with plastic and aluminum), classify it based on the dominant material but include in the recycling tips that the user should separate components if possible for better recycling.
+    CRITICAL RULE IF IT IS A HAZARDOUS-LOOKING ITEM: If the item looks hazardous (like a broken glass bottle, leaking container, or something with warning labels), classify it as "Hazardous" and in the recycling tips, advise the user to handle with care and dispose of it at designated hazardous waste facilities.
+CRITICAL RULE FOR TOYS/ACTION FIGURES VS. REAL HUMANS:
+
+If the scanned image contains a human-like figure, DO NOT automatically classify it as a "Real Human" or "Person". You MUST closely inspect the figure for toy-like visual characteristics before making a decision:
+
+1. CHECK FOR JOINTS & SEAMS: Look for visible articulation joints (e.g., hinges or ball joints on the knees, elbows, shoulders, or wrists). Look for manufacturing mold lines, gaps, or seams in the "skin" or clothing.
+2. CHECK THE MATERIAL: Real skin has pores and natural lighting. Action figures usually have shiny, matte plastic, or painted textures.
+3. CHECK THE SCALE/CONTEXT: Is the figure standing on a plastic display base? Is there a giant real human hand holding it? Are the surrounding objects (like a keyboard, table, or bottle) unnaturally huge compared to the figure?
+
+If ANY of these toy-like features are present, you MUST classify it strictly as an "Action Figure", "Toy", or "Plastic Collectible" and NEVER as a living human.
+    CRITICAL RULES FOR FOOD ITEMS (EDIBLE VS. SPOILED):
+1. FOOD IN GOOD CONDITION: If the scanned image contains food that appears fresh, untouched, unspoiled, or is still in its sealed packaging, DO NOT classify it as waste. 
+- You MUST explicitly include this note in your response: "This food still looks safe to eat. Please don't waste food! Instead of throwing it away, consider sharing or donating it to someone who might be hungry."
+
+2. SPOILED OR ROTTING FOOD: If the food is clearly spoiled, heavily moldy, rotting, or severely half-eaten/mixed with trash, classify it strictly as "Organic Waste" or "Compostable". 
+- In this case, DO NOT suggest sharing or giving it to others for health and safety reasons. Simply advise them to compost it or dispose of it in a biodegradable bin.
     CRITICAL RULE IF IT IS A DAMAGED ITEM: If the item is heavily damaged (like a crushed plastic bottle or torn cardboard), classify it based on the original material but assign a lower accuracy score (40-60) and include in the recycling tips that damaged items may not be accepted by all recycling programs and to check local guidelines.
+    CRITICAL RULES FOR EXACT IDENTIFICATION (SPONGE VS. ERASERS):
+You must output a SPECIFIC classification ("Sponge", "Whiteboard Eraser", or "Blackboard Eraser"). Do not combine them. To accurately classify tricky angles (side/bottom views), strictly analyze the materials and edges:
+
+1. SPONGE VS. ERASER BOTTOM (Texture & Edge Check): 
+- If viewing the bottom: A "Sponge" typically has visible large pores, soft/rounded edges, and is a single thick block of foam/cellulose. 
+- An "Eraser" bottom is made of dense, tightly woven felt, microfiber, or fine EVA foam. Look closely at the edges—if there is a visible hard rim (plastic or wood) gripping the material, or if the material is completely flat and dense without large pores, it is an ERASER, NOT a sponge.
+
+2. WHITEBOARD VS. BLACKBOARD ERASER (Side View Material Check): 
+- If viewing the side: "Whiteboard Erasers" usually have plastic casings, magnetic strips, or layered colorful EVA foam. 
+- "Blackboard Erasers" traditionally feature a wooden or stiff cardboard casing with thick, parallel ridges of heavy felt. 
+- Base your specific choice purely on these casing and material clues.
+
+3. FORCED DECISION & CONFIDENCE: Choose the single most logical item based on the physical clues above. If the angle hides the casing completely (e.g., extreme macro shot of the felt), lower your confidence score to 50%-65%, but you must still explicitly choose one specific item based on the texture density.
+    CRITICAL RULE IF IT IS A BLACKBOARD ERASER AND DISHWASHING SPONGE: If the image contains a blackboard eraser or a dishwashing sponge, classify it as "General Waste" with a low accuracy score (40-60) and in the recycling tips, explain that these items are typically not recyclable due to their mixed materials and contamination from use.
+    CRITICAL RULE FOR OBJECT IDENTIFICATION & CONFIDENCE SCORING:
+    1. AMBIGUOUS ANGLES (SIDE VIEWS): If the object looks like a board eraser from a side angle and there are no visible text labels indicating "Whiteboard" or "Blackboard", DO NOT GUESS. Classify it strictly as "Board Eraser" and lower your confidence score.
+    2. TEXTURE CONFUSION (BOTTOM VIEWS): The bottom felt/foam part of an eraser looks identical to a cleaning sponge. If the image shows ONLY a flat, porous, felt, or foam surface without a visible hard plastic/wooden backing, DO NOT automatically classify it as a "Sponge" with high confidence. Output "Sponge / Eraser Bottom" instead.
+    3. STRICT CONFIDENCE PENALTY: You MUST explicitly lower your confidence score (set it between 50% to 65%) if an object is scanned from an obscure angle (like only the bottom or side) where its primary defining features are hidden. NEVER give an 80%+ confidence score unless the entire object and its context are clearly visible.
     CRITICAL RULE IF IT IS ONLY A PERSON WITHOUT ANY CLEAR ITEM: If the image ONLY shows a person (or body parts like a hand/face) without any clear waste item, YOU MUST classify it exactly like this:
     - detected: "Person / Not a Waste Item"
     - category: "Not a Waste"
