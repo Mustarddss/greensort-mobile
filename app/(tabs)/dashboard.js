@@ -77,7 +77,7 @@ export default function Dashboard() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications' }, () => { fetchUserSessionAndData(); })
       .subscribe();
 
-    // 2. Presence Channel (DITO YUNG FIX PARA HINDI MAG-CRASH PAG LIPAT NG TAB)
+    // 2. Presence Channel
     const uniquePresenceTopic = `app-presence-${Date.now()}`;
     const presenceChannel = supabase.channel(uniquePresenceTopic);
     
@@ -95,7 +95,7 @@ export default function Dashboard() {
     };
     setupPresence();
 
-    // 3. Clean up laging tinatawag para walang naiiwan na kalat
+    // 3. Clean up
     return () => { 
         supabase.removeChannel(msgChannel); 
         supabase.removeChannel(presenceChannel); 
@@ -114,19 +114,32 @@ export default function Dashboard() {
       try { await supabase.from('profiles').update({ last_login: new Date().toISOString() }).eq('email', userEmail); } catch (err) {}
 
       try {
-          const { data: logs, error } = await supabase.from('surrender_logs').select('*').eq('resident_email', userEmail);
-          if (logs && !error) {
+          // 🟢 ETO YUNG BINAGO: Kukunin muna yung Surrender Logs para sa Total Submissions at Total KG
+          const { data: logs, error: logsError } = await supabase.from('surrender_logs').select('*').eq('resident_email', userEmail);
+          if (logs && !logsError) {
               totalSubmissions = logs.length;
               logs.forEach(log => {
-                  const weight = Number(log.weight_kg) || 0;
-                  totalKg += weight;
-                  if (log.reward_claimed === 'Banked') {
-                      bankedKg += weight; const cEmail = log.collector_email; const wType = log.waste_type || 'Others';
-                      if (!bankedGroup[cEmail]) bankedGroup[cEmail] = {};
-                      if (!bankedGroup[cEmail][wType]) bankedGroup[cEmail][wType] = 0;
-                      bankedGroup[cEmail][wType] += weight;
-                  }
+                  totalKg += Number(log.weight_kg) || 0;
               });
+          }
+
+          // 🟢 Kukunin naman ang Banked KG sa BAGONG table na ginawa natin kanina
+          const { data: bankedData, error: bankedError } = await supabase.from('banked_materials').select('*').eq('resident_email', userEmail);
+          
+          if (bankedData && !bankedError) {
+              bankedData.forEach(bankItem => {
+                  const weight = Number(bankItem.kg_amount) || 0;
+                  bankedKg += weight; // Dagdag sa total na nakikita sa malaking green box
+                  
+                  const cEmail = bankItem.center_email; 
+                  const wType = bankItem.material_type || 'Others';
+                  
+                  if (!bankedGroup[cEmail]) bankedGroup[cEmail] = {};
+                  if (!bankedGroup[cEmail][wType]) bankedGroup[cEmail][wType] = 0;
+                  bankedGroup[cEmail][wType] += weight; // Group by center and material
+              });
+
+              // I-format para sa Modal List
               const finalBankedList = [];
               for (const email of Object.keys(bankedGroup)) {
                   const { data: center } = await supabase.from('dropoff_applications').select('program_name, barangay').eq('user_email', email).single();
@@ -201,7 +214,6 @@ export default function Dashboard() {
         const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
         if (status !== 'granted') { Alert.alert('Permission needed', 'We need access to your gallery!'); return; }
         
-        // 🟢 NA-FIX NA RIN YUNG DILAW NA WARNING DITO: mediaTypes: ['images']
         let result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsMultipleSelection: true, selectionLimit: 5 - form.imageUris.length, allowsEditing: false, quality: 0.8, base64: true });
         if (!result.canceled && result.assets) {
             let validUris = [];

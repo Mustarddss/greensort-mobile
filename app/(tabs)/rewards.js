@@ -60,7 +60,6 @@ export default function Rewards() {
         return;
     }
 
-    // 🟢 BAGONG GPS CHECKER LOGIC
     try {
         const gpsEnabled = await Location.hasServicesEnabledAsync();
         if (!gpsEnabled) {
@@ -90,10 +89,10 @@ export default function Rewards() {
     try {
         const { data: { user } } = await supabase.auth.getUser();
 
+        // 🟢 FIXED: Fetch lahat kahit false para alam natin kung sino ang out of stock
         const { data: rewardsData, error: rewardsError } = await supabase
             .from('rewards_inventory')
             .select('*')
-            .eq('is_available', true)
             .ilike('condition', `%${finalWaste}%`);
 
         if (rewardsError) throw rewardsError;
@@ -119,30 +118,24 @@ export default function Rewards() {
                 const rewardMultiplier = Math.floor(inputQty / baseRate);
                 const isSufficient = rewardMultiplier >= 1;
 
-                const isAlreadyClaimed = userLogs?.some(log => {
-                    if (!log.reward_claimed || !reward.name) return false;
-                    const savedReward = log.reward_claimed.toLowerCase().trim();
-                    const centerReward = reward.name.toLowerCase().trim();
-                    const isNameMatch = savedReward === centerReward || savedReward.includes(centerReward) || centerReward.includes(savedReward);
-                    return isNameMatch && log.collector_email === reward.user_email;
-                }) || false;
+                // 🟢 NEW LOGIC: IsAlreadyClaimed check
+                // Titignan natin kung may stock pa ba si Center (reward.is_available)
+                // Pag false 'yung is_available (Out of Stock siya), doon lang natin la-lock ng "ALREADY CLAIMED/UNAVAILABLE"
+                // Kapag in-open ulit ni Center (Mark Available), mawawala 'yung lock.
+                const isAlreadyClaimed = !reward.is_available;
 
-                // 🟢 AUTO-CLEANER PARA SA LUMANG DATA ("1kg 1kg Rice" -> "1kg Rice")
                 let cleanRewardName = reward.name;
                 const doubleMatch = cleanRewardName.match(/^(\d+\s*(?:kg|pcs))\s+\1\s+(.*)/i);
                 if (doubleMatch) {
                     cleanRewardName = `${doubleMatch[1]} ${doubleMatch[2]}`;
                 }
 
-                // 🟢 PINAKAAAYOS NA LOGIC PARA SA UI: 
-                // Tinanggal na ang "1x" kapag isa lang. "1kg Rice" na lang ang lalabas.
                 let totalRewardToGet = (isSufficient && rewardMultiplier > 1) 
                     ? `${rewardMultiplier}x ${cleanRewardName}` 
                     : cleanRewardName;
                 
                 let getExplanation = `For ${baseRate}${unit} clean ${finalWaste}`;
 
-                // You Bring Side (Dito lalabas yung minimum required)
                 let bringRequiredAmount = isSufficient 
                     ? `${inputQty} ${unit === 'kg' ? 'kilograms' : 'pieces'}` 
                     : `${baseRate} ${unit === 'kg' ? 'kilograms' : 'pieces'} minimum`;
@@ -157,19 +150,19 @@ export default function Rewards() {
                     
                     youBringItem: finalWaste,
                     bringRequiredAmount: bringRequiredAmount,
-                    userHasAmount: `${inputQty}${unit}`, // Gagamitin sa red error text
+                    userHasAmount: `${inputQty}${unit}`, 
                     
-                    youGetItem: totalRewardToGet, // Super malinis na reward text
+                    youGetItem: totalRewardToGet, 
                     youGetReason: getExplanation, 
                     isSufficient: isSufficient,
 
                     baseRate: baseRate,
-                    rewardUnit: cleanRewardName, // Pinasa na yung malinis na pangalan para sa LocationDetails
+                    rewardUnit: cleanRewardName, 
                     subText: reward.description,
                     checklist: reward.checklist || '',
                     imageUrl: reward.image_url,
-                    wasteImageUrl: reward.waste_image_url, // 🟢 Nakapasa na yung Waste Image
-                    isClaimed: isAlreadyClaimed,
+                    wasteImageUrl: reward.waste_image_url, 
+                    isClaimed: isAlreadyClaimed, // 🟢 Pinasa na yung updated dynamic checking
                     searchedWasteType: finalWaste,
                     latitude: centerData.latitude,
                     longitude: centerData.longitude
@@ -184,7 +177,6 @@ export default function Rewards() {
         try {
             let { status } = await Location.requestForegroundPermissionsAsync();
             if (status === 'granted') {
-                // 🟢 SAFE LOCATION FETCH (hindi magka-crash kung naka-off sa settings)
                 let location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }).catch(() => null);
                 if (location) {
                     let geocode = await Location.reverseGeocodeAsync({
@@ -379,11 +371,11 @@ export default function Rewards() {
                         {results.map((loc) => (
                             <TouchableOpacity 
                                 key={loc.id} 
-                                style={styles.tradeCard}
+                                style={[styles.tradeCard, loc.isClaimed && {opacity: 0.6}]} // 🟢 Added opacity kung out of stock
                                 activeOpacity={0.9}
                                 onPress={() => router.push({ pathname: '/location-details', params: { data: JSON.stringify(loc) } })}
                             >
-                                {loc.isClaimed && <View style={styles.claimedBadge}><Text style={styles.claimedText}>ALREADY CLAIMED</Text></View>}
+                                {loc.isClaimed && <View style={styles.claimedBadge}><Text style={styles.claimedText}>UNAVAILABLE / OUT OF STOCK</Text></View>}
                                 
                                 <Text style={styles.locName}>{loc.name}</Text>
                                 
@@ -422,7 +414,6 @@ export default function Rewards() {
                                 ) : null}
 
                                 <View style={styles.tradeBox}>
-                                    {/* 🟢 YOU BRING COLUMN */}
                                     <View style={styles.tradeCol}>
                                         <View style={{flexDirection: 'row', alignItems: 'center', marginBottom: 2}}>
                                             <MaterialCommunityIcons name="cube-outline" size={16} color="#0056b3" style={{marginRight: 4}} />
@@ -446,7 +437,6 @@ export default function Rewards() {
                                         <Ionicons name="arrow-forward" size={24} color="#00A86B" />
                                     </View>
 
-                                    {/* 🟢 YOU GET COLUMN */}
                                     <View style={styles.tradeCol}>
                                         <View style={{flexDirection: 'row', alignItems: 'center', marginBottom: 2}}>
                                             <MaterialCommunityIcons name="gift-outline" size={16} color="#00A86B" style={{marginRight: 4}} />

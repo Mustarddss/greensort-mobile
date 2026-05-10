@@ -167,7 +167,6 @@ export default function ProcessSurrender() {
       }
   };
 
-  // 🟢 📨 EMAIL FUNCTION GAMIT ANG EMAILJS
   const sendEmailReceipt = async (finalRewardStatus, centerName) => {
       try {
           const emailData = {
@@ -216,22 +215,66 @@ export default function ProcessSurrender() {
           const kgToBank = transactionType === 'Banked' || isShort ? inputKg : (saveExcess ? excessKg : 0);
 
           if (kgToBank > 0) {
-              const { data: existingBank } = await supabase.from('banked_materials')
-                  .select('*').eq('resident_email', userData.email).eq('center_email', user.email).eq('material_type', wasteType).single();
+              const { data: existingBank, error: checkError } = await supabase.from('banked_materials')
+                  .select('*')
+                  .eq('resident_email', userData.email)
+                  .eq('center_email', user.email)
+                  .eq('material_type', wasteType)
+                  .maybeSingle(); 
+              
+              if (checkError && checkError.code !== 'PGRST116') {
+                  throw new Error("Banked Check Error: " + checkError.message);
+              }
               
               if (existingBank) {
-                  await supabase.from('banked_materials').update({ kg_amount: existingBank.kg_amount + kgToBank }).eq('id', existingBank.id);
+                  const { error: updateErr } = await supabase.from('banked_materials')
+                      .update({ kg_amount: existingBank.kg_amount + kgToBank })
+                      .eq('id', existingBank.id);
+                  if (updateErr) throw new Error("Bank Update Error: " + updateErr.message);
               } else {
-                  await supabase.from('banked_materials').insert([{ 
-                      resident_email: userData.email, resident_name: userData.name, center_email: user.email, material_type: wasteType, kg_amount: kgToBank 
-                  }]);
+                  const { error: insertErr } = await supabase.from('banked_materials')
+                      .insert([{ 
+                          resident_email: userData.email, 
+                          resident_name: userData.name, 
+                          center_email: user.email, 
+                          material_type: wasteType, 
+                          kg_amount: kgToBank 
+                      }]);
+                  if (insertErr) throw new Error("Bank Insert Error: " + insertErr.message);
               }
           }
 
           const finalRewardStatus = isBankedRedemption ? `Banked Redemption - ${selectedReward?.name}` : (transactionType === 'Claimed' && !isShort ? reward : 'Banked');
 
-          // 🟢 IBINALIK KO NA YUNG MGA COLUMNS DITO (Required Kg, Excess Kg, Proof Image)
-          const { error } = await supabase.from('surrender_logs').insert([{
+          const isClaimingReward = isBankedRedemption || (transactionType === 'Claimed' && !isShort);
+          
+          if (isClaimingReward) {
+              let targetRewardName = isBankedRedemption ? selectedReward?.name : reward;
+              
+              const { data: matchedRewards } = await supabase
+                  .from('rewards_inventory')
+                  .select('*')
+                  .eq('user_email', user.email)
+                  .eq('name', targetRewardName)
+                  .limit(1);
+
+              if (matchedRewards && matchedRewards.length > 0) {
+                  const rewardToUpdate = matchedRewards[0];
+                  const newStock = Math.max(0, rewardToUpdate.stock_quantity - 1); 
+                  const isStillAvailable = newStock > 0; 
+
+                  const { error: deductErr } = await supabase
+                      .from('rewards_inventory')
+                      .update({ 
+                          stock_quantity: newStock,
+                          is_available: isStillAvailable 
+                      })
+                      .eq('id', rewardToUpdate.id);
+                  if (deductErr) throw new Error("Stock Deduct Error: " + deductErr.message);
+              }
+          }
+
+          const { error: logError } = await supabase.from('surrender_logs').insert([{
               collector_email: user.email,
               resident_email: userData.email,
               resident_name: userData.name,
@@ -243,14 +286,13 @@ export default function ProcessSurrender() {
               proof_image: proofImage
           }]);
 
-          if (error) throw error;
+          if (logError) throw new Error("Surrender Log Error: " + logError.message);
           
-          // 🟢 IPAPADALA ANG EMAIL RECEIPT
           await sendEmailReceipt(finalRewardStatus, centerName);
 
           setStep(4); 
       } catch (error) {
-          Alert.alert("Transaction Failed", error.message);
+          Alert.alert("Transaction Failed 🛑", error.message);
       } finally {
           setIsSubmitting(false);
       }
@@ -440,10 +482,14 @@ export default function ProcessSurrender() {
             <View style={styles.row}><Text style={styles.label}>Surrenderer</Text><Text style={styles.val}>{userData?.name}</Text></View>
             <View style={styles.row}><Text style={styles.label}>Waste Type</Text><Text style={styles.val}>{wasteType}</Text></View>
             
-            <View style={styles.row}>
-                <Text style={styles.label}>Required Target</Text>
-                <Text style={styles.valBlue}>{isBankedRedemption ? 'N/A' : `${requiredKg} kg`}</Text>
-            </View>
+           <View style={styles.row}>
+                 <Text style={styles.label}>Required Target</Text>
+                 <Text style={styles.valBlue}>
+        {isBankedRedemption 
+            ? (selectedReward ? `${selectedReward.condition.match(/(\d+)/)?.[1] || 0} kg` : 'N/A') 
+            : `${requiredKg} kg`}
+                     </Text>
+                </View>
             
             <View style={styles.row}>
                 <Text style={styles.label}>Quantity Provided</Text>
