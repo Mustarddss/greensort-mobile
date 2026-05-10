@@ -25,6 +25,10 @@ export default function ProjectsPage() {
   const [isLoadingProjects, setIsLoadingProjects] = useState(true);
   const [completedProjectModalVisible, setCompletedProjectModalVisible] = useState(false);
   const [completedProject, setCompletedProject] = useState(null);
+  const [checkedMaterials, setCheckedMaterials] = useState({});
+  const [checkedSteps, setCheckedSteps] = useState({});
+  const [projectPersonalNotes, setProjectPersonalNotes] = useState('');
+  const [isSavingProjectNotes, setIsSavingProjectNotes] = useState(false);
 
   const loadSavedProjects = async () => {
     try {
@@ -53,6 +57,8 @@ export default function ProjectsPage() {
               image: item.image_url,
               youtubeLink: item.youtube_link,
               notes: item.notes || item.additional_notes || item.other_information || item.other_info || '',
+              checkedMaterials: item.checked_materials || {},
+              checkedSteps: item.checked_steps || {},
               isDone: item.is_done || false,
               isOwnGuide: item.material_category === 'My OWN Guides' 
           }));
@@ -68,6 +74,14 @@ export default function ProjectsPage() {
   useEffect(() => {
     loadSavedProjects();
   }, []);
+
+  useEffect(() => {
+    if (!selectedProject) return;
+
+    setCheckedMaterials(selectedProject.checkedMaterials || {});
+    setCheckedSteps(selectedProject.checkedSteps || {});
+    setProjectPersonalNotes(selectedProject.notes || '');
+  }, [selectedProject?.id]);
 
   const generateDIYGuide = async (itemName, projectType) => {
     setIsGenerating(true);
@@ -175,6 +189,8 @@ export default function ProjectsPage() {
               image: insertedData.image_url,
               youtubeLink: insertedData.youtube_link,
               notes: insertedData.notes || '',
+              checkedMaterials: insertedData.checked_materials || {},
+              checkedSteps: insertedData.checked_steps || {},
               isDone: false,
               isOwnGuide: false
           };
@@ -262,6 +278,85 @@ export default function ProjectsPage() {
     return () => backHandler.remove();
   }, [selectedProject]);
 
+  const updateSelectedProjectLocal = (updates) => {
+      if (!selectedProject) return;
+
+      setSelectedProject(prev => prev ? { ...prev, ...updates } : prev);
+      setProjects(prev =>
+          prev.map(project =>
+              project.id === selectedProject.id ? { ...project, ...updates } : project
+          )
+      );
+  };
+
+  const toggleMaterialCheck = async (index) => {
+      if (!selectedProject) return;
+
+      const nextChecked = {
+          ...checkedMaterials,
+          [index]: !checkedMaterials[index]
+      };
+
+      setCheckedMaterials(nextChecked);
+      updateSelectedProjectLocal({ checkedMaterials: nextChecked });
+
+      try {
+          await supabase
+              .from('saved_projects')
+              .update({ checked_materials: nextChecked })
+              .eq('id', selectedProject.id);
+      } catch (error) {
+          console.log('Checklist save skipped:', error?.message);
+      }
+  };
+
+  const toggleStepCheck = async (index) => {
+      if (!selectedProject) return;
+
+      const nextChecked = {
+          ...checkedSteps,
+          [index]: !checkedSteps[index]
+      };
+
+      setCheckedSteps(nextChecked);
+      updateSelectedProjectLocal({ checkedSteps: nextChecked });
+
+      try {
+          await supabase
+              .from('saved_projects')
+              .update({ checked_steps: nextChecked })
+              .eq('id', selectedProject.id);
+      } catch (error) {
+          console.log('Step checklist save skipped:', error?.message);
+      }
+  };
+
+  const saveProjectPersonalNotes = async () => {
+      if (!selectedProject) return;
+
+      setIsSavingProjectNotes(true);
+
+      try {
+          const { error } = await supabase
+              .from('saved_projects')
+              .update({ notes: projectPersonalNotes })
+              .eq('id', selectedProject.id);
+
+          if (error) throw error;
+
+          updateSelectedProjectLocal({ notes: projectPersonalNotes });
+          Alert.alert('Saved', 'Your notes were saved.');
+      } catch (error) {
+          console.log('Notes save error:', error?.message);
+          Alert.alert(
+              'Notes Not Saved',
+              'Please add a notes column in your saved_projects table, then try again.'
+          );
+      } finally {
+          setIsSavingProjectNotes(false);
+      }
+  };
+
   const handleBack = () => {
       if (selectedProject) {
           setSelectedProject(null);
@@ -326,19 +421,16 @@ export default function ProjectsPage() {
                         </View>
                     </View>
 
-                    {selectedProject.isOwnGuide && (
-                        <View style={styles.sectionCard}>
-                            <View style={{flexDirection: 'row', alignItems: 'center', marginBottom: 10}}>
-                                <MaterialCommunityIcons name="note-text-outline" size={20} color="#1976D2" />
-                                <Text style={[styles.sectionTitle, {marginLeft: 10, marginBottom: 0}]}>Other Information / Notes</Text>
-                            </View>
 
-                            {selectedProject.notes && selectedProject.notes.trim() ? (
-                                <Text style={styles.notesText}>{selectedProject.notes}</Text>
-                            ) : (
-                                <Text style={styles.notesEmptyText}>No additional notes added yet.</Text>
-                            )}
-                        </View>
+
+                    {selectedProject.isOwnGuide && !selectedProject.isDone && (
+                        <TouchableOpacity
+                            style={styles.continueOwnGuideBtn}
+                            onPress={() => router.push({ pathname: '/create-own-project', params: { projectId: selectedProject.id } })}
+                        >
+                            <MaterialCommunityIcons name="pencil" size={20} color="white" />
+                            <Text style={styles.continueOwnGuideText}>Continue Editing Project</Text>
+                        </TouchableOpacity>
                     )}
 
                     {/* Tago ang "Mark as Done" button kapag OWN DIY GUIDE na kasi tapos na yon */}
@@ -360,13 +452,154 @@ export default function ProjectsPage() {
                     )}
 
                     <View style={styles.sectionCard}>
-                        <Text style={styles.sectionTitle}>Required Materials</Text>
-                        {selectedProject.materials.map((mat, i) => <View key={i} style={styles.listItem}><View style={styles.squareBullet} /><Text style={styles.listText}>{mat}</Text></View>)}
+                        <View style={styles.sectionHeaderRow}>
+                            <MaterialCommunityIcons
+                                name="hammer-screwdriver"
+                                size={20}
+                                color="#007C00"
+                            />
+                            <Text style={[styles.sectionTitle, { marginLeft: 10, marginBottom: 0 }]}>
+                                Required Materials Checklist
+                            </Text>
+                        </View>
+
+                        <Text style={styles.sectionHelperText}>
+                            Check the materials you already have so you can track what is still missing.
+                        </Text>
+
+                        {selectedProject.materials && selectedProject.materials.length > 0 ? (
+                            <View style={styles.materialChecklistWrap}>
+                                {selectedProject.materials.map((mat, i) => (
+                                    <TouchableOpacity
+                                        key={i}
+                                        activeOpacity={0.8}
+                                        style={[
+                                            styles.materialCheckItem,
+                                            checkedMaterials[i] && styles.materialCheckItemActive
+                                        ]}
+                                        onPress={() => toggleMaterialCheck(i)}
+                                    >
+                                        <MaterialCommunityIcons
+                                            name={checkedMaterials[i] ? "checkbox-marked-circle" : "checkbox-blank-circle-outline"}
+                                            size={22}
+                                            color={checkedMaterials[i] ? "#007C00" : "#90A4AE"}
+                                        />
+
+                                        <Text
+                                            style={[
+                                                styles.materialCheckText,
+                                                checkedMaterials[i] && styles.materialCheckTextDone
+                                            ]}
+                                        >
+                                            {mat}
+                                        </Text>
+                                    </TouchableOpacity>
+                                ))}
+                            </View>
+                        ) : (
+                            <Text style={styles.notesEmptyText}>No materials added yet.</Text>
+                        )}
                     </View>
 
                     <View style={styles.sectionCard}>
-                        <Text style={styles.sectionTitle}>Step-by-Step Instructions</Text>
-                        {selectedProject.steps.map((step, i) => <View key={i} style={styles.stepItem}><View style={styles.stepNumberBox}><Text style={styles.stepNumber}>{i+1}</Text></View><Text style={styles.stepText}>{step}</Text></View>)}
+                        <View style={styles.sectionHeaderRow}>
+                            <MaterialCommunityIcons
+                                name="clipboard-list-outline"
+                                size={22}
+                                color="#007C00"
+                            />
+                            <Text style={[styles.sectionTitle, { marginLeft: 10, marginBottom: 0 }]}>
+                                Step-by-Step Checklist
+                            </Text>
+                        </View>
+
+                        <Text style={styles.sectionHelperText}>
+                            Mark each step as done while working on your project.
+                        </Text>
+
+                        {selectedProject.steps && selectedProject.steps.length > 0 ? (
+                            selectedProject.steps.map((step, i) => (
+                                <TouchableOpacity
+                                    key={i}
+                                    activeOpacity={0.85}
+                                    style={[
+                                        styles.stepCard,
+                                        checkedSteps[i] && styles.stepCardDone
+                                    ]}
+                                    onPress={() => toggleStepCheck(i)}
+                                >
+                                    <View style={[
+                                        styles.stepCircle,
+                                        checkedSteps[i] && styles.stepCircleDone
+                                    ]}>
+                                        {checkedSteps[i] ? (
+                                            <MaterialCommunityIcons name="check" size={20} color="white" />
+                                        ) : (
+                                            <Text style={styles.stepCircleText}>{i + 1}</Text>
+                                        )}
+                                    </View>
+
+                                    <View style={{ flex: 1 }}>
+                                        <Text style={[
+                                            styles.stepCardTitle,
+                                            checkedSteps[i] && styles.stepCardTitleDone
+                                        ]}>
+                                            Step {i + 1}
+                                        </Text>
+
+                                        <Text style={[
+                                            styles.stepCardText,
+                                            checkedSteps[i] && styles.stepCardTextDone
+                                        ]}>
+                                            {String(step).replace(`Step ${i + 1}:`, '').trim()}
+                                        </Text>
+                                    </View>
+                                </TouchableOpacity>
+                            ))
+                        ) : (
+                            <Text style={styles.notesEmptyText}>No steps added yet.</Text>
+                        )}
+                    </View>
+
+                    <View style={styles.sectionCard}>
+                        <View style={styles.sectionHeaderRow}>
+                            <MaterialCommunityIcons
+                                name="note-edit-outline"
+                                size={22}
+                                color="#FF9800"
+                            />
+                            <Text style={[styles.sectionTitle, { marginLeft: 10, marginBottom: 0 }]}>
+                                Personal Notes & Reminders
+                            </Text>
+                        </View>
+
+                        <Text style={styles.sectionHelperText}>
+                            Add reminders, measurements, design ideas, mistakes to avoid, or things you still need to buy.
+                        </Text>
+
+                        <TextInput
+                            style={styles.personalNotesInput}
+                            placeholder="Example: Let the paint dry overnight. Buy stronger glue. Try adding ribbon design..."
+                            placeholderTextColor="#90A4AE"
+                            value={projectPersonalNotes}
+                            onChangeText={setProjectPersonalNotes}
+                            multiline
+                        />
+
+                        <TouchableOpacity
+                            style={styles.saveNotesBtn}
+                            onPress={saveProjectPersonalNotes}
+                            disabled={isSavingProjectNotes}
+                        >
+                            {isSavingProjectNotes ? (
+                                <ActivityIndicator size="small" color="white" />
+                            ) : (
+                                <>
+                                    <MaterialCommunityIcons name="content-save" size={18} color="white" />
+                                    <Text style={styles.saveNotesText}>Save Notes</Text>
+                                </>
+                            )}
+                        </TouchableOpacity>
                     </View>
 
                     {selectedProject.sellingPrice && (
@@ -564,7 +797,7 @@ const styles = StyleSheet.create({
   doneButtonText: { color: '#007C00', fontSize: 16, fontWeight: 'bold' },
   youtubeButton: { backgroundColor: '#FF0000', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 15, borderRadius: 15, marginBottom: 20, ...getSafeShadow() },
   youtubeButtonText: { color: 'white', fontSize: 16, fontWeight: 'bold' },
-  sectionCard: { backgroundColor: 'white', borderRadius: 24, padding: 24, marginBottom: 20, ...getSafeShadow() },
+  sectionCard: { backgroundColor: 'white', borderRadius: 24, padding: 22, marginBottom: 20, borderWidth: 1, borderColor: '#EEF2F3', ...getSafeShadow() },
   sectionTitle: { fontSize: 18, fontWeight: 'bold', color: '#263238', marginBottom: 18 },
   listItem: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
   squareBullet: { width: 8, height: 8, backgroundColor: '#007C00', marginRight: 12, borderRadius: 3 }, 
@@ -573,6 +806,30 @@ const styles = StyleSheet.create({
   stepNumberBox: { width: 32, height: 32, backgroundColor: '#E8F5E9', borderRadius: 10, justifyContent: 'center', alignItems: 'center', marginRight: 15 }, 
   stepNumber: { color: '#007C00', fontWeight: 'bold' },
   stepText: { color: '#546E7A', fontSize: 15, flex: 1, lineHeight: 22 },
+  sectionHeaderRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 18 },
+  sectionHelperText: { color: '#78909C', fontSize: 12, lineHeight: 18, marginBottom: 14 },
+  materialChecklistWrap: { gap: 10 },
+  materialCheckItem: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FAFAFA', borderWidth: 1, borderColor: '#EEEEEE', paddingHorizontal: 14, paddingVertical: 13, borderRadius: 16 },
+  materialCheckItemActive: { backgroundColor: '#E8F5E9', borderColor: '#A5D6A7' },
+  materialCheckText: { flex: 1, marginLeft: 10, color: '#455A64', fontSize: 14, fontWeight: '700', lineHeight: 20 },
+  materialCheckTextDone: { color: '#2E7D32', textDecorationLine: 'line-through' },
+  stepCardDone: { backgroundColor: '#E8F5E9', borderColor: '#A5D6A7' },
+  stepCircleDone: { backgroundColor: '#2E7D32' },
+  stepCardTitleDone: { color: '#2E7D32' },
+  stepCardTextDone: { color: '#607D8B', textDecorationLine: 'line-through' },
+  personalNotesInput: { minHeight: 120, backgroundColor: '#F8FAFB', borderRadius: 16, borderWidth: 1, borderColor: '#E0E0E0', padding: 14, color: '#263238', fontSize: 14, lineHeight: 21, textAlignVertical: 'top', marginBottom: 14 },
+  saveNotesBtn: { backgroundColor: '#007C00', paddingVertical: 13, borderRadius: 14, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8 },
+  saveNotesText: { color: 'white', fontSize: 14, fontWeight: '900' },
+  materialsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  materialChip: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F1F8E9', borderWidth: 1, borderColor: '#C8E6C9', paddingHorizontal: 14, paddingVertical: 10, borderRadius: 16 },
+  materialChipText: { marginLeft: 8, color: '#2E7D32', fontSize: 13, fontWeight: '700' },
+  stepCard: { flexDirection: 'row', backgroundColor: '#FAFAFA', borderRadius: 18, padding: 16, marginBottom: 14, borderWidth: 1, borderColor: '#EEEEEE' },
+  stepCircle: { width: 42, height: 42, borderRadius: 21, backgroundColor: '#007C00', justifyContent: 'center', alignItems: 'center', marginRight: 14 },
+  stepCircleText: { color: 'white', fontWeight: '900', fontSize: 16 },
+  stepCardTitle: { fontSize: 15, fontWeight: '900', color: '#263238', marginBottom: 6 },
+  stepCardText: { color: '#546E7A', fontSize: 14, lineHeight: 22 },
+  continueOwnGuideBtn: { backgroundColor: '#1976D2', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 15, borderRadius: 15, marginBottom: 15, gap: 8, ...getSafeShadow() },
+  continueOwnGuideText: { color: 'white', fontSize: 15, fontWeight: '900' },
   emptyState: { alignItems: 'center', marginTop: 50 },
   emptyText: { color: '#999', marginTop: 10, fontSize: 14 },
   notesText: { color: '#546E7A', fontSize: 15, lineHeight: 23 },
