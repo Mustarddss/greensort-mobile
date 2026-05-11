@@ -10,6 +10,7 @@ export default function LoginCenter() {
     const router = useRouter();
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
+    const [showPassword, setShowPassword] = useState(false);
     const [loading, setLoading] = useState(false);
     const [showLoginOtpModal, setShowLoginOtpModal] = useState(false);
     const [loginOtpCode, setLoginOtpCode] = useState('');
@@ -70,7 +71,18 @@ export default function LoginCenter() {
 
                         <View style={styles.inputContainer}>
                             <Text style={styles.label}>Password</Text>
-                            <TextInput style={styles.input} placeholder="Password" value={password} onChangeText={setPassword} secureTextEntry />
+                            <View style={styles.passwordInputWrap}>
+                                <TextInput
+                                    style={styles.passwordInput}
+                                    placeholder="Password"
+                                    value={password}
+                                    onChangeText={setPassword}
+                                    secureTextEntry={!showPassword}
+                                />
+                                <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeButton}>
+                                    <Ionicons name={showPassword ? "eye-off" : "eye"} size={21} color="#2962FF" />
+                                </TouchableOpacity>
+                            </View>
                         </View>
 
                         <TouchableOpacity style={styles.button} onPress={handleLogin} disabled={loading}>
@@ -109,6 +121,9 @@ const styles = StyleSheet.create({
     inputContainer: { marginBottom: 20 },
     label: { fontSize: 13, color: '#333', fontWeight: '500', marginBottom: 8 },
     input: { backgroundColor: '#F0F4FF', paddingVertical: 16, paddingHorizontal: 15, borderRadius: 8, fontSize: 14, color: '#333', borderWidth: 1, borderColor: '#BBDEFB' },
+    passwordInputWrap: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F0F4FF', borderRadius: 8, borderWidth: 1, borderColor: '#BBDEFB' },
+    passwordInput: { flex: 1, paddingVertical: 16, paddingHorizontal: 15, fontSize: 14, color: '#333' },
+    eyeButton: { paddingHorizontal: 14, paddingVertical: 10 },
     button: { backgroundColor: '#2962FF', padding: 18, borderRadius: 8, alignItems: 'center', marginTop: 10, elevation: 3 },
     buttonText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
     footer: { flexDirection: 'row', justifyContent: 'center', marginTop: 30 },

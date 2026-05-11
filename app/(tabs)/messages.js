@@ -28,14 +28,37 @@ export default function MessagesList() {
     "Fake account or impersonation"
   ];
 
-  useEffect(() => { 
-      fetchChats(); 
-      const msgChannel = supabase.channel('realtime-msg-list')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, () => {
-           fetchChats();
-        }).subscribe();
-      return () => { supabase.removeChannel(msgChannel); };
-  }, []);
+  useEffect(() => {
+  fetchChats();
+
+  // ✅ Unique realtime channel para walang duplicate callback issue
+  const uniqueChannelName = `realtime-msg-list-${Date.now()}`;
+
+  // ✅ REGISTER EVENTS FIRST
+  const msgChannel = supabase
+    .channel(uniqueChannelName)
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'messages',
+      },
+      () => {
+        fetchChats();
+      }
+    );
+
+  // ✅ SUBSCRIBE AFTER .on()
+  msgChannel.subscribe((status) => {
+    console.log('Messages realtime status:', status);
+  });
+
+  // ✅ CLEANUP PARA DI MAG STACK CALLBACKS
+  return () => {
+    supabase.removeChannel(msgChannel);
+  };
+}, []);
 
   const fetchChats = async () => {
     const { data: { session } } = await supabase.auth.getSession();

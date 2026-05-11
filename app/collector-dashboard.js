@@ -168,12 +168,6 @@ export default function CollectorDashboard() {
                 <Text style={{ color: 'white', fontSize: 26, fontWeight: '900', letterSpacing: -0.5 }} numberOfLines={1}>
                     Welcome Back!
                 </Text>
-                <Text style={{ color: '#E3F2FD', fontSize: 15, fontWeight: '700', marginTop: 2 }}>
-                    Center Account
-                </Text>
-                <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, marginTop: 4 }} numberOfLines={1}>
-                    {shopDetails.name}
-                </Text>
             </View>
             
             <View style={{flexDirection: 'row', alignItems: 'center'}}>
@@ -289,7 +283,7 @@ export default function CollectorDashboard() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F0F2F5' },
-  headerCard: { backgroundColor: '#0066FF', paddingTop: 50, paddingBottom: 60, paddingHorizontal: 20, borderBottomLeftRadius: 30, borderBottomRightRadius: 30 },
+  headerCard: { backgroundColor: '#0066FF', paddingTop: 50, paddingBottom: 55, paddingHorizontal: 20, borderBottomLeftRadius: 35, borderBottomRightRadius: 35 },
   topRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
   shopInfo: { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
   shopIconBg: { width: 50, height: 50, backgroundColor: 'white', borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginRight: 15 },
@@ -300,13 +294,13 @@ const styles = StyleSheet.create({
   dot: { width: 10, height: 10, borderRadius: 5, marginRight: 8 },
   statusTitle: { color: 'white', fontWeight: 'bold' },
   statusSub: { color: '#E3F2FD', fontSize: 11 },
-  body: { paddingHorizontal: 20, marginTop: -40 },
-  processBtn: { backgroundColor: '#00C853', borderRadius: 12, paddingVertical: 15, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', elevation: 5, marginBottom: 15 },
+  body: { paddingHorizontal: 20, marginTop: -35, paddingBottom: 140 },
+  processBtn: { backgroundColor: '#00C853', borderRadius: 16, paddingVertical: 16, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', elevation: 5, marginBottom: 15, shadowColor:'#000', shadowOpacity:0.15, shadowRadius:8 },
   processBtnText: { color: 'white', fontSize: 16, fontWeight: 'bold' },
   actionRow: { flexDirection: 'row', gap: 10, marginBottom: 15 },
   actionBtn: { flex: 1, backgroundColor: '#2962FF', paddingVertical: 12, borderRadius: 10, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', elevation: 2 },
   actionBtnText: { color: 'white', fontSize: 14, fontWeight: '600' },
-  listContainer: { backgroundColor: 'white', borderRadius: 15, padding: 15, elevation: 2, height: 320 },
+  listContainer: { backgroundColor: 'white', borderRadius: 20, padding: 16, elevation: 3, height: 330 },
   listHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 15 },
   listTitle: { fontWeight: 'bold', fontSize: 14 },
   viewAll: { color: '#2962FF', fontSize: 12, fontWeight: 'bold' },
@@ -317,7 +311,7 @@ const styles = StyleSheet.create({
   itemWeight: { fontSize: 16, fontWeight: 'bold', color: '#2962FF', textAlign: 'right' },
   tag: { backgroundColor: '#E8F5E9', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8, marginTop: 4 },
   tagText: { color: '#2E7D32', fontSize: 10, fontWeight: 'bold' },
-  footerCard: { position: 'absolute', bottom: 20, left: 20, right: 20, backgroundColor: '#0066FF', borderRadius: 20, padding: 20, elevation: 10 },
+  footerCard: { position: 'absolute', bottom: 18, left: 20, right: 20, backgroundColor: '#0066FF', borderRadius: 24, padding: 20, elevation: 10 },
   footerHeader: { marginBottom: 10 },
   footerTitle: { color: 'white', fontWeight: 'bold', fontSize: 14 },
   footerRow: { flexDirection: 'row', justifyContent: 'space-between' },

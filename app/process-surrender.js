@@ -167,7 +167,41 @@ export default function ProcessSurrender() {
       }
   };
 
-  const sendEmailReceipt = async (finalRewardStatus, centerName) => {
+  const uploadProofPhoto = async (localUri) => {
+      if (!localUri) return null;
+
+      try {
+          const fileExt = (localUri.split('.').pop() || 'jpg').split('?')[0];
+          const fileName = `proof_${Date.now()}_${Math.random().toString(36).substring(2, 10)}.${fileExt}`;
+          const filePath = `public/${fileName}`;
+
+          const formData = new FormData();
+          formData.append('file', {
+              uri: localUri,
+              name: fileName,
+              type: 'image/jpeg'
+          });
+
+          const { data, error } = await supabase.storage
+              .from('surrender-proofs')
+              .upload(filePath, formData, {
+                  contentType: 'image/jpeg',
+                  upsert: false
+              });
+
+          if (error) throw new Error(error.message);
+
+          const { data: publicUrlData } = supabase.storage
+              .from('surrender-proofs')
+              .getPublicUrl(data.path);
+
+          return publicUrlData.publicUrl;
+      } catch (error) {
+          throw new Error("Proof Upload Error: " + error.message);
+      }
+  };
+
+  const sendEmailReceipt = async (finalRewardStatus, centerName, officerName, transactionId, transactionDate) => {
       try {
           const emailData = {
               service_id: 'service_nzpn1cn', 
@@ -176,7 +210,15 @@ export default function ProcessSurrender() {
               template_params: {
                   to_email: userData.email,
                   to_name: userData.name,
+
+                  // Center/program name should show in the receipt.
+                  // Officer name is separate to avoid confusion.
+                  from_name: centerName,
                   center_name: centerName,
+                  officer_name: officerName,
+
+                  transaction_id: transactionId,
+                  transaction_date: transactionDate,
                   waste_type: wasteType,
                   weight: weight,
                   reward: finalRewardStatus
@@ -205,7 +247,21 @@ export default function ProcessSurrender() {
           const { data: { user } } = await supabase.auth.getUser();
           if (!user) throw new Error("Collector is not logged in.");
 
-          const centerName = user.user_metadata?.full_name || 'GreenSort Drop-off Center';
+          const officerName = user.user_metadata?.full_name || 'Center Officer';
+          let centerName = 'GreenSort Drop-off Center';
+
+          const { data: centerProfile } = await supabase
+              .from('dropoff_applications')
+              .select('program_name, applicant_name, barangay')
+              .eq('user_email', user.email)
+              .maybeSingle();
+
+          if (centerProfile) {
+              centerName =
+                  centerProfile.program_name ||
+                  centerProfile.applicant_name ||
+                  (centerProfile.barangay ? `Brgy. ${centerProfile.barangay}` : 'GreenSort Drop-off Center');
+          }
 
           const inputKg = parseFloat(weight) || 0;
           const isShort = inputKg < requiredKg;
@@ -263,18 +319,30 @@ export default function ProcessSurrender() {
               if (matchedRewards && matchedRewards.length > 0) {
                   const rewardToUpdate = matchedRewards[0];
                   const newStock = Math.max(0, rewardToUpdate.stock_quantity - 1); 
-                  const isStillAvailable = newStock > 0; 
 
+                  // 🟢 IMPORTANT:
+                  // After a resident successfully claims this reward, hide/lock this reward immediately.
+                  // It will only appear again once the center manually taps "Mark Available" in Manage Rewards.
                   const { error: deductErr } = await supabase
                       .from('rewards_inventory')
                       .update({ 
                           stock_quantity: newStock,
-                          is_available: isStillAvailable 
+                          is_available: false 
                       })
                       .eq('id', rewardToUpdate.id);
                   if (deductErr) throw new Error("Stock Deduct Error: " + deductErr.message);
               }
           }
+
+          const uploadedProofUrl = await uploadProofPhoto(proofImage);
+          const transactionDate = new Date().toLocaleString('en-US', {
+              year: 'numeric',
+              month: 'long',
+              day: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit'
+          });
+          const transactionId = `TXN-${Date.now().toString().slice(-8)}`;
 
           const { error: logError } = await supabase.from('surrender_logs').insert([{
               collector_email: user.email,
@@ -285,12 +353,19 @@ export default function ProcessSurrender() {
               required_kg: requiredKg,
               excess_banked_kg: saveExcess ? excessKg : 0,
               reward_claimed: finalRewardStatus,
-              proof_image: proofImage
+
+              // Real hosted proof photo URL for surrender history
+              proof_photo_url: uploadedProofUrl,
+
+              // Optional extra fields for better transaction records
+              transaction_id: transactionId,
+              center_name: centerName,
+              officer_name: officerName
           }]);
 
           if (logError) throw new Error("Surrender Log Error: " + logError.message);
-          
-          await sendEmailReceipt(finalRewardStatus, centerName);
+
+          await sendEmailReceipt(finalRewardStatus, centerName, officerName, transactionId, transactionDate);
 
           setStep(4); 
       } catch (error) {

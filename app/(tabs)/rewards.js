@@ -48,6 +48,34 @@ export default function Rewards() {
       }
   };
 
+  const isClaimedRewardLog = (claimedValue) => {
+      const claimedText = String(claimedValue || '').trim().toLowerCase();
+
+      return (
+          claimedValue === true ||
+          claimedValue === 1 ||
+          claimedText === 'true' ||
+          claimedText === 'claimed' ||
+          (
+              claimedText.length > 0 &&
+              claimedText !== 'banked' &&
+              !claimedText.includes('added to balance')
+          )
+      );
+  };
+
+  const isSameRewardName = (logReward, rewardName) => {
+      const logText = String(logReward || '').toLowerCase();
+      const rewardText = String(rewardName || '').toLowerCase();
+
+      if (!logText || !rewardText) return false;
+
+      return (
+          logText.includes(rewardText) ||
+          rewardText.includes(logText.replace('claimed:', '').trim())
+      );
+  };
+
   const handleSearch = async () => {
     if (!isClean) {
         return Alert.alert("Wait!", "Please confirm that your waste is clean and dry before searching.");
@@ -99,7 +127,7 @@ export default function Rewards() {
 
         const { data: userLogs } = await supabase
             .from('surrender_logs')
-            .select('reward_claimed, collector_email')
+            .select('*')
             .eq('resident_email', user?.email);
 
         const computedResults = [];
@@ -118,11 +146,25 @@ export default function Rewards() {
                 const rewardMultiplier = Math.floor(inputQty / baseRate);
                 const isSufficient = rewardMultiplier >= 1;
 
-                // 🟢 NEW LOGIC: IsAlreadyClaimed check
-                // Titignan natin kung may stock pa ba si Center (reward.is_available)
-                // Pag false 'yung is_available (Out of Stock siya), doon lang natin la-lock ng "ALREADY CLAIMED/UNAVAILABLE"
-                // Kapag in-open ulit ni Center (Mark Available), mawawala 'yung lock.
-                const isAlreadyClaimed = !reward.is_available;
+                // 🟢 CLAIMED CHECK:
+                // 1. If center marked reward as unavailable/out of stock.
+                // 2. If current user already claimed a reward from this same center.
+                // This fixes the issue where the card still shows as available after claiming.
+                const userAlreadyClaimedThisReward = (userLogs || []).some(log => {
+                    const logCollector = String(log.collector_email || '').toLowerCase();
+                    const rewardCollector = String(reward.user_email || '').toLowerCase();
+
+                    const sameCenter = logCollector === rewardCollector;
+                    const rewardWasClaimed = isClaimedRewardLog(log.reward_claimed);
+                    const sameReward = isSameRewardName(log.reward_claimed, reward.name);
+
+                    return sameCenter && rewardWasClaimed && sameReward;
+                });
+
+                const isAlreadyClaimed =
+                    !reward.is_available ||
+                    Number(reward.stock_quantity || 0) <= 0 ||
+                    userAlreadyClaimedThisReward;
 
                 let cleanRewardName = reward.name;
                 const doubleMatch = cleanRewardName.match(/^(\d+\s*(?:kg|pcs))\s+\1\s+(.*)/i);
@@ -161,9 +203,20 @@ export default function Rewards() {
                     subText: reward.description,
                     checklist: reward.checklist || '',
                     imageUrl: reward.image_url,
-                    wasteImageUrl: reward.waste_image_url, 
-                    isClaimed: isAlreadyClaimed, // 🟢 Pinasa na yung updated dynamic checking
+                    wasteImageUrl: reward.waste_image_url,
+                    rewardInventoryId: reward.id,
+                    stockQuantity: Number(reward.stock_quantity || 0),
+                    isAvailable: !!reward.is_available,
+                    isClaimed: isAlreadyClaimed,
+                    rewardStatusHint: userAlreadyClaimedThisReward
+                        ? 'already_claimed'
+                        : Number(reward.stock_quantity || 0) <= 0
+                            ? 'out_of_stock'
+                            : !reward.is_available
+                                ? 'currently_unavailable'
+                                : 'available',
                     searchedWasteType: finalWaste,
+                    centerEmail: reward.user_email,
                     latitude: centerData.latitude,
                     longitude: centerData.longitude
                 });
@@ -242,23 +295,66 @@ export default function Rewards() {
     }
   };
 
-  // 🟢 NEW: REAL-TIME LISTENER PARA SA OUT OF STOCK / AVAILABLE UPDATES
+  // 🟢 REAL-TIME LISTENER PARA SA OUT OF STOCK / AVAILABLE + USER CLAIM UPDATES
   useEffect(() => {
-      const inventoryChannel = supabase.channel('realtime-inventory')
+      const uniqueId = Date.now();
+
+      const inventoryChannel = supabase
+          .channel(`realtime-inventory-${uniqueId}`)
           .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'rewards_inventory' }, (payload) => {
-              setResults(currentResults => 
+              setResults(currentResults =>
                   currentResults.map(loc => {
                       if (loc.id === payload.new.id) {
-                          return { ...loc, isClaimed: !payload.new.is_available };
+                          return {
+                              ...loc,
+                              stockQuantity: Number(payload.new.stock_quantity || 0),
+                              isAvailable: !!payload.new.is_available,
+                              isClaimed: loc.isClaimed || !payload.new.is_available || Number(payload.new.stock_quantity || 0) <= 0,
+                              rewardStatusHint: loc.isClaimed
+                                  ? 'already_claimed'
+                                  : Number(payload.new.stock_quantity || 0) <= 0
+                                      ? 'out_of_stock'
+                                      : !payload.new.is_available
+                                          ? 'currently_unavailable'
+                                          : 'available'
+                          };
                       }
                       return loc;
                   })
               );
-          })
-          .subscribe();
+          });
+
+      inventoryChannel.subscribe();
+
+      const surrenderChannel = supabase
+          .channel(`realtime-user-surrender-claims-${uniqueId}`)
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'surrender_logs' }, async (payload) => {
+              const { data: { user } } = await supabase.auth.getUser();
+              const row = payload.new || payload.old;
+
+              if (!user?.email || !row) return;
+              if (String(row.resident_email || '').toLowerCase() !== String(user.email || '').toLowerCase()) return;
+
+              const isRewardClaimed = isClaimedRewardLog(row.reward_claimed);
+
+              if (!isRewardClaimed) return;
+
+              setResults(currentResults =>
+                  currentResults.map(loc => {
+                      const sameCollector =
+                          String(loc.centerEmail || '').toLowerCase() === String(row.collector_email || '').toLowerCase();
+                      const sameReward = isSameRewardName(row.reward_claimed, loc.rewardUnit || loc.youGetItem);
+
+                      return sameCollector && sameReward ? { ...loc, isClaimed: true, isAvailable: false, rewardStatusHint: 'already_claimed' } : loc;
+                  })
+              );
+          });
+
+      surrenderChannel.subscribe();
 
       return () => {
           supabase.removeChannel(inventoryChannel);
+          supabase.removeChannel(surrenderChannel);
       };
   }, []);
 
@@ -391,11 +487,21 @@ export default function Rewards() {
                         {results.map((loc) => (
                             <TouchableOpacity 
                                 key={loc.id} 
-                                style={[styles.tradeCard, loc.isClaimed && {opacity: 0.6}]} // 🟢 Added opacity kung out of stock
+                                style={[styles.tradeCard, loc.isClaimed && styles.tradeCardClaimed]}
                                 activeOpacity={0.9}
                                 onPress={() => router.push({ pathname: '/location-details', params: { data: JSON.stringify(loc) } })}
                             >
-                                {loc.isClaimed && <View style={styles.claimedBadge}><Text style={styles.claimedText}>UNAVAILABLE / OUT OF STOCK</Text></View>}
+                                {loc.isClaimed && (
+                                    <View style={styles.claimedBadge}>
+                                        <Text style={styles.claimedText}>
+                                            {loc.rewardStatusHint === 'out_of_stock'
+                                                ? 'OUT OF STOCK'
+                                                : loc.rewardStatusHint === 'currently_unavailable'
+                                                    ? 'UNAVAILABLE'
+                                                    : 'ALREADY CLAIMED'}
+                                        </Text>
+                                    </View>
+                                )}
                                 
                                 <Text style={styles.locName}>{loc.name}</Text>
                                 
@@ -474,7 +580,7 @@ export default function Rewards() {
                                     style={styles.selectBtn}
                                     onPress={() => router.push({ pathname: '/location-details', params: { data: JSON.stringify(loc) } })}
                                 >
-                                    <Text style={styles.selectBtnText}>Select this location</Text>
+                                    <Text style={styles.selectBtnText}>View details</Text>
                                 </TouchableOpacity>
                             </TouchableOpacity>
                         ))}
@@ -552,6 +658,7 @@ const styles = StyleSheet.create({
   noResults: { textAlign: 'center', color: '#999', marginTop: 10, marginBottom: 20, fontSize: 13 },
   
   tradeCard: { backgroundColor: 'white', borderRadius: 20, padding: 20, marginBottom: 20, ...getSafeShadow() },
+  tradeCardClaimed: { opacity: 0.75 },
   locName: { fontSize: 18, fontWeight: 'bold', color: '#1C1C1E', marginBottom: 6 },
   detailRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
   detailText: { fontSize: 12, color: '#666', flex: 1 },
@@ -572,7 +679,9 @@ const styles = StyleSheet.create({
   tradeArrowWrapper: { paddingHorizontal: 10, justifyContent: 'center', alignItems: 'center', alignSelf: 'center' },
 
   selectBtn: { borderWidth: 1.5, borderColor: '#00A86B', paddingVertical: 12, borderRadius: 25, alignItems: 'center' },
+  selectBtnDisabled: { borderColor: '#9E9E9E', backgroundColor: '#F5F5F5' },
   selectBtnText: { color: '#00A86B', fontWeight: 'bold', fontSize: 14 },
+  selectBtnTextDisabled: { color: '#757575' },
   
   claimedBadge: { position: 'absolute', top: 15, right: 15, backgroundColor: '#9E9E9E', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 5, zIndex: 5 },
   claimedText: { color: 'white', fontSize: 10, fontWeight: 'bold', letterSpacing: 1 },

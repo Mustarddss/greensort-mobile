@@ -18,6 +18,8 @@ export default function RegisterLocation() {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
+    const [showPassword, setShowPassword] = useState(false);
+    const [showConfirmPassword, setShowConfirmPassword] = useState(false);
     
     // --- LOCATION FORM STATES ---
     const [programName, setProgramName] = useState('');
@@ -153,8 +155,8 @@ export default function RegisterLocation() {
 
     // --- SUBMIT 2: VERIFY OTP & SAVE DATA ---
     const handleVerifyOtp = async () => {
-        if (!otpCode || otpCode.length < 6) {
-            Alert.alert('Invalid Code', 'Please enter the verification code sent to your email.'); return;
+        if (!otpCode || otpCode.length !== 8) {
+            Alert.alert('Invalid Code', 'Please enter the full 8-digit verification code sent to your email.'); return;
         }
 
         setIsSubmitting(true);
@@ -242,7 +244,18 @@ export default function RegisterLocation() {
                     
                     <View style={styles.inputContainer}>
                         <Text style={styles.label}>Enter New Password</Text>
-                        <TextInput style={styles.input} placeholder="Password" value={password} onChangeText={setPassword} secureTextEntry />
+                        <View style={styles.passwordInputWrap}>
+                            <TextInput
+                                style={styles.passwordInput}
+                                placeholder="Password"
+                                value={password}
+                                onChangeText={setPassword}
+                                secureTextEntry={!showPassword}
+                            />
+                            <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeButton}>
+                                <Ionicons name={showPassword ? "eye-off" : "eye"} size={21} color="#007BFF" />
+                            </TouchableOpacity>
+                        </View>
                     </View>
 
                     {password.length > 0 && (
@@ -257,17 +270,24 @@ export default function RegisterLocation() {
 
                     <View style={{ marginBottom: 15 }}>
                         <Text style={styles.label}>Confirm Password</Text>
-                        <TextInput 
+                        <View
                             style={[
-                                styles.input, 
-                                confirmPassword.length > 0 && password !== confirmPassword ? { borderColor: '#D50000', borderWidth: 1.5 } : 
+                                styles.passwordInputWrap,
+                                confirmPassword.length > 0 && password !== confirmPassword ? { borderColor: '#D50000', borderWidth: 1.5 } :
                                 confirmPassword.length > 0 && password === confirmPassword ? { borderColor: '#38B000', borderWidth: 1.5 } : {}
-                            ]} 
-                            placeholder="Re-enter your password" 
-                            value={confirmPassword} 
-                            onChangeText={setConfirmPassword} 
-                            secureTextEntry 
-                        />
+                            ]}
+                        >
+                            <TextInput
+                                style={styles.passwordInput}
+                                placeholder="Re-enter your password"
+                                value={confirmPassword}
+                                onChangeText={setConfirmPassword}
+                                secureTextEntry={!showConfirmPassword}
+                            />
+                            <TouchableOpacity onPress={() => setShowConfirmPassword(!showConfirmPassword)} style={styles.eyeButton}>
+                                <Ionicons name={showConfirmPassword ? "eye-off" : "eye"} size={21} color="#007BFF" />
+                            </TouchableOpacity>
+                        </View>
                         {confirmPassword.length > 0 && (
                             <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6 }}>
                                 <Ionicons name={password === confirmPassword ? "checkmark-circle" : "close-circle"} size={14} color={password === confirmPassword ? "#38B000" : "#D50000"} />
@@ -498,6 +518,9 @@ const styles = StyleSheet.create({
     inputContainer: { marginBottom: 15 },
     label: { fontSize: 12, fontWeight: '600', color: '#555', marginBottom: 5 },
     input: { backgroundColor: '#E3F2FD', padding: 14, borderRadius: 8, fontSize: 14, color: '#333' },
+    passwordInputWrap: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#E3F2FD', borderRadius: 8, borderWidth: 1, borderColor: 'transparent' },
+    passwordInput: { flex: 1, padding: 14, fontSize: 14, color: '#333' },
+    eyeButton: { paddingHorizontal: 14, paddingVertical: 10 },
     dropdown: { backgroundColor: '#E3F2FD', padding: 14, borderRadius: 8, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
     
     passwordRulesContainer: { backgroundColor: 'white', padding: 15, borderRadius: 8, marginBottom: 15, borderWidth: 1, borderColor: '#eee' },

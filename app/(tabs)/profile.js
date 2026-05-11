@@ -9,6 +9,16 @@ import { supabase } from '../../lib/supabase';
 
 const getSafeShadow = () => Platform.select({ ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4 }, android: { elevation: 3 }, web: { boxShadow: '0px 2px 4px rgba(0, 0, 0, 0.1)' } });
 
+const getAvatarUrl = (avatar, name = 'User') => {
+  const cleanAvatar = String(avatar || '').trim();
+
+  if (cleanAvatar && cleanAvatar !== 'null' && cleanAvatar !== 'undefined') {
+    return cleanAvatar;
+  }
+
+  return `https://ui-avatars.com/api/?name=${encodeURIComponent(name || 'User')}&background=00C853&color=fff&bold=true`;
+};
+
 export default function Profile() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -97,8 +107,75 @@ export default function Profile() {
     setOptionsModalVisible(true);
   };
 
+  const openPostFromProfile = (post) => {
+    if (!post?.id) {
+      Alert.alert('Post not found', 'This post has no valid ID.');
+      return;
+    }
+
+    router.push({
+      pathname: '/post-details',
+      params: {
+        postId: String(post.id),
+      },
+    });
+  };
+
+  const handleAppeal = async (post) => {
+    Alert.alert(
+      "Submit Appeal",
+      "Do you want an admin to manually review this flagged post?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Yes, Appeal",
+          onPress: async () => {
+            try {
+              const { error } = await supabase.from('appeals').insert([{
+                post_id: post.id,
+                user_name: user.name,
+                reason: post.ai_reason || 'User requested review from profile.'
+              }]);
+
+              if (error) throw error;
+
+              Alert.alert(
+                "Appeal Sent",
+                "Your post was submitted for admin review. You can check it again here in your profile."
+              );
+            } catch (error) {
+              Alert.alert("Appeal Failed", error.message || "Please try again.");
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const getCleanPostDescription = (desc = '') => {
+    const captionIndex = String(desc).toLowerCase().indexOf('photo captions:');
+    if (captionIndex === -1) return desc;
+    return desc.substring(0, captionIndex).trim();
+  };
+
+  const getFirstImage = (image = '') => {
+    if (!image) return null;
+
+    const firstImage = String(image)
+      .split(',')
+      .map(item => item.trim())
+      .find(item => item && item !== 'null' && item !== 'undefined');
+
+    return firstImage || null;
+  };
+
   const handleEditAction = () => {
     const post = selectedPostForOptions;
+    if (!post?.id) {
+      setOptionsModalVisible(false);
+      Alert.alert('Post not found', 'Please refresh and try again.');
+      return;
+    }
     setOptionsModalVisible(false);
     setEditingPostId(post.id); 
     setPostForm({ 
@@ -115,6 +192,11 @@ export default function Profile() {
 
   const handleSoldAction = async () => {
     const post = selectedPostForOptions;
+    if (!post?.id) {
+      setOptionsModalVisible(false);
+      Alert.alert('Post not found', 'Please refresh and try again.');
+      return;
+    }
     setOptionsModalVisible(false);
     
     Alert.alert("Mark as Sold/Traded", "Are you sure this item is no longer available?", [
@@ -133,6 +215,11 @@ export default function Profile() {
 
   const handleDeleteAction = async () => {
     const post = selectedPostForOptions;
+    if (!post?.id) {
+      setOptionsModalVisible(false);
+      Alert.alert('Post not found', 'Please refresh and try again.');
+      return;
+    }
     setOptionsModalVisible(false);
     Alert.alert("Delete Post", "Are you sure you want to delete this permanently?", [
       { text: "Cancel", style: "cancel" },
@@ -191,7 +278,7 @@ export default function Profile() {
   const handleSave = async () => {
     if (!editForm.name || !editForm.address || !editForm.phone) return Alert.alert("Missing Info", "Please fill in all fields.");
     setSaving(true);
-    let finalAvatarUrl = editForm.avatar;
+    let finalAvatarUrl = getAvatarUrl(editForm.avatar, editForm.name || user.name);
 
     if (editForm.avatar && !editForm.avatar.startsWith('http')) {
         try {
@@ -324,7 +411,7 @@ export default function Profile() {
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#007C00']} />}>
         <View style={styles.idCard}>
             <TouchableOpacity onPress={isEditing ? pickImage : null} style={styles.avatarWrapper}>
-                <Image source={{ uri: isEditing ? editForm.avatar : user.avatar }} style={styles.avatarImage} />
+                <Image source={{ uri: getAvatarUrl(isEditing ? editForm.avatar : user.avatar, isEditing ? editForm.name : user.name) }} style={styles.avatarImage} />
                 {isEditing && <View style={styles.cameraIconBadge}><MaterialCommunityIcons name="camera" size={20} color="white" /></View>}
             </TouchableOpacity>
             <Text style={styles.name}>{isEditing ? editForm.name : user.name}</Text><Text style={styles.role}>{user.role}</Text><View style={styles.badge}><Text style={styles.badgeText}>{user.id}</Text></View>
@@ -338,41 +425,133 @@ export default function Profile() {
             <View style={styles.infoRow}><Text style={styles.label}>Email Address (Read-only)</Text><Text style={[styles.value, {color: '#888'}]}>{user.email}</Text></View>
         </View>
 
-        <View style={styles.statsCard}>
-            <Text style={styles.cardTitle}>Your Stats</Text>
-            <View style={styles.statsRow}>
-                <StatItem icon="trophy-outline" value={user.stats.submissions} label="Total Submission" />
-                <StatItem icon="lightning-bolt-outline" value={`${user.stats.recycled} kg`} label="Kg Recycled" />
-                <StatItem icon="star-outline" value={user.stats.projects} label="Upcycle Projects" />
+        <View style={styles.sectionHeaderRow}>
+            <View>
+                <Text style={styles.myPostsTitle}>My Posts</Text>
+                <Text style={styles.myPostsSub}>Tap a post to view details and comments.</Text>
+            </View>
+            <View style={styles.postCountBadge}>
+                <Text style={styles.postCountText}>{myPosts.length}</Text>
             </View>
         </View>
 
-        <Text style={{ fontSize: 18, fontWeight: 'bold', color: '#333', marginTop: 10, marginBottom: 15 }}>My Posts</Text>
-        
         {myPosts.length === 0 ? (
-            <Text style={{ textAlign: 'center', color: '#999', marginTop: 20 }}>You haven't posted anything yet.</Text>
+            <View style={styles.emptyPostsCard}>
+                <MaterialCommunityIcons name="post-outline" size={42} color="#B0BEC5" />
+                <Text style={styles.emptyPostsTitle}>No posts yet</Text>
+                <Text style={styles.emptyPostsText}>Your community posts will appear here.</Text>
+            </View>
         ) : (
-            myPosts.map((post) => (
-                <View key={post.id} style={styles.myPostCard}>
-                    <View style={{flexDirection: 'row', alignItems: 'center', marginBottom: 10}}>
-                        <Image source={{ uri: post.avatar }} style={styles.avatarSmall} />
-                        <Text style={{fontWeight: 'bold', flex: 1}}>{post.user}</Text>
-                        <View style={{backgroundColor: '#E8F5E9', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10}}>
-                            <Text style={{color: '#007C00', fontSize: 10, fontWeight: 'bold'}}>{post.type}</Text>
+            myPosts.map((post) => {
+                const firstImage = getFirstImage(post.image);
+                const cleanDesc = getCleanPostDescription(post.desc || '');
+                const isFlagged = post.status === 'flagged';
+
+                return (
+                    <TouchableOpacity
+                        key={post.id}
+                        style={[styles.myPostCard, isFlagged && styles.flaggedPostCard]}
+                        activeOpacity={0.88}
+                        onPress={() => openPostFromProfile(post)}
+                    >
+                        <View style={styles.myPostTopRow}>
+                            <Image source={{ uri: getAvatarUrl(post.avatar || user.avatar, post.user || user.name) }} style={styles.avatarSmall} />
+                            <View style={{flex: 1}}>
+                                <Text style={styles.myPostUser}>{post.user}</Text>
+                                <Text style={styles.myPostTapHint}>Tap to open post</Text>
+                            </View>
+
+                            <View style={[styles.myPostTypeBadge, isFlagged && {backgroundColor: '#FFEBEE'}]}>
+                                <Text style={[styles.myPostTypeText, isFlagged && {color: '#D32F2F'}]}>
+                                    {isFlagged ? 'FLAGGED' : post.type}
+                                </Text>
+                            </View>
+
+                            <TouchableOpacity
+                                onPress={(e) => {
+                                    e.stopPropagation();
+                                    handlePostOptions(post);
+                                }}
+                                style={styles.myPostMoreBtn}
+                            >
+                                <Ionicons name="ellipsis-vertical" size={20} color="#90A4AE" />
+                            </TouchableOpacity>
                         </View>
-                        <TouchableOpacity onPress={() => handlePostOptions(post)} style={{padding: 5, marginLeft: 10}}>
-                            <Ionicons name="ellipsis-vertical" size={20} color="#999" />
-                        </TouchableOpacity>
-                    </View>
-                    <Text style={{fontWeight: 'bold', fontSize: 16, marginBottom: 5}}>{post.title}</Text>
-                    <Text style={{color: '#666', fontSize: 13, marginBottom: 10}} numberOfLines={2}>{post.desc}</Text>
-                    {post.image && <Image source={{ uri: post.image }} style={styles.postImage} resizeMode="cover" />}
-                    <View style={{flexDirection: 'row', gap: 15, marginTop: 15}}>
-                        <View style={{flexDirection: 'row', alignItems: 'center', gap: 5}}><Ionicons name="heart" size={20} color="#FF1744" /><Text style={{color: '#666'}}>{post.likes || 0}</Text></View>
-                        <View style={{flexDirection: 'row', alignItems: 'center', gap: 5}}><Ionicons name="chatbubble" size={18} color="#666" /><Text style={{color: '#666'}}>{post.comments || 0}</Text></View>
-                    </View>
-                </View>
-            ))
+
+                        {isFlagged && (
+                            <View style={styles.flaggedNotice}>
+                                <Ionicons name="warning" size={18} color="#D32F2F" />
+                                <View style={{flex: 1}}>
+                                    <Text style={styles.flaggedTitle}>Post hidden by AI moderation</Text>
+                                    <Text style={styles.flaggedReason} numberOfLines={2}>
+                                        {post.ai_reason || 'This post needs admin review before it can appear publicly.'}
+                                    </Text>
+                                </View>
+                            </View>
+                        )}
+
+                        <Text style={styles.myPostTitle} numberOfLines={2}>{post.title}</Text>
+                        <Text style={styles.myPostDesc} numberOfLines={2}>{cleanDesc}</Text>
+
+                        {firstImage && (
+                            <Image source={{ uri: firstImage }} style={styles.postImage} resizeMode="cover" />
+                        )}
+
+                        <View style={styles.myPostFooter}>
+                            <TouchableOpacity
+                                style={styles.myPostAction}
+                                activeOpacity={0.7}
+                                onPress={(e) => {
+                                    e.stopPropagation();
+                                    openPostFromProfile(post);
+                                }}
+                            >
+                                <Ionicons name="heart" size={20} color={post.likes > 0 ? "#FF1744" : "#607D8B"} />
+                                <Text style={styles.myPostActionText}>{post.likes || 0}</Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                                style={styles.myPostAction}
+                                activeOpacity={0.7}
+                                onPress={(e) => {
+                                    e.stopPropagation();
+                                    openPostFromProfile(post);
+                                }}
+                            >
+                                <Ionicons name="chatbubble" size={18} color="#607D8B" />
+                                <Text style={styles.myPostActionText}>{post.comments || 0}</Text>
+                            </TouchableOpacity>
+
+                            <View style={{flex: 1}} />
+
+                            {isFlagged ? (
+                                <TouchableOpacity
+                                    style={styles.appealBtn}
+                                    activeOpacity={0.8}
+                                    onPress={(e) => {
+                                        e.stopPropagation();
+                                        handleAppeal(post);
+                                    }}
+                                >
+                                    <Ionicons name="shield-checkmark-outline" size={16} color="white" />
+                                    <Text style={styles.appealBtnText}>Submit Appeal</Text>
+                                </TouchableOpacity>
+                            ) : (
+                                <TouchableOpacity
+                                    style={styles.viewPostBtn}
+                                    activeOpacity={0.8}
+                                    onPress={(e) => {
+                                        e.stopPropagation();
+                                        openPostFromProfile(post);
+                                    }}
+                                >
+                                    <Text style={styles.viewPostText}>View Details</Text>
+                                </TouchableOpacity>
+                            )}
+                        </View>
+                    </TouchableOpacity>
+                );
+            })
         )}
         <View style={{height: 100}} />
       </ScrollView>
@@ -390,10 +569,17 @@ export default function Profile() {
                 <Text style={styles.darkMenuText}>Edit Post</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity style={styles.darkMenuItem} onPress={handleSoldAction}>
-                <Ionicons name="checkmark-circle-outline" size={22} color="#007C00" style={{marginRight: 15}} />
-                <Text style={[styles.darkMenuText, {color: '#007C00', fontWeight: 'bold'}]}>Mark as Sold/Traded</Text>
-              </TouchableOpacity>
+              {selectedPostForOptions?.status === 'flagged' ? (
+                <TouchableOpacity style={styles.darkMenuItem} onPress={() => { setOptionsModalVisible(false); handleAppeal(selectedPostForOptions); }}>
+                  <Ionicons name="shield-checkmark-outline" size={22} color="#FFB300" style={{marginRight: 15}} />
+                  <Text style={[styles.darkMenuText, {color: '#FFB300', fontWeight: 'bold'}]}>Submit Appeal</Text>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity style={styles.darkMenuItem} onPress={handleSoldAction}>
+                  <Ionicons name="checkmark-circle-outline" size={22} color="#007C00" style={{marginRight: 15}} />
+                  <Text style={[styles.darkMenuText, {color: '#007C00', fontWeight: 'bold'}]}>Mark as Sold/Traded</Text>
+                </TouchableOpacity>
+              )}
 
               <TouchableOpacity style={[styles.darkMenuItem, { borderBottomWidth: 0 }]} onPress={handleDeleteAction}>
                 <Ionicons name="trash-outline" size={22} color="#FF3B30" style={{marginRight: 15}} />
@@ -412,10 +598,6 @@ export default function Profile() {
   );
 }
 
-const StatItem = ({ icon, value, label }) => (
-    <View style={styles.statItem}><View style={styles.iconCircle}><MaterialCommunityIcons name={icon} size={24} color="#007C00" /></View><Text style={styles.statValue}>{value}</Text><Text style={styles.statLabel}>{label}</Text></View>
-);
-
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F5F7FA' }, 
   header: { backgroundColor: '#007C00', paddingBottom: 25, paddingHorizontal: 20, borderBottomLeftRadius: 25, borderBottomRightRadius: 25, zIndex: 10, elevation: 5 }, 
@@ -431,8 +613,36 @@ const styles = StyleSheet.create({
   idCard: { backgroundColor: 'white', borderRadius: 20, padding: 20, alignItems: 'center', marginTop: 20, marginBottom: 15, ...getSafeShadow() }, 
   avatarWrapper: { position: 'relative', marginBottom: 10 }, avatarImage: { width: 90, height: 90, borderRadius: 45, backgroundColor: '#eee', borderWidth: 3, borderColor: '#007C00' }, cameraIconBadge: { position: 'absolute', bottom: 0, right: 0, backgroundColor: '#2962FF', padding: 8, borderRadius: 20, borderWidth: 2, borderColor: 'white' }, name: { fontSize: 20, fontWeight: 'bold' }, role: { color: '#666', fontSize: 12 }, badge: { backgroundColor: '#007C00', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 10, marginTop: 8 }, badgeText: { color: 'white', fontSize: 10, fontWeight: 'bold' },
   infoCard: { backgroundColor: 'white', borderRadius: 15, padding: 20, marginBottom: 15, ...getSafeShadow() }, cardHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 15 }, cardTitle: { fontSize: 16, fontWeight: 'bold', color: '#333' }, editText: { color: '#007C00', fontWeight: 'bold', fontSize: 14 }, saveText: { color: '#2962FF', fontWeight: 'bold', fontSize: 14 }, infoRow: { marginBottom: 15 }, label: { fontSize: 12, color: '#999', marginBottom: 4 }, value: { fontSize: 15, color: '#333', fontWeight: '500' }, inputField: { backgroundColor: '#F5F5F5', padding: 10, borderRadius: 8, fontSize: 15, color: '#333', borderWidth: 1, borderColor: '#eee' },
-  statsCard: { backgroundColor: 'white', borderRadius: 15, padding: 20, marginBottom: 20, ...getSafeShadow() }, statsRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 15 }, statItem: { alignItems: 'center', flex: 1 }, iconCircle: { backgroundColor: '#E8F5E9', padding: 10, borderRadius: 50, marginBottom: 5 }, statValue: { fontSize: 16, fontWeight: 'bold', color: '#007C00' }, statLabel: { fontSize: 10, color: '#666', textAlign: 'center' },
-  myPostCard: { backgroundColor: 'white', borderRadius: 15, padding: 15, marginBottom: 15, ...getSafeShadow() }, avatarSmall: { width: 34, height: 34, borderRadius: 17, marginRight: 10, backgroundColor: '#eee' }, postImage: { width: '100%', height: 180, borderRadius: 12, backgroundColor: '#f5f5f5' },
+  sectionHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 12, marginBottom: 14 },
+  myPostsTitle: { fontSize: 20, fontWeight: '900', color: '#263238' },
+  myPostsSub: { fontSize: 12, color: '#78909C', marginTop: 2 },
+  postCountBadge: { minWidth: 34, height: 34, borderRadius: 17, backgroundColor: '#E8F5E9', justifyContent: 'center', alignItems: 'center', paddingHorizontal: 10 },
+  postCountText: { color: '#007C00', fontWeight: '900' },
+  emptyPostsCard: { backgroundColor: 'white', borderRadius: 18, padding: 24, alignItems: 'center', marginBottom: 20, ...getSafeShadow() },
+  emptyPostsTitle: { color: '#263238', fontSize: 16, fontWeight: '900', marginTop: 8 },
+  emptyPostsText: { color: '#78909C', fontSize: 13, textAlign: 'center', marginTop: 4 },
+  myPostCard: { backgroundColor: 'white', borderRadius: 20, padding: 15, marginBottom: 16, borderWidth: 1, borderColor: '#ECEFF1', ...getSafeShadow() },
+  flaggedPostCard: { backgroundColor: '#FFF8F8', borderColor: '#FFCDD2' },
+  myPostTopRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
+  avatarSmall: { width: 38, height: 38, borderRadius: 19, marginRight: 10, backgroundColor: '#eee' },
+  myPostUser: { fontWeight: '900', color: '#263238', fontSize: 13 },
+  myPostTapHint: { color: '#90A4AE', fontSize: 10, marginTop: 1 },
+  myPostTypeBadge: { backgroundColor: '#E8F5E9', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12 },
+  myPostTypeText: { color: '#007C00', fontSize: 10, fontWeight: '900' },
+  myPostMoreBtn: { padding: 6, marginLeft: 8 },
+  myPostTitle: { fontWeight: '900', fontSize: 16, color: '#263238', marginBottom: 5 },
+  myPostDesc: { color: '#607D8B', fontSize: 13, marginBottom: 12, lineHeight: 18 },
+  postImage: { width: '100%', height: 210, borderRadius: 16, backgroundColor: '#f5f5f5' },
+  myPostFooter: { flexDirection: 'row', alignItems: 'center', gap: 14, marginTop: 14 },
+  myPostAction: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingVertical: 4 },
+  myPostActionText: { color: '#607D8B', fontWeight: '700', fontSize: 13 },
+  viewPostBtn: { backgroundColor: '#E8F5E9', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 12 },
+  viewPostText: { color: '#007C00', fontWeight: '900', fontSize: 12 },
+  flaggedNotice: { flexDirection: 'row', gap: 10, backgroundColor: '#FFEBEE', borderWidth: 1, borderColor: '#FFCDD2', padding: 12, borderRadius: 14, marginBottom: 12 },
+  flaggedTitle: { color: '#D32F2F', fontWeight: '900', fontSize: 13 },
+  flaggedReason: { color: '#C62828', fontSize: 12, marginTop: 2, lineHeight: 17 },
+  appealBtn: { backgroundColor: '#D32F2F', paddingHorizontal: 13, paddingVertical: 8, borderRadius: 12, flexDirection: 'row', alignItems: 'center', gap: 5 },
+  appealBtnText: { color: 'white', fontWeight: '900', fontSize: 12 },
   createHeader: { paddingHorizontal: 20, paddingBottom: 15, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'white', borderBottomWidth: 1, borderBottomColor: '#eee' }, createHeaderTitle: { fontSize: 18, fontWeight: 'bold', color: '#333', textAlign: 'center' }, createContent: { padding: 20 }, postLabel: { fontSize: 14, fontWeight: '700', color: '#333', marginBottom: 4, marginTop: 15 }, postInput: { backgroundColor: '#F5F7FA', borderRadius: 10, padding: 15, borderWidth: 1, borderColor: '#F0F0F0' }, inputIconWrap: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F5F7FA', borderRadius: 10, paddingHorizontal: 15, paddingVertical: 12, borderWidth: 1, borderColor: '#F0F0F0' }, typeRow: { flexDirection: 'row', gap: 10 }, typeBtn: { flex: 1, paddingVertical: 15, borderRadius: 12, borderWidth: 1, alignItems: 'center' }, typeBtnActive: { borderColor: '#007C00', backgroundColor: '#E8F5E9' }, typeBtnText: { fontSize: 12, fontWeight: '600', color: '#666' }, imageUploadBox: { width: '100%', aspectRatio: 16 / 9, borderWidth: 1, borderColor: '#ddd', borderStyle: 'dashed', borderRadius: 12, justifyContent: 'center', alignItems: 'center', backgroundColor: '#FAFAFA', marginTop: 5 }, submitBtn: { padding: 15, borderRadius: 12, backgroundColor: '#007C00', alignItems: 'center', marginTop: 30 },
 
   darkModalSheet: { backgroundColor: '#1C1C1E', borderTopLeftRadius: 25, borderTopRightRadius: 25, paddingHorizontal: 20, paddingBottom: 35, shadowColor: '#000', shadowOffset: { width: 0, height: -2 }, shadowOpacity: 0.2, shadowRadius: 10, elevation: 15 },

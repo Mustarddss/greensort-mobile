@@ -2,11 +2,13 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, Image, KeyboardAvoidingView, Platform, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View, Dimensions } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, Image, Platform, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View, Dimensions, Keyboard } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../lib/supabase';
 
 const screenWidth = Dimensions.get('window').width;
+
+// NOTE: For Android keyboard to resize this screen properly, keep android:windowSoftInputMode="adjustResize" in app.json/app.config if needed.
 
 export default function CollectorChatScreen() {
   const { chatUser, chatUserLocation } = useLocalSearchParams();
@@ -29,6 +31,25 @@ export default function CollectorChatScreen() {
   const [replyingTo, setReplyingTo] = useState(null);
   const [unreadCount, setUnreadCount] = useState(0);
   const isNearBottomRef = useRef(true);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+
+  useEffect(() => {
+    const showSub = Keyboard.addListener('keyboardDidShow', (event) => {
+      setKeyboardHeight(event.endCoordinates?.height || 0);
+      setTimeout(() => {
+        flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
+      }, 120);
+    });
+
+    const hideSub = Keyboard.addListener('keyboardDidHide', () => {
+      setKeyboardHeight(0);
+    });
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   const displayedMessages = useMemo(() => [...messages].slice().reverse(), [messages]);
 
@@ -82,10 +103,11 @@ export default function CollectorChatScreen() {
         if (isMounted) setIsInitialLoading(false);
     }, 1500);
 
-    messageChannel = supabase.channel(`collector_chat_${Date.now()}`)
+    messageChannel = supabase
+      .channel(`collector_chat_${Date.now()}_${Math.random().toString(36).slice(2)}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
-          
-          const isThisChat = myAliases.some(alias => 
+
+          const isThisChat = aliases.some(alias => 
               (payload.new.sender_name === alias && payload.new.receiver_name === chatUser) ||
               (payload.new.sender_name === chatUser && payload.new.receiver_name === alias)
           );
@@ -95,7 +117,7 @@ export default function CollectorChatScreen() {
                   if (prev.find(m => m.id === payload.new.id)) return prev;
                   return [...prev, payload.new];
               });
-              
+
               if (payload.new.sender_name === chatUser) {
                   if (isNearBottomRef.current) {
                       requestAnimationFrame(() => flatListRef.current?.scrollToOffset({ offset: 0, animated: true }));
@@ -105,14 +127,21 @@ export default function CollectorChatScreen() {
                   supabase.from('messages').update({ is_read: true }).eq('id', payload.new.id).then();
               }
           }
-      }).subscribe();
+      });
+
+    // ✅ Subscribe only after all realtime callbacks are registered.
+    // This prevents the Supabase crash:
+    // "cannot add postgres_changes callbacks after subscribe()"
+    messageChannel.subscribe((status) => {
+      console.log('Collector chat realtime status:', status);
+    });
 
     return () => {
       isMounted = false;
       clearTimeout(loadingFallback);
       if (messageChannel) supabase.removeChannel(messageChannel);
     };
-  }, [chatUser, myAliases.length]); 
+  }, [chatUser]); 
 
   const handleSend = async (overrideText = null) => {
     let textToSend = overrideText || newMessage;
@@ -203,13 +232,10 @@ export default function CollectorChatScreen() {
   };
 
   return (
-    <KeyboardAvoidingView 
-        style={{ flex: 1, backgroundColor: '#F5F7FA' }} 
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-    >
+    <View style={{ flex: 1, backgroundColor: '#F5F7FA' }}>
       <StatusBar barStyle="light-content" backgroundColor="#0066FF" translucent={false} />
 
-      <View style={[styles.header, { paddingTop: Platform.OS === 'ios' ? Math.max(insets.top, 20) + 10 : 15 }]}>
+      <View style={[styles.header, { paddingTop: Platform.OS === 'ios' ? Math.max(insets.top, 20) + 10 : Math.max(insets.top, 24) + 8 }]}>
         <TouchableOpacity onPress={() => router.back()} style={{ marginRight: 15, padding: 5 }}>
             <Ionicons name="arrow-back" size={26} color="white" />
         </TouchableOpacity>
@@ -219,10 +245,10 @@ export default function CollectorChatScreen() {
             style={{width: 46, height: 46, borderRadius: 23, marginRight: 12, backgroundColor: '#e0e0e0', borderWidth: 2, borderColor: 'white'}} 
         />
         <View style={{flex: 1}}>
-            <Text style={styles.headerTitle}>{chatUser}</Text>
+            <Text style={styles.headerTitle} numberOfLines={1}>{chatUser}</Text>
             <View style={{flexDirection: 'row', alignItems: 'center', marginTop: 2}}>
                 <Ionicons name="location-outline" size={14} color="rgba(255,255,255,0.9)" />
-                <Text style={{fontSize: 13, color: 'rgba(255,255,255,0.9)', marginLeft: 3}}>{chatUserLocation || 'User Location'}</Text>
+                <Text style={{fontSize: 13, color: 'rgba(255,255,255,0.9)', marginLeft: 3, flex: 1}} numberOfLines={1}>{chatUserLocation || 'User Location'}</Text>
             </View>
         </View>
 
@@ -238,7 +264,7 @@ export default function CollectorChatScreen() {
         data={displayedMessages}
         inverted
         keyExtractor={(item, index) => item.id ? item.id.toString() : index.toString()}
-        contentContainerStyle={{ paddingHorizontal: 15, paddingBottom: 15, paddingTop: 10, flexGrow: 1 }}
+        contentContainerStyle={{ paddingHorizontal: 15, paddingBottom: 20, paddingTop: 12, flexGrow: 1 }}
         showsVerticalScrollIndicator={false}
         onScroll={(e) => {
             const { contentOffset } = e.nativeEvent;
@@ -429,7 +455,7 @@ export default function CollectorChatScreen() {
           </TouchableOpacity>
       )}
 
-      <View style={styles.inputArea}>
+      <View style={[styles.inputArea, { marginBottom: Platform.OS === 'android' ? keyboardHeight : 0 }]}>
           {replyingTo ? (
               <View style={styles.replyBanner}>
                   <View style={styles.replyAccent} />
@@ -459,6 +485,12 @@ export default function CollectorChatScreen() {
                     value={newMessage}
                     onChangeText={setNewMessage}
                     multiline
+                    blurOnSubmit={false}
+                    onFocus={() => {
+                        setTimeout(() => {
+                            flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
+                        }, 250);
+                    }}
                 />
             </View>
 
@@ -480,12 +512,12 @@ export default function CollectorChatScreen() {
               <Text style={{color: 'white', fontWeight: '600'}}>Sending image...</Text>
           </View>
       ) : null}
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  header: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#0066FF', paddingBottom: 15, paddingHorizontal: 15, elevation: 4 },
+  header: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#0066FF', paddingBottom: 14, paddingHorizontal: 15, elevation: 4, zIndex: 10 },
   headerTitle: { fontSize: 20, fontWeight: 'bold', color: 'white' },
   timeHeader: { textAlign: 'center', fontSize: 12, color: '#555', fontWeight: '500', marginBottom: 20, marginTop: 10 },
   systemContactText: { textAlign: 'center', fontSize: 13, color: '#111', marginBottom: 15, paddingHorizontal: 20 },
@@ -525,8 +557,8 @@ const styles = StyleSheet.create({
   replyBanner: { flexDirection: 'row', backgroundColor: '#F5F7FA', padding: 10, paddingHorizontal: 14, alignItems: 'center', borderTopLeftRadius: 12, borderTopRightRadius: 12 },
   replyAccent: { width: 3, height: 32, backgroundColor: '#0066FF', borderRadius: 2, marginRight: 10 },
   replyBoxRendered: { padding: 8, paddingHorizontal: 10, borderRadius: 10, marginBottom: 8, borderLeftWidth: 3 },
-  inputArea: { backgroundColor: '#F5F7FA', borderTopWidth: 1, borderTopColor: '#ECEFF1' },
-  inputContainer: { flexDirection: 'row', alignItems: 'flex-end', padding: 10, paddingBottom: Platform.OS === 'ios' ? 25 : 15 },
-  inputWrap: { flex: 1, backgroundColor: '#E4E6EB', borderRadius: 20, paddingHorizontal: 15, paddingVertical: Platform.OS === 'ios' ? 10 : 6, marginHorizontal: 10, minHeight: 40, justifyContent: 'center' },
+  inputArea: { backgroundColor: '#F5F7FA', borderTopWidth: 1, borderTopColor: '#ECEFF1', paddingBottom: Platform.OS === 'android' ? 4 : 0 },
+  inputContainer: { flexDirection: 'row', alignItems: 'flex-end', paddingHorizontal: 10, paddingTop: 8, paddingBottom: Platform.OS === 'ios' ? 22 : 8 },
+  inputWrap: { flex: 1, backgroundColor: '#E4E6EB', borderRadius: 20, paddingHorizontal: 15, paddingVertical: Platform.OS === 'ios' ? 10 : 7, marginHorizontal: 8, minHeight: 40, justifyContent: 'center' },
   input: { fontSize: 15, color: '#1C1C1E', maxHeight: 100, padding: 0 },
 });

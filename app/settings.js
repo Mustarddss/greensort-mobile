@@ -31,7 +31,7 @@ export default function Settings() {
             <StatusBar barStyle="light-content" backgroundColor="#007C00" translucent={true} />
             <View style={[styles.header, { paddingTop: Math.max(insets.top, 20) + 15, paddingBottom: 25 }]}>
                 <View style={styles.headerRow}>
-                    <TouchableOpacity onPress={() => router.replace('/profile')} style={styles.backButton}>
+                    <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
                         <Ionicons name="arrow-back" size={24} color="white" />
                     </TouchableOpacity>
                     <View style={{ alignItems: 'center' }}>

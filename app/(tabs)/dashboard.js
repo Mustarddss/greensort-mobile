@@ -191,6 +191,41 @@ export default function Dashboard() {
       }));
   };
 
+  const buildLocationSearchQueries = (queryText) => {
+    const query = String(queryText || '').trim();
+    const lower = query.toLowerCase();
+
+    if (!query) return [];
+
+    const alreadyHasPhilippines = lower.includes('philippines');
+    const alreadyHasCavite = lower.includes('cavite');
+    const alreadyHasCity =
+      lower.includes('general trias') ||
+      lower.includes('dasmarinas') ||
+      lower.includes('dasmariñas') ||
+      lower.includes('silang') ||
+      lower.includes('imus') ||
+      lower.includes('bacoor') ||
+      lower.includes('trece') ||
+      lower.includes('tagaytay');
+
+    const queries = [query];
+
+    if (!alreadyHasPhilippines) {
+      queries.push(`${query}, Philippines`);
+    }
+
+    if (!alreadyHasCavite && !alreadyHasCity) {
+      queries.push(`${query}, Cavite, Philippines`);
+    }
+
+    if (alreadyHasCavite && !alreadyHasPhilippines) {
+      queries.push(`${query}, Philippines`);
+    }
+
+    return [...new Set(queries)];
+  };
+
   useEffect(() => { 
     const uniqueTopic = `dashboard-changes-${Date.now()}`;
     const msgChannel = supabase.channel(uniqueTopic)
@@ -551,11 +586,7 @@ export default function Dashboard() {
         return;
       }
 
-      const searchQueries = [
-        `${query}, Cavite, Philippines`,
-        `${query}, Philippines`,
-        query
-      ];
+      const searchQueries = buildLocationSearchQueries(query);
 
       let results = [];
 
@@ -613,7 +644,7 @@ export default function Dashboard() {
       setLocationSuggestions(suggestions);
 
       if (suggestions.length > 0 && shouldPinFirst) {
-        selectLocationSuggestion(suggestions[0], false);
+        selectLocationSuggestion(suggestions[0], true);
       }
     } catch (error) {
       if (showAlert) {
@@ -653,7 +684,10 @@ export default function Dashboard() {
 
     if (form.imageUris.length === 0) return Alert.alert("Photo Required", "Please upload at least one photo for your post.");
     if (!form.title || !form.desc || !form.location) return Alert.alert("Wait!", "Please fill in all general details (Title, Desc, Location).");
-    if (!form.latitude || !form.longitude) return Alert.alert("Location Pin Required", "Please tap on the map to set a meet-up spot.");
+    if (!form.latitude || !form.longitude) {
+      await searchTypedLocation(form.location, true, false);
+      return Alert.alert("Location Pin Required", "Please review the map pin, then tap POST NOW again.");
+    }
     if (form.type === 'For Sale' && (!form.price || form.price.trim() === '')) return Alert.alert("Wait!", "Please enter a price for your item.");
     if (form.type === 'Trade' && (!form.lookingFor || form.lookingFor.trim() === '')) return Alert.alert("Wait!", "Please specify what you are looking for to trade.");
     
@@ -1210,6 +1244,72 @@ export default function Dashboard() {
           </TouchableOpacity>
         </Modal>
 
+        {/* 🟢 FIX: Post Report Modal inside Community Post details */}
+        <Modal visible={reportModalVisible} animationType="slide" transparent={true} onRequestClose={() => setReportModalVisible(false)}>
+          <TouchableOpacity style={{flex: 1, backgroundColor: 'transparent', justifyContent: 'flex-end'}} activeOpacity={1} onPress={() => setReportModalVisible(false)}>
+            <TouchableOpacity activeOpacity={1} style={styles.darkModalSheet}>
+              <View style={{width: 40, height: 5, backgroundColor: '#555', borderRadius: 5, alignSelf: 'center', marginTop: 15, marginBottom: 20}} />
+
+              {reportStep === 0 && (
+                <View style={styles.darkMenuContainer}>
+                  <TouchableOpacity style={{flexDirection: 'row', alignItems: 'center', padding: 18}} onPress={() => setReportStep(1)}>
+                    <Ionicons name="warning-outline" size={22} color="#FF3B30" style={{marginRight: 15}} />
+                    <Text style={{fontSize: 16, color: '#FF3B30', fontWeight: 'bold'}}>Report this post</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              {reportStep === 1 && (
+                <View style={{marginBottom: 15}}>
+                  <Text style={{fontSize: 18, fontWeight: 'bold', color: '#fff', marginBottom: 15, textAlign: 'center'}}>Why report this post?</Text>
+                  {reportReasons.map((item, index) => (
+                    <TouchableOpacity key={index} style={styles.darkMenuItem} onPress={() => { setSelectedMainReason(item); setReportStep(2); }}>
+                      <Text style={styles.darkMenuText}>{item.title}</Text>
+                      <Ionicons name="chevron-forward" size={20} color="#555" />
+                    </TouchableOpacity>
+                  ))}
+                  <TouchableOpacity style={[styles.darkCancelBtn, {marginTop: 15}]} onPress={() => setReportStep(0)}>
+                    <Text style={{color: '#fff', fontWeight: 'bold'}}>Cancel</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              {reportStep === 2 && selectedMainReason && (
+                <View style={{marginBottom: 15}}>
+                  <Text style={{fontSize: 18, fontWeight: 'bold', color: '#fff', marginBottom: 15, textAlign: 'center'}}>{selectedMainReason.title}</Text>
+                  <Text style={{color: '#aaa', textAlign: 'center', marginBottom: 15, paddingHorizontal: 20}}>Please specify the exact issue:</Text>
+                  {selectedMainReason.subCategories.map((sub, index) => (
+                    <TouchableOpacity key={index} style={styles.darkMenuItem} onPress={() => { setSelectedReportReason(sub); setReportStep(3); }}>
+                      <Text style={styles.darkMenuText}>{sub.title}</Text>
+                      <Ionicons name="chevron-forward" size={20} color="#555" />
+                    </TouchableOpacity>
+                  ))}
+                  <TouchableOpacity style={[styles.darkCancelBtn, {marginTop: 15}]} onPress={() => setReportStep(1)}>
+                    <Text style={{color: '#fff', fontWeight: 'bold'}}>Back</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              {reportStep === 3 && selectedReportReason && (
+                <View style={{marginBottom: 15}}>
+                  <Text style={{fontSize: 18, fontWeight: 'bold', color: '#fff', marginBottom: 15, textAlign: 'center'}}>Confirm Report</Text>
+                  <View style={{backgroundColor: '#2C2C2E', padding: 20, borderRadius: 15, marginBottom: 15}}>
+                    <Text style={{color: '#fff', fontSize: 16, fontWeight: 'bold', marginBottom: 8}}>{selectedMainReason.title} - {selectedReportReason.title}</Text>
+                    <Text style={{color: '#aaa', fontSize: 14, lineHeight: 22}}>{selectedReportReason.desc}</Text>
+                  </View>
+                  <TextInput style={styles.darkTextInput} placeholder="Add additional details (optional)..." placeholderTextColor="#888" multiline={true} returnKeyType="done" blurOnSubmit={true} onSubmitEditing={() => Keyboard.dismiss()} value={reportAdditionalInfo} onChangeText={setReportAdditionalInfo} />
+                  <TouchableOpacity style={{backgroundColor: '#FF3B30', padding: 18, borderRadius: 15, alignItems: 'center'}} onPress={() => submitReport(`${selectedMainReason.title}: ${selectedReportReason.title}`)}>
+                    <Text style={{color: 'white', fontWeight: 'bold', fontSize: 16}}>Submit Report</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[styles.darkCancelBtn, {marginTop: 10}]} onPress={() => setReportStep(2)}>
+                    <Text style={{color: '#fff', fontWeight: 'bold'}}>Back</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </Modal>
+
         <Modal visible={commentReportModalVisible} animationType="slide" transparent={true} onRequestClose={() => setCommentReportModalVisible(false)}>
           <TouchableOpacity style={{flex: 1, backgroundColor: 'transparent', justifyContent: 'flex-end'}} activeOpacity={1} onPress={() => setCommentReportModalVisible(false)}>
             <TouchableOpacity activeOpacity={1} style={styles.darkModalSheet}>
@@ -1316,7 +1416,12 @@ export default function Dashboard() {
                       placeholder="Type place, mall, street, or landmark"
                       value={form.location}
                       onChangeText={(t) => {
-                          setForm({...form, location: t});
+                          setForm(prev => ({
+                              ...prev,
+                              location: t,
+                              latitude: null,
+                              longitude: null
+                          }));
                       }}
                       returnKeyType="search"
                       onSubmitEditing={() => searchTypedLocation(form.location, true, true)}
@@ -1342,6 +1447,18 @@ export default function Dashboard() {
               {locationSuggestions.length > 0 && (
                   <View style={styles.suggestionsCard}>
                       <Text style={styles.suggestionsTitle}>Recommended Locations</Text>
+                      <TouchableOpacity
+                          style={styles.useTypedLocationItem}
+                          onPress={() => searchTypedLocation(form.location, true, true)}
+                      >
+                          <View style={styles.suggestionIcon}>
+                              <MaterialCommunityIcons name="map-search" size={18} color="#007C00" />
+                          </View>
+                          <View style={{flex: 1}}>
+                              <Text style={styles.suggestionTitle} numberOfLines={1}>Use typed address</Text>
+                              <Text style={styles.suggestionAddress} numberOfLines={2}>{form.location}</Text>
+                          </View>
+                      </TouchableOpacity>
                       {locationSuggestions.map((place) => (
                           <TouchableOpacity key={place.id} style={styles.suggestionItem} onPress={() => selectLocationSuggestion(place)}>
                               <View style={styles.suggestionIcon}>
@@ -1357,7 +1474,7 @@ export default function Dashboard() {
               )}
 
               <Text style={[styles.label, {marginTop: 15}]}>Pin your Location *</Text>
-              <Text style={{fontSize: 12, color: '#666', marginBottom: 10}}>Move/drag the map below if the pinned location is incorrect.</Text>
+              <Text style={{fontSize: 12, color: '#666', marginBottom: 10}}>Type a full address then tap the green pin button, or tap the map manually for exact pin.</Text>
               
               <View style={styles.mapBox}>
                   <MapView
@@ -1680,6 +1797,13 @@ export default function Dashboard() {
         <View style={{height: 100}} /> 
       </ScrollView>
 
+      {/* 🟢 FIX: Banked KG Modal on main Dashboard */}
+      <BankedKgModal 
+        visible={isBankedModalVisible} 
+        onClose={() => setBankedModalVisible(false)} 
+        bankedDetails={bankedDetails} 
+      />
+
       {/* MODALS */}
       <Modal visible={optionsModalVisible} animationType="slide" transparent={true} onRequestClose={() => setOptionsModalVisible(false)}>
         <TouchableOpacity style={{flex: 1, backgroundColor: 'transparent', justifyContent: 'flex-end'}} activeOpacity={1} onPress={() => setOptionsModalVisible(false)}>
@@ -1809,6 +1933,7 @@ const styles = StyleSheet.create({
   searchingLocationText: { fontSize: 11, color: '#78909C', marginTop: 8, marginLeft: 4 },
   suggestionsCard: { backgroundColor: 'white', borderRadius: 16, marginTop: 10, borderWidth: 1, borderColor: '#E0E0E0', overflow: 'hidden', zIndex: 50, elevation: 8 },
   suggestionsTitle: { paddingHorizontal: 14, paddingTop: 12, paddingBottom: 6, fontSize: 12, color: '#007C00', fontWeight: '900', textTransform: 'uppercase' },
+  useTypedLocationItem: { flexDirection: 'row', paddingHorizontal: 14, paddingVertical: 12, borderTopWidth: 1, borderTopColor: '#F0F0F0', alignItems: 'center', backgroundColor: '#F8FFF8' },
   suggestionItem: { flexDirection: 'row', paddingHorizontal: 14, paddingVertical: 12, borderTopWidth: 1, borderTopColor: '#F0F0F0', alignItems: 'center' },
   suggestionIcon: { width: 34, height: 34, borderRadius: 17, backgroundColor: '#E8F5E9', justifyContent: 'center', alignItems: 'center', marginRight: 10 },
   suggestionTitle: { fontSize: 14, fontWeight: '900', color: '#263238', marginBottom: 2 },

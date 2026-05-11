@@ -22,6 +22,8 @@ export default function CenterSettings() {
     const [officerName, setOfficerName] = useState('');
     const [programName, setProgramName] = useState('');
     const [contactNumber, setContactNumber] = useState('');
+    const [operatingDays, setOperatingDays] = useState('');
+    const [operatingHours, setOperatingHours] = useState('');
     const [newPassword, setNewPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
     
@@ -64,6 +66,8 @@ export default function CenterSettings() {
                 if (profileData) {
                     setProgramName(profileData.program_name || '');
                     setContactNumber(profileData.contact_number || '');
+                    setOperatingDays(profileData.operating_days || '');
+                    setOperatingHours(profileData.operating_hours || '');
                     setFullAddress(`${profileData.applicant_name}, ${profileData.barangay}, ${profileData.city}, ${profileData.province}, ${profileData.region}`);
                     setDuration(profileData.operation_duration || '');
                     setStatus(profileData.status || '');
@@ -85,7 +89,7 @@ export default function CenterSettings() {
 
     // 🟢 SAVE UPDATES FUNCTION
     const handleSaveChanges = async () => {
-        if (!officerName || !programName || !contactNumber) {
+        if (!officerName || !programName || !contactNumber || !operatingDays || !operatingHours) {
             Alert.alert("Missing Fields", "Please fill in all required editable fields.");
             return;
         }
@@ -116,7 +120,9 @@ export default function CenterSettings() {
                 .from('dropoff_applications')
                 .update({
                     program_name: programName.trim(),
-                    contact_number: contactNumber.trim()
+                    contact_number: contactNumber.trim(),
+                    operating_days: operatingDays.trim(),
+                    operating_hours: operatingHours.trim()
                 })
                 .ilike('user_email', email);
 
@@ -183,7 +189,7 @@ export default function CenterSettings() {
                 </TouchableOpacity>
 
                 {/* 2. TERMS AND CONDITIONS BUTTON */}
-                <TouchableOpacity style={styles.menuItem} onPress={() => router.push('/terms-conditions')}>
+                <TouchableOpacity style={styles.menuItem} onPress={() => router.push('/center-terms-conditions')}>
                     <View style={[styles.menuIcon, { backgroundColor: '#E8F5E9' }]}>
                         <MaterialCommunityIcons name="file-document-outline" size={22} color="#00C853" />
                     </View>
@@ -261,6 +267,26 @@ export default function CenterSettings() {
                             <View style={styles.inputContainer}>
                                 <Text style={styles.label}>Contact Number</Text>
                                 <TextInput style={styles.input} placeholder="63+ 9123456789" value={contactNumber} onChangeText={handlePhoneChange} keyboardType="number-pad" maxLength={12} />
+                            </View>
+
+                            <View style={styles.inputContainer}>
+                                <Text style={styles.label}>Operating Days</Text>
+                                <TextInput
+                                    style={styles.input}
+                                    placeholder="e.g. Mon-Sun"
+                                    value={operatingDays}
+                                    onChangeText={setOperatingDays}
+                                />
+                            </View>
+
+                            <View style={styles.inputContainer}>
+                                <Text style={styles.label}>Operating Hours</Text>
+                                <TextInput
+                                    style={styles.input}
+                                    placeholder="e.g. 8:00 AM - 5:00 PM"
+                                    value={operatingHours}
+                                    onChangeText={setOperatingHours}
+                                />
                             </View>
 
                             <Text style={[styles.sectionTitle, { color: '#D32F2F', marginTop: 15 }]}>Locked Details</Text>
