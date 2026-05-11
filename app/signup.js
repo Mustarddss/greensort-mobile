@@ -18,6 +18,8 @@ export default function Signup() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const [showOtpModal, setShowOtpModal] = useState(false);
   const [otpCode, setOtpCode] = useState('');
@@ -96,8 +98,8 @@ export default function Signup() {
   };
 
   const handleVerifyOtp = async () => {
-    if (!otpCode || otpCode.length < 6) {
-        Alert.alert('Invalid Code', 'Please enter the verification code sent to your email.');
+    if (!otpCode || otpCode.length < 8) {
+        Alert.alert('Invalid Code', 'Please enter the full 8-digit verification code sent to your email.');
         return;
     }
 
@@ -189,10 +191,20 @@ export default function Signup() {
             <TextInput style={styles.input} placeholder="e.g. Brgy. Sampaloc I" value={address} onChangeText={setAddress} />
 
             <Text style={styles.label}>Password</Text>
-            <TextInput style={styles.input} placeholder="Min. 8 characters" secureTextEntry value={password} onChangeText={setPassword} />
+            <View style={styles.passwordContainer}>
+              <TextInput style={styles.passwordInput} placeholder="Min. 8 characters" secureTextEntry={!showPassword} value={password} onChangeText={setPassword} />
+              <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeButton}>
+                <Ionicons name={showPassword ? "eye-off-outline" : "eye-outline"} size={22} color="#888" />
+              </TouchableOpacity>
+            </View>
 
             <Text style={styles.label}>Confirm Password</Text>
-            <TextInput style={styles.input} placeholder="Re-enter your password" secureTextEntry value={confirmPassword} onChangeText={setConfirmPassword} />
+            <View style={styles.passwordContainer}>
+              <TextInput style={styles.passwordInput} placeholder="Re-enter your password" secureTextEntry={!showConfirmPassword} value={confirmPassword} onChangeText={setConfirmPassword} />
+              <TouchableOpacity onPress={() => setShowConfirmPassword(!showConfirmPassword)} style={styles.eyeButton}>
+                <Ionicons name={showConfirmPassword ? "eye-off-outline" : "eye-outline"} size={22} color="#888" />
+              </TouchableOpacity>
+            </View>
 
             <TouchableOpacity style={styles.button} onPress={handleSignup} disabled={loading}>
               {loading ? <ActivityIndicator color="white" /> : <Text style={styles.buttonText}>SIGN UP</Text>}
@@ -255,6 +267,9 @@ const styles = StyleSheet.create({
   form: { width: '100%' },
   label: { fontSize: 14, color: '#333', fontWeight: '500', marginBottom: 8, marginTop: 15 },
   input: { backgroundColor: '#F5F5F5', paddingVertical: 14, paddingHorizontal: 15, borderRadius: 8, fontSize: 14, color: '#333', borderWidth: 1, borderColor: '#EEEEEE' },
+  passwordContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F5F5F5', borderRadius: 8, borderWidth: 1, borderColor: '#EEEEEE' },
+  passwordInput: { flex: 1, paddingVertical: 14, paddingHorizontal: 15, fontSize: 14, color: '#333' },
+  eyeButton: { paddingHorizontal: 14 },
   noteText: { fontSize: 11, color: '#888', marginTop: 4, fontStyle: 'italic' }, 
   button: { backgroundColor: '#007C00', paddingVertical: 16, borderRadius: 8, alignItems: 'center', marginTop: 30, marginBottom: 10, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 4, elevation: 3 },
   buttonText: { color: '#fff', fontSize: 16, fontWeight: 'bold', letterSpacing: 0.5 },

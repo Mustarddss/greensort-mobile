@@ -37,7 +37,7 @@ export default function Index() {
   if (isChecking) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F5F7FA' }}>
-        <ActivityIndicator size="large" color="#007BFF" />
+        <ActivityIndicator size="large" color="#007C00" />
       </View>
     );
   }

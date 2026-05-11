@@ -62,14 +62,29 @@ export default function Profile() {
     const { data: { session } } = await supabase.auth.getSession();
     if (session?.user) {
       const metadata = session.user.user_metadata;
+      const userEmail = session.user.email;
       const defaultAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(metadata?.full_name || 'User')}&background=00C853&color=fff&bold=true`;
-      
+
+      let totalSubmissions = 0;
+      let totalKg = 0;
+      let totalProjects = 0;
+
+      const { data: logs } = await supabase.from('surrender_logs').select('weight_kg').eq('resident_email', userEmail);
+      if (logs) {
+        totalSubmissions = logs.length;
+        logs.forEach(log => { totalKg += Number(log.weight_kg) || 0; });
+      }
+
+      const { count: projectCount } = await supabase.from('saved_projects').select('*', { count: 'exact', head: true }).eq('user_email', userEmail).eq('is_done', true);
+      totalProjects = projectCount || 0;
+
       const fetchedUser = {
-        name: metadata?.full_name || '', email: session.user.email, phone: metadata?.phone || '',
-        address: metadata?.address || '', avatar: metadata?.avatar_url || defaultAvatar, 
-        role: 'GreenSort Member', id: `GS-${session.user.id.substring(0, 6).toUpperCase()}`, stats: { submissions: 0, recycled: 0, projects: 0 }
+        name: metadata?.full_name || '', email: userEmail, phone: metadata?.phone || '',
+        address: metadata?.address || '', avatar: metadata?.avatar_url || defaultAvatar,
+        role: 'GreenSort Member', id: `GS-${session.user.id.substring(0, 6).toUpperCase()}`,
+        stats: { submissions: totalSubmissions, recycled: totalKg.toFixed(1), projects: totalProjects }
       };
-      setUser(fetchedUser); 
+      setUser(fetchedUser);
       setEditForm({ name: fetchedUser.name, phone: fetchedUser.phone, address: fetchedUser.address, avatar: fetchedUser.avatar });
 
       const { data: postsData } = await supabase
@@ -342,7 +357,7 @@ export default function Profile() {
             <Text style={styles.cardTitle}>Your Stats</Text>
             <View style={styles.statsRow}>
                 <StatItem icon="trophy-outline" value={user.stats.submissions} label="Total Submission" />
-                <StatItem icon="lightning-bolt-outline" value={`${user.stats.recycled} kg`} label="Kg Recycled" />
+                <StatItem icon="lightning-bolt-outline" value={`${user.stats.recycled}kg`} label="Kg Recycled" />
                 <StatItem icon="star-outline" value={user.stats.projects} label="Upcycle Projects" />
             </View>
         </View>
@@ -355,7 +370,7 @@ export default function Profile() {
             myPosts.map((post) => (
                 <View key={post.id} style={styles.myPostCard}>
                     <View style={{flexDirection: 'row', alignItems: 'center', marginBottom: 10}}>
-                        <Image source={{ uri: post.avatar }} style={styles.avatarSmall} />
+                        <Image source={{ uri: post.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(post.user || 'U')}&background=00C853&color=fff&bold=true` }} style={styles.avatarSmall} />
                         <Text style={{fontWeight: 'bold', flex: 1}}>{post.user}</Text>
                         <View style={{backgroundColor: '#E8F5E9', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10}}>
                             <Text style={{color: '#007C00', fontSize: 10, fontWeight: 'bold'}}>{post.type}</Text>
