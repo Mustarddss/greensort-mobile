@@ -2,7 +2,7 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, Image, Platform, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View, Dimensions, Keyboard } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, Image, KeyboardAvoidingView, Platform, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View, Dimensions, Keyboard } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../lib/supabase';
 
@@ -21,6 +21,7 @@ export default function CollectorChatScreen() {
   
   const [myPrimaryName, setMyPrimaryName] = useState(''); 
   const [myAliases, setMyAliases] = useState([]);
+  const myAliasesRef = useRef([]);
 
   const [chatUserAvatar, setChatUserAvatar] = useState(
       `https://ui-avatars.com/api/?name=${encodeURIComponent(chatUser || 'User')}&background=E8F5E9&color=00C853&bold=true`
@@ -31,25 +32,6 @@ export default function CollectorChatScreen() {
   const [replyingTo, setReplyingTo] = useState(null);
   const [unreadCount, setUnreadCount] = useState(0);
   const isNearBottomRef = useRef(true);
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
-
-  useEffect(() => {
-    const showSub = Keyboard.addListener('keyboardDidShow', (event) => {
-      setKeyboardHeight(event.endCoordinates?.height || 0);
-      setTimeout(() => {
-        flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
-      }, 120);
-    });
-
-    const hideSub = Keyboard.addListener('keyboardDidHide', () => {
-      setKeyboardHeight(0);
-    });
-
-    return () => {
-      showSub.remove();
-      hideSub.remove();
-    };
-  }, []);
 
   const displayedMessages = useMemo(() => [...messages].slice().reverse(), [messages]);
 
@@ -105,27 +87,33 @@ export default function CollectorChatScreen() {
 
     messageChannel = supabase
       .channel(`collector_chat_${Date.now()}_${Math.random().toString(36).slice(2)}`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, async (payload) => {
 
-          const isThisChat = aliases.some(alias => 
+          // ✅ Always refetch after a new message.
+          // This prevents the issue where the latest message only appears after going back/reopening.
+          await fetchSessionAndMessages();
+
+          const currentAliases = myAliasesRef.current || [];
+
+          const isThisChat = currentAliases.some(alias => 
               (payload.new.sender_name === alias && payload.new.receiver_name === chatUser) ||
               (payload.new.sender_name === chatUser && payload.new.receiver_name === alias)
           );
 
-          if (isThisChat) {
-              setMessages(prev => {
-                  if (prev.find(m => m.id === payload.new.id)) return prev;
-                  return [...prev, payload.new];
-              });
-
-              if (payload.new.sender_name === chatUser) {
-                  if (isNearBottomRef.current) {
-                      requestAnimationFrame(() => flatListRef.current?.scrollToOffset({ offset: 0, animated: true }));
-                  } else {
-                      setUnreadCount(c => c + 1);
-                  }
-                  supabase.from('messages').update({ is_read: true }).eq('id', payload.new.id).then();
+          if (isThisChat && payload.new.sender_name === chatUser) {
+              if (isNearBottomRef.current) {
+                  requestAnimationFrame(() => {
+                      flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
+                  });
+              } else {
+                  setUnreadCount(c => c + 1);
               }
+
+              supabase
+                  .from('messages')
+                  .update({ is_read: true })
+                  .eq('id', payload.new.id)
+                  .then();
           }
       });
 
@@ -178,6 +166,10 @@ export default function CollectorChatScreen() {
         setMessages(prev => prev.map(m => m.id === tempId ? { ...m, status: 'failed' } : m));
     } else {
         setMessages(prev => prev.map(m => m.id === tempId ? { ...data, status: 'sent' } : m));
+        setTimeout(() => {
+            fetchSessionAndMessages();
+            flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
+        }, 150);
     }
   };
 
@@ -210,6 +202,8 @@ export default function CollectorChatScreen() {
 
         const msg = { sender_name: myPrimaryName, receiver_name: chatUser, text: 'Sent an image', image_url: uploadedUrl, is_read: false };
         await supabase.from('messages').insert([msg]);
+        await fetchSessionAndMessages();
+        requestAnimationFrame(() => flatListRef.current?.scrollToOffset({ offset: 0, animated: true }));
         setIsUploading(false);
     }
   };
@@ -232,7 +226,11 @@ export default function CollectorChatScreen() {
   };
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#F5F7FA' }}>
+    <KeyboardAvoidingView
+        style={{ flex: 1, backgroundColor: '#F5F7FA' }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={0}
+    >
       <StatusBar barStyle="light-content" backgroundColor="#0066FF" translucent={false} />
 
       <View style={[styles.header, { paddingTop: Platform.OS === 'ios' ? Math.max(insets.top, 20) + 10 : Math.max(insets.top, 24) + 8 }]}>
@@ -455,7 +453,7 @@ export default function CollectorChatScreen() {
           </TouchableOpacity>
       )}
 
-      <View style={[styles.inputArea, { marginBottom: Platform.OS === 'android' ? keyboardHeight : 0 }]}>
+      <View style={styles.inputArea}>
           {replyingTo ? (
               <View style={styles.replyBanner}>
                   <View style={styles.replyAccent} />
@@ -489,7 +487,7 @@ export default function CollectorChatScreen() {
                     onFocus={() => {
                         setTimeout(() => {
                             flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
-                        }, 250);
+                        }, 180);
                     }}
                 />
             </View>
@@ -512,7 +510,7 @@ export default function CollectorChatScreen() {
               <Text style={{color: 'white', fontWeight: '600'}}>Sending image...</Text>
           </View>
       ) : null}
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -557,8 +555,8 @@ const styles = StyleSheet.create({
   replyBanner: { flexDirection: 'row', backgroundColor: '#F5F7FA', padding: 10, paddingHorizontal: 14, alignItems: 'center', borderTopLeftRadius: 12, borderTopRightRadius: 12 },
   replyAccent: { width: 3, height: 32, backgroundColor: '#0066FF', borderRadius: 2, marginRight: 10 },
   replyBoxRendered: { padding: 8, paddingHorizontal: 10, borderRadius: 10, marginBottom: 8, borderLeftWidth: 3 },
-  inputArea: { backgroundColor: '#F5F7FA', borderTopWidth: 1, borderTopColor: '#ECEFF1', paddingBottom: Platform.OS === 'android' ? 4 : 0 },
-  inputContainer: { flexDirection: 'row', alignItems: 'flex-end', paddingHorizontal: 10, paddingTop: 8, paddingBottom: Platform.OS === 'ios' ? 22 : 8 },
+  inputArea: { backgroundColor: '#F5F7FA', borderTopWidth: 1, borderTopColor: '#ECEFF1' },
+  inputContainer: { flexDirection: 'row', alignItems: 'flex-end', paddingHorizontal: 10, paddingTop: 8, paddingBottom: Platform.OS === 'ios' ? 18 : 8 },
   inputWrap: { flex: 1, backgroundColor: '#E4E6EB', borderRadius: 20, paddingHorizontal: 15, paddingVertical: Platform.OS === 'ios' ? 10 : 7, marginHorizontal: 8, minHeight: 40, justifyContent: 'center' },
   input: { fontSize: 15, color: '#1C1C1E', maxHeight: 100, padding: 0 },
 });

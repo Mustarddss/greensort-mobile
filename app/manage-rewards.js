@@ -62,7 +62,30 @@ export default function ManageRewards() {
             .eq('user_email', user.email)
             .order('id', { ascending: false });
         
-        if (data) setRewards(data);
+        if (data) {
+            const normalizedData = data.map(item => ({
+                ...item,
+                is_available: Number(item.stock_quantity || 0) > 0 && item.is_available
+            }));
+
+            setRewards(normalizedData);
+
+            // Auto-sync database: if stock is 0 but still marked available, mark it unavailable.
+            const zeroStockAvailable = data.filter(item =>
+                Number(item.stock_quantity || 0) <= 0 && item.is_available
+            );
+
+            if (zeroStockAvailable.length > 0) {
+                await Promise.all(
+                    zeroStockAvailable.map(item =>
+                        supabase
+                            .from('rewards_inventory')
+                            .update({ is_available: false })
+                            .eq('id', item.id)
+                    )
+                );
+            }
+        }
     }
     setIsLoading(false);
   };
@@ -90,7 +113,7 @@ export default function ManageRewards() {
 
     setRewardImage(item.image_url);
     setWasteImage(item.waste_image_url || null);
-    setIsStockAvailable(item.is_available);
+    setIsStockAvailable(Number(item.stock_quantity || 0) > 0 && item.is_available);
     
     setStockQty(item.stock_quantity ? item.stock_quantity.toString() : '1');
 
@@ -233,9 +256,43 @@ export default function ManageRewards() {
   };
 
   const toggleStock = async (item) => {
-    const newStatus = !item.is_available;
-    setRewards(rewards.map(r => r.id === item.id ? { ...r, is_available: newStatus } : r));
-    await supabase.from('rewards_inventory').update({ is_available: newStatus }).eq('id', item.id);
+    const currentStock = Number(item.stock_quantity || 0);
+    const currentlyAvailable = item.is_available && currentStock > 0;
+    const newStatus = !currentlyAvailable;
+
+    // If no stock, do not allow "Mark Available".
+    // Center must edit/restock first.
+    if (newStatus && currentStock <= 0) {
+        Alert.alert(
+            "Out of Stock",
+            "This reward has 0 stock. Please tap Edit and add stock quantity first before marking it as available."
+        );
+
+        setRewards(rewards.map(r =>
+            r.id === item.id ? { ...r, is_available: false } : r
+        ));
+
+        await supabase
+            .from('rewards_inventory')
+            .update({ is_available: false })
+            .eq('id', item.id);
+
+        return;
+    }
+
+    setRewards(rewards.map(r =>
+        r.id === item.id ? { ...r, is_available: newStatus } : r
+    ));
+
+    const { error } = await supabase
+        .from('rewards_inventory')
+        .update({ is_available: newStatus })
+        .eq('id', item.id);
+
+    if (error) {
+        Alert.alert("Error", error.message);
+        fetchData();
+    }
   };
 
   const resetForm = () => { 
@@ -304,6 +361,10 @@ export default function ManageRewards() {
     }
   ];
 
+  const isRewardAvailable = (item) => {
+    return item.is_available && Number(item.stock_quantity || 0) > 0;
+  };
+
   if (isLoading) return <View style={[styles.container, {justifyContent:'center', alignItems:'center'}]}><ActivityIndicator size="large" color="#0066FF"/></View>;
 
   return (
@@ -327,8 +388,8 @@ export default function ManageRewards() {
 
         {rewards.map((item) => (
             <View key={item.id} style={styles.card}>
-                <View style={[styles.badge, {backgroundColor: item.is_available ? '#E8F5E9' : '#FFEBEE'}]}>
-                    <Text style={{color: item.is_available ? '#007C00' : '#D32F2F', fontSize: 10, fontWeight: 'bold'}}>{item.is_available ? 'Available' : 'Out of Stock'}</Text>
+                <View style={[styles.badge, {backgroundColor: isRewardAvailable(item) ? '#E8F5E9' : '#FFEBEE'}]}>
+                    <Text style={{color: isRewardAvailable(item) ? '#007C00' : '#D32F2F', fontSize: 10, fontWeight: 'bold'}}>{isRewardAvailable(item) ? 'Available' : 'Out of Stock'}</Text>
                 </View>
 
                 <View style={styles.cardContent}>
@@ -347,8 +408,8 @@ export default function ManageRewards() {
                     <TouchableOpacity style={styles.editBtn} onPress={() => openEditModal(item)}>
                         <MaterialCommunityIcons name="pencil" size={16} color="#333" /><Text style={styles.btnLabel}> Edit</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity style={[styles.stockBtn, {borderColor: item.is_available ? '#D32F2F' : '#007C00'}]} onPress={() => toggleStock(item)}>
-                        <Text style={{color: item.is_available ? '#D32F2F' : '#007C00', fontSize: 12, fontWeight: 'bold'}}>{item.is_available ? 'Mark Out of Stock' : 'Mark Available'}</Text>
+                    <TouchableOpacity style={[styles.stockBtn, {borderColor: isRewardAvailable(item) ? '#D32F2F' : '#007C00'}]} onPress={() => toggleStock(item)}>
+                        <Text style={{color: isRewardAvailable(item) ? '#D32F2F' : '#007C00', fontSize: 12, fontWeight: 'bold'}}>{isRewardAvailable(item) ? 'Mark Out of Stock' : 'Mark Available'}</Text>
                     </TouchableOpacity>
                     <TouchableOpacity style={styles.deleteBtn} onPress={() => handleDelete(item.id)}>
                         <MaterialCommunityIcons name="trash-can-outline" size={20} color="white" />
@@ -529,7 +590,8 @@ export default function ManageRewards() {
                             value={stockQty} 
                             onChangeText={(val) => {
                                 setStockQty(val);
-                                if (parseInt(val) <= 0 || !val) {
+                                const nextStock = parseInt(val) || 0;
+                                if (nextStock <= 0) {
                                     setIsStockAvailable(false);
                                 } else {
                                     setIsStockAvailable(true);
@@ -549,7 +611,7 @@ export default function ManageRewards() {
                             <Switch 
                                 value={isStockAvailable} 
                                 onValueChange={setIsStockAvailable} 
-                                disabled={parseInt(stockQty) <= 0 || !stockQty} 
+                                disabled={(parseInt(stockQty) || 0) <= 0 || !stockQty} 
                                 trackColor={{ true: '#4CD964', false: '#E5E5EA' }} 
                             />
                         </View>
